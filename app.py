@@ -42,7 +42,11 @@ async def DGLab_Server():
         # 注册需要进行处理的 OSC 参数，绑定回调
         disp = dispatcher.Dispatcher()
         disp.map("/avatar/parameters/SoundPad/Button/*", handle_osc_message_sync, controller) #匹配所有按键操作
-        disp.map("/avatar/parameters/SoundPad/Volume", handle_osc_message_sync, controller) #匹配所有按键操作
+        disp.map("/avatar/parameters/SoundPad/Volume", handle_osc_message_sync, controller)   #强度调节步进值
+        # TODO: 未开启动骨或 Contact 时，detach 这部分 OSC 地址？
+        disp.map("/avatar/parameters/DG-LAB/*", handle_osc_message_sync, controller)          #自定义参数
+        disp.map("/avatar/parameters/Tail_Stretch", handle_osc_message_sync, controller)  # 自定义参数
+
 
         osc_server_instance = osc_server.AsyncIOOSCUDPServer(
             ("0.0.0.0", 9102), disp, asyncio.get_event_loop()   # 9001 为默认传出接口，为了兼容 VRCFT 面捕，这里通过 OSC Router 转换为 9102
@@ -52,6 +56,7 @@ async def DGLab_Server():
         print("OSC Recv Serving on {}".format(osc_server_instance._server_address))
 
         # 等待绑定
+        # TODO 避免在客户端未连接时终端输出 OSC 信息
         await client.bind()
         print(f"已与 App {client.target_id} 成功绑定")
 
