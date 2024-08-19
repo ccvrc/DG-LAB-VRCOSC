@@ -42,7 +42,7 @@ def setup_logging():
     logger.addHandler(file_handler)
     logger.addHandler(console_handler)
 
-    # 可选：禁用某些第三方库的日志
-    # logging.getLogger("websockets.server").setLevel(logging.WARNING)
-    # logging.getLogger("websockets.protocol").setLevel(logging.WARNING)
+    # 可选：禁用第三方库的日志
+    logging.getLogger("websockets.server").setLevel(logging.WARNING)
+    logging.getLogger("websockets.protocol").setLevel(logging.WARNING)
 

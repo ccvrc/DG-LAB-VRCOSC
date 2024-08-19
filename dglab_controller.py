@@ -88,11 +88,11 @@ class DGLabController:
         else:
             self.pulse_mode_b = pulse_index
 
-        await self.client.clear_pulses(channel)
+        await self.client.clear_pulses(channel) # 清空当前的生效的波形队列
 
         logger.info(f"开始发送波形 {PULSE_NAME[pulse_index]}")
-        specific_pulse_data = PULSE_DATA[PULSE_NAME[pulse_index]]  # 当前准备发送的波形
-        await self.client.add_pulses(channel, *(specific_pulse_data * 3))  # 直接发送三份
+        specific_pulse_data = PULSE_DATA[PULSE_NAME[pulse_index]]
+        await self.client.add_pulses(channel, *(specific_pulse_data * 3))  # 发送三份新选中的波形
 
     async def periodic_decrease_output(self):
         """
