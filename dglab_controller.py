@@ -30,6 +30,7 @@ class DGLabController:
         self.pulse_mode_b = 0  # pulse mode for Channel B
         self.current_strength_step = 30  # 一键开火默认强度
         self.enable_chatbox_status = 1  # ChatBox 发送状态
+        self.previous_chatbox_status = 1  # ChatBox 状态记录, 用于关闭 ChatBox 后的内容清除
         # dynamic_bone 模式下的最终设定输出，随时间自动回落，总是更新为当前支持参数中的最大值
         self.final_strength_a = 0.0
         self.final_strength_b = 0.0
@@ -41,11 +42,16 @@ class DGLabController:
     async def periodic_status_update(self):
         """
         周期性通过 ChatBox 发送当前的配置状态
+        TODO: ChatBox 消息发送的速率限制是多少？当前的设置还是会撞到限制..
         """
         while True:
             try:
                 if self.enable_chatbox_status:
                     await self.send_strength_status()
+                    self.previous_chatbox_status = True
+                elif self.previous_chatbox_status: # clear chatbox
+                    self.send_message_to_vrchat_chatbox("")
+                    self.previous_chatbox_status = False
             except Exception as e:
                 logger.error(f"periodic_status_update 任务中发生错误: {e}")
                 await asyncio.sleep(5)  # 延迟后重试
@@ -139,6 +145,9 @@ class DGLabController:
             self.enable_chatbox_status = not self.enable_chatbox_status
             mode_name = "开启" if self.enable_chatbox_status else "关闭"
             logger.info("ChatBox显示状态切换为:" + mode_name)
+            # 若关闭 ChatBox, 则立即发送一次空字符串
+            if not self.enable_chatbox_status:
+                self.send_message_to_vrchat_chatbox("")
 
     async def set_mode(self, value, channel):
         """
@@ -187,7 +196,7 @@ class DGLabController:
             if value:  # 按键按下时设置为当前强度上限
                 await self.client.set_strength(channel, StrengthOperationType.SET_TO, channel_limit_max)
             else:     # 按键松开恢复至 上限减去current_strength_step
-                await self.client.set_strength(channel, StrengthOperationType.SET_TO, channel_limit_max - self.current_strength_step)
+                await self.client.set_strength(channel, StrengthOperationType.SET_TO, max(0, channel_limit_max - self.current_strength_step))
 
 
     async def set_strength_step(self, value):
