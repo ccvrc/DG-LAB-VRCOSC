@@ -1,3 +1,4 @@
 pydglab-ws
 qrcode
 python-osc
+colorlog

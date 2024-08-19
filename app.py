@@ -1,6 +1,11 @@
 """
 通过 VRChat OSC 参数控制郊狼 (DG-LAB) 的 python 小程序
 """
+import logging
+from logger_config import setup_logging
+setup_logging()
+logger = logging.getLogger(__name__)
+
 import asyncio
 import io
 from traceback import print_tb, print_list
@@ -29,6 +34,10 @@ def handle_osc_message_sync(address, list_object, *args):
     """
     asyncio.create_task(list_object[0].handle_osc_message(address, *args))
 
+def some_function():
+    logger.info("这是一个信息日志")
+    logger.warning("这是一个警告日志")
+    logger.error("这是一个错误日志")
 
 async def DGLab_Server():
     async with DGLabWSServer("0.0.0.0", 5678, 60) as server:
@@ -36,6 +45,8 @@ async def DGLab_Server():
         url = client.get_qrcode("ws://192.168.10.219:5678")  # 修改为当前电脑的实际局域网 IP，注意 PyCharm 开启时需要允许本地网络访问
         print("请用 DG-Lab App 扫描二维码以连接")
         print_qrcode(url)
+
+        some_function()
 
         # OSC 客户端用于发送回复
         osc_client = udp_client.SimpleUDPClient("127.0.0.1", 9000)  # 修改为接收 OSC 回复的目标 IP 和端口, 9000 为 VRChat 默认 OSC 传入接口

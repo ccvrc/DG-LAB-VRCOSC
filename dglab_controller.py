@@ -3,12 +3,12 @@ dglab_controller.py
 """
 import asyncio
 import math
-from traceback import print_tb
 
 from pydglab_ws import StrengthData, FeedbackButton, Channel, StrengthOperationType, RetCode, DGLabWSServer
 from pulse_data import PULSE_DATA, PULSE_NAME
 
-from pythonosc import dispatcher, osc_server, udp_client
+import logging
+logger = logging.getLogger(__name__)
 
 
 class DGLabController:
