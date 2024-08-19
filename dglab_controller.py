@@ -10,6 +10,7 @@ from pulse_data import PULSE_DATA, PULSE_NAME
 
 from pythonosc import dispatcher, osc_server, udp_client
 
+
 class DGLabController:
     def __init__(self, client, osc_client):
         """
@@ -26,14 +27,14 @@ class DGLabController:
         self.is_dynamic_bone_mode_b = False  # Default mode for Channel B
         self.pulse_mode_a = 0  # pulse mode for Channel A
         self.pulse_mode_b = 0  # pulse mode for Channel B
-        self.current_strength_step = 2 # 强度调节步进
-        self.enable_chatbox_status = 1 # ChatBox 发送状态
+        self.current_strength_step = 2  # 强度调节步进
+        self.enable_chatbox_status = 1  # ChatBox 发送状态
         # dynamic_bone 模式下的最终设定输出，随时间自动回落，总是更新为当前支持参数中的最大值
         self.final_strength_a = 0.0
         self.final_strength_b = 0.0
-        #定时任务
+        # 定时任务
         self.send_status_task = asyncio.create_task(self.periodic_status_update())  # 启动ChatBox发送任务
-        self.send_pulse_task  = asyncio.create_task(self.periodic_send_pulse_data())  # 启动设定波形发送任务
+        self.send_pulse_task = asyncio.create_task(self.periodic_send_pulse_data())  # 启动设定波形发送任务
         self.dynamic_bone_mode_output_task = asyncio.create_task(self.periodic_decrease_output())  # 启动设定波形发送任务
 
     async def periodic_status_update(self):
@@ -49,7 +50,7 @@ class DGLabController:
         # 顺序发送波形
         # TODO： 修复重连后自动发送中断
         while True:
-            if self.last_strength: # 当收到设备状态后再发送波形
+            if self.last_strength:  # 当收到设备状态后再发送波形
                 print(f"更新波形 A {PULSE_NAME[self.pulse_mode_a]} B {PULSE_NAME[self.pulse_mode_b]}")
                 specific_pulse_data_a = PULSE_DATA[PULSE_NAME[self.pulse_mode_a]]
                 specific_pulse_data_b = PULSE_DATA[PULSE_NAME[self.pulse_mode_b]]
@@ -71,7 +72,7 @@ class DGLabController:
         await self.client.clear_pulses(channel)
 
         print(f"开始发送波形 {PULSE_NAME[pulse_index]}")
-        specific_pulse_data = PULSE_DATA[PULSE_NAME[pulse_index]]    # 当前准备发送的波形
+        specific_pulse_data = PULSE_DATA[PULSE_NAME[pulse_index]]  # 当前准备发送的波形
         # 如果波形都发送过了，则开始新一轮的发送
         await self.client.add_pulses(channel, *(specific_pulse_data * 5))  # 直接发送一份
 
@@ -99,14 +100,14 @@ class DGLabController:
         if value > 0.0:
             if channel == Channel.A and self.is_dynamic_bone_mode_a:
                 self.final_strength_a = max(self.final_strength_a, value)
-                final_output_a = math.ceil(self.map_value(self.final_strength_a, self.last_strength.a_limit * 0.4, self.last_strength.a_limit))
+                final_output_a = math.ceil(
+                    self.map_value(self.final_strength_a, self.last_strength.a_limit * 0.4, self.last_strength.a_limit))
                 await self.client.set_strength(channel, StrengthOperationType.SET_TO, final_output_a)
             elif channel == Channel.B and self.is_dynamic_bone_mode_b:
                 self.final_strength_b = max(self.final_strength_b, value)
-                final_output_b = math.ceil(self.map_value(self.final_strength_b, self.last_strength.b_limit * 0.4, self.last_strength.b_limit))
+                final_output_b = math.ceil(
+                    self.map_value(self.final_strength_b, self.last_strength.b_limit * 0.4, self.last_strength.b_limit))
                 await self.client.set_strength(channel, StrengthOperationType.SET_TO, final_output_b)
-
-
 
     async def toggle_chatbox(self, value):
         """
@@ -132,14 +133,13 @@ class DGLabController:
                 mode_name = "可交互模式" if self.is_dynamic_bone_mode_b else "面板设置模式"
                 print("通道 B 切换为" + mode_name)
 
-
     async def reset_strength(self, value, channel):
         """
         强度重置为 0
         """
         if value:
             await self.client.set_strength(channel, StrengthOperationType.SET_TO, 0)
-            #await self.send_strength_status()
+            # await self.send_strength_status()
 
     async def increase_strength(self, value, channel):
         """
@@ -147,7 +147,7 @@ class DGLabController:
         """
         if value:
             await self.client.set_strength(channel, StrengthOperationType.INCREASE, self.current_strength_step)
-            #await self.send_strength_status()
+            # await self.send_strength_status()
 
     async def decrease_strength(self, value, channel):
         """
@@ -155,7 +155,7 @@ class DGLabController:
         """
         if value:
             await self.client.set_strength(channel, StrengthOperationType.DECREASE, self.current_strength_step)
-            #await self.send_strength_status()
+            # await self.send_strength_status()
 
     async def set_strength_to_max(self, value, channel):
         """
@@ -166,18 +166,16 @@ class DGLabController:
                 await self.client.set_strength(channel, StrengthOperationType.SET_TO, self.last_strength.a_limit)
             elif channel == Channel.B:
                 await self.client.set_strength(channel, StrengthOperationType.SET_TO, self.last_strength.b_limit)
-            #await self.send_strength_status()
+            # await self.send_strength_status()
 
     async def set_strength_step(self, value):
         """
         开关 ChatBox 内容发送
         """
         if value > 0.0:
-            self.current_strength_step = math.ceil(self.map_value(value, 0, 10)) #向上取整
+            self.current_strength_step = math.ceil(self.map_value(value, 0, 10))  # 向上取整
             print(f"current strength step: {self.current_strength_step}")
             # self.current_strength_step = self.map_value(value, self.last_strength.a_limit, self.last_strength.b_limit)
-
-
 
     async def handle_osc_message(self, address, *args):
         """
@@ -205,32 +203,32 @@ class DGLabController:
             await self.set_mode(args[0], Channel.A)
 
         elif address == "/avatar/parameters/SoundPad/Button/2":
-            await self.reset_strength(args[0],Channel.A)
+            await self.reset_strength(args[0], Channel.A)
 
         elif address == "/avatar/parameters/SoundPad/Button/3":
-            await self.decrease_strength(args[0],Channel.A)
+            await self.decrease_strength(args[0], Channel.A)
 
         elif address == "/avatar/parameters/SoundPad/Button/4":
-            await self.increase_strength(args[0],Channel.A)
+            await self.increase_strength(args[0], Channel.A)
 
         elif address == "/avatar/parameters/SoundPad/Button/5":
-            await self.set_strength_to_max(args[0],Channel.A)
+            await self.set_strength_to_max(args[0], Channel.A)
 
         # 波形控制
         elif address == "/avatar/parameters/SoundPad/Button/6":
-            await self.set_pulse_data(args[0],Channel.A,1)
+            await self.set_pulse_data(args[0], Channel.A, 1)
 
         elif address == "/avatar/parameters/SoundPad/Button/7":
-            await self.set_pulse_data(args[0],Channel.A,2)
+            await self.set_pulse_data(args[0], Channel.A, 2)
 
         elif address == "/avatar/parameters/SoundPad/Button/8":
-            await self.set_pulse_data(args[0],Channel.A,3)
+            await self.set_pulse_data(args[0], Channel.A, 3)
 
         elif address == "/avatar/parameters/SoundPad/Button/9":
-            await self.set_pulse_data(args[0],Channel.A,4)
+            await self.set_pulse_data(args[0], Channel.A, 4)
 
         elif address == "/avatar/parameters/SoundPad/Button/10":
-            await self.set_pulse_data(args[0],Channel.A,5)
+            await self.set_pulse_data(args[0], Channel.A, 5)
 
         elif address == "/avatar/parameters/SoundPad/Button/11":
             await self.set_pulse_data(args[0], Channel.A, 6)
