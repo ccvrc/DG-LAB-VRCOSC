@@ -8,6 +8,7 @@ from pydglab_ws import StrengthData, FeedbackButton, Channel, StrengthOperationT
 from pulse_data import PULSE_DATA, PULSE_NAME
 
 import logging
+
 logger = logging.getLogger(__name__)
 
 
@@ -88,7 +89,7 @@ class DGLabController:
         else:
             self.pulse_mode_b = pulse_index
 
-        await self.client.clear_pulses(channel) # 清空当前的生效的波形队列
+        await self.client.clear_pulses(channel)  # 清空当前的生效的波形队列
 
         logger.info(f"开始发送波形 {PULSE_NAME[pulse_index]}")
         specific_pulse_data = PULSE_DATA[PULSE_NAME[pulse_index]]
@@ -183,7 +184,7 @@ class DGLabController:
         """
         if self.last_strength:
             channel_limit_max = self.last_strength.a_limit if channel == Channel.A else self.last_strength.b_limit
-            if value: # 按键按下时设置为当前强度上限
+            if value:  # 按键按下时设置为当前强度上限
                 await self.client.set_strength(channel, StrengthOperationType.SET_TO, channel_limit_max)
             else:     # 按键松开恢复至 上限减去current_strength_step
                 await self.client.set_strength(channel, StrengthOperationType.SET_TO, channel_limit_max - self.current_strength_step)
@@ -235,22 +236,20 @@ class DGLabController:
         elif address == "/avatar/parameters/SoundPad/Button/5":
             await self.strength_fire_mode(args[0], Channel.A)
 
-        # 波形控制
+        # 其他功能
+        # Chatbox 发送开关
         elif address == "/avatar/parameters/SoundPad/Button/6":
-            await self.set_pulse_data(args[0], Channel.A, 1)
+            await self.toggle_chatbox(args[0])
 
+        # 波形控制
         elif address == "/avatar/parameters/SoundPad/Button/7":
             await self.set_pulse_data(args[0], Channel.A, 2)
-
         elif address == "/avatar/parameters/SoundPad/Button/8":
             await self.set_pulse_data(args[0], Channel.A, 14)
-
         elif address == "/avatar/parameters/SoundPad/Button/9":
             await self.set_pulse_data(args[0], Channel.A, 4)
-
         elif address == "/avatar/parameters/SoundPad/Button/10":
             await self.set_pulse_data(args[0], Channel.A, 5)
-
         elif address == "/avatar/parameters/SoundPad/Button/11":
             await self.set_pulse_data(args[0], Channel.A, 6)
         elif address == "/avatar/parameters/SoundPad/Button/12":
@@ -259,10 +258,9 @@ class DGLabController:
             await self.set_pulse_data(args[0], Channel.A, 8)
         elif address == "/avatar/parameters/SoundPad/Button/14":
             await self.set_pulse_data(args[0], Channel.A, 9)
-
-        # 其他功能
         elif address == "/avatar/parameters/SoundPad/Button/15":
-            await self.toggle_chatbox(args[0])
+            await self.set_pulse_data(args[0], Channel.A, 1)
+
         # 数值调节
         elif address == "/avatar/parameters/SoundPad/Volume":
             await self.set_strength_step(args[0])
