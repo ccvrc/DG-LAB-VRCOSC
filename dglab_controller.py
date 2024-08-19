@@ -27,7 +27,7 @@ class DGLabController:
         self.is_dynamic_bone_mode_b = False  # Default mode for Channel B
         self.pulse_mode_a = 0  # pulse mode for Channel A
         self.pulse_mode_b = 0  # pulse mode for Channel B
-        self.current_strength_step = 2  # 强度调节步进
+        self.current_strength_step = 30  # 一键开火默认强度
         self.enable_chatbox_status = 1  # ChatBox 发送状态
         # dynamic_bone 模式下的最终设定输出，随时间自动回落，总是更新为当前支持参数中的最大值
         self.final_strength_a = 0.0
@@ -160,43 +160,41 @@ class DGLabController:
         """
         if value:
             await self.client.set_strength(channel, StrengthOperationType.SET_TO, 0)
-            # await self.send_strength_status()
 
     async def increase_strength(self, value, channel):
         """
-        增大强度
+        增大强度, 固定 5
         """
         if value:
-            await self.client.set_strength(channel, StrengthOperationType.INCREASE, self.current_strength_step)
-            # await self.send_strength_status()
+            await self.client.set_strength(channel, StrengthOperationType.INCREASE, 5)
 
     async def decrease_strength(self, value, channel):
         """
-        减小强度
+        减小强度, 固定 5
         """
         if value:
-            await self.client.set_strength(channel, StrengthOperationType.DECREASE, self.current_strength_step)
-            # await self.send_strength_status()
+            await self.client.set_strength(channel, StrengthOperationType.DECREASE, 5)
 
-    async def set_strength_to_max(self, value, channel):
+    async def strength_fire_mode(self, value, channel):
         """
         一键开火：
             按下后设置为当前的强度上限
             松开后将强度调整为上限 -30
         """
         if self.last_strength:
-            if channel == Channel.A:
-                await self.client.set_strength(channel, StrengthOperationType.SET_TO, self.last_strength.a_limit)
-            elif channel == Channel.B:
-                await self.client.set_strength(channel, StrengthOperationType.SET_TO, self.last_strength.b_limit)
-            # await self.send_strength_status()
+            channel_limit_max = self.last_strength.a_limit if channel == Channel.A else self.last_strength.b_limit
+            if value: # 按键按下时设置为当前强度上限
+                await self.client.set_strength(channel, StrengthOperationType.SET_TO, channel_limit_max)
+            else:     # 按键松开恢复至 上限减去current_strength_step
+                await self.client.set_strength(channel, StrengthOperationType.SET_TO, channel_limit_max - self.current_strength_step)
+
 
     async def set_strength_step(self, value):
         """
         开关 ChatBox 内容发送
         """
         if value > 0.0:
-            self.current_strength_step = math.ceil(self.map_value(value, 0, 10))  # 向上取整
+            self.current_strength_step = math.ceil(self.map_value(value, 0, 100))  # 向上取整
             logger.info(f"current strength step: {self.current_strength_step}")
             # self.current_strength_step = self.map_value(value, self.last_strength.a_limit, self.last_strength.b_limit)
 
@@ -235,7 +233,7 @@ class DGLabController:
             await self.increase_strength(args[0], Channel.A)
 
         elif address == "/avatar/parameters/SoundPad/Button/5":
-            await self.set_strength_to_max(args[0], Channel.A)
+            await self.strength_fire_mode(args[0], Channel.A)
 
         # 波形控制
         elif address == "/avatar/parameters/SoundPad/Button/6":
@@ -292,7 +290,7 @@ class DGLabController:
                 f"MAX A: {self.last_strength.a_limit} B: {self.last_strength.b_limit}\n"
                 f"Mode A: {mode_name_a} B: {mode_name_b} \n"
                 f"Pulse A: {PULSE_NAME[self.pulse_mode_a]} B: {self.pulse_mode_b} \n"
-                f"Strength Step: {self.current_strength_step}\n"
+                f"Fire Step: {self.current_strength_step}\n"
                 f"Current A: {self.last_strength.a} B: {self.last_strength.b}"
             )
         else:
