@@ -42,22 +42,41 @@ class DGLabController:
         周期性通过 ChatBox 发送当前的配置状态
         """
         while True:
-            if self.enable_chatbox_status:
-                await self.send_strength_status()
+            try:
+                if self.enable_chatbox_status:
+                    await self.send_strength_status()
+            except Exception as e:
+                logger.error(f"periodic_status_update 任务中发生错误: {e}")
+                await asyncio.sleep(5)  # 延迟后重试
             await asyncio.sleep(3)  # 每 x 秒发送一次
 
     async def periodic_send_pulse_data(self):
         # 顺序发送波形
         # TODO： 修复重连后自动发送中断
         while True:
-            if self.last_strength:  # 当收到设备状态后再发送波形
-                print(f"更新波形 A {PULSE_NAME[self.pulse_mode_a]} B {PULSE_NAME[self.pulse_mode_b]}")
-                specific_pulse_data_a = PULSE_DATA[PULSE_NAME[self.pulse_mode_a]]
-                specific_pulse_data_b = PULSE_DATA[PULSE_NAME[self.pulse_mode_b]]
-                await self.client.clear_pulses(Channel.A)
-                await self.client.add_pulses(Channel.A, *(specific_pulse_data_a * 5))  # 单组波形大约维持 1~2 秒，不同波形持续时间不同？
-                await self.client.clear_pulses(Channel.B)
-                await self.client.add_pulses(Channel.B, *(specific_pulse_data_b * 5))
+            try:
+                if self.last_strength:  # 当收到设备状态后再发送波形
+                    logger.info(f"更新波形 A {PULSE_NAME[self.pulse_mode_a]} B {PULSE_NAME[self.pulse_mode_b]}")
+
+                    # A 通道发送当前设定波形
+                    specific_pulse_data_a = PULSE_DATA[PULSE_NAME[self.pulse_mode_a]]
+                    await self.client.clear_pulses(Channel.A)
+
+                    if PULSE_NAME[self.pulse_mode_a] == '压缩' or PULSE_NAME[self.pulse_mode_a] == '节奏步伐':  # 单次发送长波形不能太多
+                        await self.client.add_pulses(Channel.A, *(specific_pulse_data_a * 3))  # 长波形三组
+                    else:
+                        await self.client.add_pulses(Channel.A, *(specific_pulse_data_a * 5))  # 短波形五组
+
+                    # B 通道发送当前设定波形
+                    specific_pulse_data_b = PULSE_DATA[PULSE_NAME[self.pulse_mode_b]]
+                    await self.client.clear_pulses(Channel.B)
+                    if PULSE_NAME[self.pulse_mode_b] == '压缩' or PULSE_NAME[self.pulse_mode_b] == '节奏步伐':  # 单次发送长波形不能太多
+                        await self.client.add_pulses(Channel.B, *(specific_pulse_data_b * 3))  # 长波形三组
+                    else:
+                        await self.client.add_pulses(Channel.B, *(specific_pulse_data_b * 5))  # 短波形五组
+            except Exception as e:
+                logger.error(f"periodic_send_pulse_data 任务中发生错误: {e}")
+                await asyncio.sleep(5)  # 延迟后重试
             await asyncio.sleep(3)  # 每 x 秒发送一次
 
     async def set_pulse_data(self, value, channel, pulse_index):
@@ -71,26 +90,28 @@ class DGLabController:
 
         await self.client.clear_pulses(channel)
 
-        print(f"开始发送波形 {PULSE_NAME[pulse_index]}")
+        logger.info(f"开始发送波形 {PULSE_NAME[pulse_index]}")
         specific_pulse_data = PULSE_DATA[PULSE_NAME[pulse_index]]  # 当前准备发送的波形
-        # 如果波形都发送过了，则开始新一轮的发送
-        await self.client.add_pulses(channel, *(specific_pulse_data * 5))  # 直接发送一份
+        await self.client.add_pulses(channel, *(specific_pulse_data * 3))  # 直接发送三份
 
     async def periodic_decrease_output(self):
         """
-            每秒输出值降低可选范围的 50%
+        每秒输出值降低可选范围的 50%
         """
         while True:
-            if self.is_dynamic_bone_mode_a:
-                self.final_strength_a = self.final_strength_a - 0.5
-            else:
-                self.final_strength_a = 0
+            try:
+                if self.is_dynamic_bone_mode_a:
+                    self.final_strength_a = self.final_strength_a - 0.5
+                else:
+                    self.final_strength_a = 0
 
-            if self.is_dynamic_bone_mode_b:
-                self.final_strength_b = self.final_strength_b - 0.5
-            else:
-                self.final_strength_b = 0
-
+                if self.is_dynamic_bone_mode_b:
+                    self.final_strength_b = self.final_strength_b - 0.5
+                else:
+                    self.final_strength_b = 0
+            except Exception as e:
+                logger.error(f"periodic_decrease_output 任务中发生错误: {e}")
+                await asyncio.sleep(5)  # 延迟后重试
             await asyncio.sleep(1)
 
     async def set_float_output(self, value, channel):
@@ -116,7 +137,7 @@ class DGLabController:
         if value:
             self.enable_chatbox_status = not self.enable_chatbox_status
             mode_name = "开启" if self.enable_chatbox_status else "关闭"
-            print("ChatBox显示状态切换为:" + mode_name)
+            logger.info("ChatBox显示状态切换为:" + mode_name)
 
     async def set_mode(self, value, channel):
         """
@@ -126,12 +147,12 @@ class DGLabController:
             if channel == Channel.A:
                 self.is_dynamic_bone_mode_a = not self.is_dynamic_bone_mode_a
                 mode_name = "可交互模式" if self.is_dynamic_bone_mode_a else "面板设置模式"
-                print("通道 A 切换为" + mode_name)
+                logger.info("通道 A 切换为" + mode_name)
 
             elif channel == Channel.B:
                 self.is_dynamic_bone_mode_b = not self.is_dynamic_bone_mode_b
                 mode_name = "可交互模式" if self.is_dynamic_bone_mode_b else "面板设置模式"
-                print("通道 B 切换为" + mode_name)
+                logger.info("通道 B 切换为" + mode_name)
 
     async def reset_strength(self, value, channel):
         """
@@ -159,7 +180,9 @@ class DGLabController:
 
     async def set_strength_to_max(self, value, channel):
         """
-        强度到当前通道上限（一键开火？)
+        一键开火：
+            按下后设置为当前的强度上限
+            松开后将强度调整为上限 -30
         """
         if self.last_strength:
             if channel == Channel.A:
@@ -174,7 +197,7 @@ class DGLabController:
         """
         if value > 0.0:
             self.current_strength_step = math.ceil(self.map_value(value, 0, 10))  # 向上取整
-            print(f"current strength step: {self.current_strength_step}")
+            logger.info(f"current strength step: {self.current_strength_step}")
             # self.current_strength_step = self.map_value(value, self.last_strength.a_limit, self.last_strength.b_limit)
 
     async def handle_osc_message(self, address, *args):
@@ -187,7 +210,7 @@ class DGLabController:
         应该修改为，通过所有 OSC 参数按当前设定计算好对应通道输出后，再进行发送（触控板可覆盖交互式的输出值？）
         """
         # Parameters Debug
-        print(f"Received OSC message on {address} with arguments {args}")
+        logger.debug(f"Received OSC message on {address} with arguments {args}")
 
         # Float 参数映射为强度数值
         # Note: 好像没有下限设置，那就默认为上限的 40% 吧
@@ -222,7 +245,7 @@ class DGLabController:
             await self.set_pulse_data(args[0], Channel.A, 2)
 
         elif address == "/avatar/parameters/SoundPad/Button/8":
-            await self.set_pulse_data(args[0], Channel.A, 3)
+            await self.set_pulse_data(args[0], Channel.A, 14)
 
         elif address == "/avatar/parameters/SoundPad/Button/9":
             await self.set_pulse_data(args[0], Channel.A, 4)

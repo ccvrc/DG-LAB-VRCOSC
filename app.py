@@ -44,9 +44,8 @@ async def DGLab_Server():
         client = server.new_local_client()
         url = client.get_qrcode("ws://192.168.10.219:5678")  # 修改为当前电脑的实际局域网 IP，注意 PyCharm 开启时需要允许本地网络访问
         print("请用 DG-Lab App 扫描二维码以连接")
+        # 建议终端设置字体 Consolas Size13 行高 0.8
         print_qrcode(url)
-
-        some_function()
 
         # OSC 客户端用于发送回复
         osc_client = udp_client.SimpleUDPClient("127.0.0.1", 9000)  # 修改为接收 OSC 回复的目标 IP 和端口, 9000 为 VRChat 默认 OSC 传入接口
@@ -67,29 +66,29 @@ async def DGLab_Server():
         )
         osc_transport, osc_protocol = await osc_server_instance.create_serve_endpoint()
 
-        print("OSC Recv Serving on {}".format(osc_server_instance._server_address))
+        logger.info("OSC Recv Serving on {}".format(osc_server_instance._server_address))
 
         # 等待绑定
         # TODO 避免在客户端未连接时终端输出 OSC 信息
         await client.bind()
-        print(f"已与 App {client.target_id} 成功绑定")
+        logger.info(f"已与 App {client.target_id} 成功绑定")
 
         # 从 App 接收数据更新，并进行远控操作 （在VRC中应该不太会用到APP的按键）
         async for data in client.data_generator():
 
             # 接收通道强度数据
             if isinstance(data, StrengthData):
-                print(f"从 App 收到通道强度数据更新：{data}")
+                logger.info(f"从 App 收到通道强度数据更新：{data}")
                 controller.last_strength = data
                 # controller.send_message_to_vrchat_chatbox(f"当前强度 A:{data.a} B:{data.b}")
 
             # 接收 App 反馈按钮
             elif isinstance(data, FeedbackButton):
-                print(f"App 触发了反馈按钮：{data.name}")
+                logger.info(f"App 触发了反馈按钮：{data.name}")
 
                 if data == FeedbackButton.A1:
                     # 降低强度
-                    print("对方按下了 A 通道圆圈按钮，减小力度")
+                    logger.info("对方按下了 A 通道圆圈按钮，减小力度")
                     if controller.last_strength:
                         await client.set_strength(
                             Channel.A,
@@ -98,7 +97,7 @@ async def DGLab_Server():
                         )
                 elif data == FeedbackButton.A2:
                     # 设置强度到 A 通道上限
-                    print("对方按下了 A 通道三角按钮，加大力度")
+                    logger.info("对方按下了 A 通道三角按钮，加大力度")
                     if controller.last_strength:
                         await client.set_strength(
                             Channel.A,
@@ -108,9 +107,9 @@ async def DGLab_Server():
 
             # 接收 心跳 / App 断开通知
             elif data == RetCode.CLIENT_DISCONNECTED:
-                print("App 已断开连接，你可以尝试重新扫码进行连接绑定")
+                logger.info("App 已断开连接，你可以尝试重新扫码进行连接绑定")
                 await client.rebind()
-                print("重新绑定成功")
+                logger.info("重新绑定成功")
 
         osc_transport.close()
 
