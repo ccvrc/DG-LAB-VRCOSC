@@ -18,7 +18,7 @@ class DGLabController:
         初始化 DGLabController 实例
         :param client: DGLabWSServer 的客户端实例
         :param osc_client: 用于发送 OSC 回复的客户端实例
-        :param is_dynamic_bone_mode 强度控制模式，目前设定两种不能同时启用，交互模式通过动骨和Contact控制输出强度，此时禁用面板的强度控制操作
+        :param is_dynamic_bone_mode 强度控制模式，交互模式通过动骨和Contact控制输出强度，非动骨交互模式下仅可通过按键控制输出
         """
         self.client = client
         self.osc_client = osc_client
@@ -28,9 +28,10 @@ class DGLabController:
         self.is_dynamic_bone_mode_b = False  # Default mode for Channel B
         self.pulse_mode_a = 0  # pulse mode for Channel A
         self.pulse_mode_b = 0  # pulse mode for Channel B
+        self.current_select_channel = Channel.A  # 通道选择, 默认为 A
         self.current_strength_step = 30  # 一键开火默认强度
         self.enable_chatbox_status = 1  # ChatBox 发送状态
-        self.previous_chatbox_status = 1  # ChatBox 状态记录, 用于关闭 ChatBox 后的内容清除
+        self.previous_chatbox_status = 1  # ChatBox 状态记录, 关闭 ChatBox 后进行内容清除
         # dynamic_bone 模式下的最终设定输出，随时间自动回落，总是更新为当前支持参数中的最大值
         self.final_strength_a = 0.0
         self.final_strength_b = 0.0
@@ -38,6 +39,7 @@ class DGLabController:
         self.send_status_task = asyncio.create_task(self.periodic_status_update())  # 启动ChatBox发送任务
         self.send_pulse_task = asyncio.create_task(self.periodic_send_pulse_data())  # 启动设定波形发送任务
         self.dynamic_bone_mode_output_task = asyncio.create_task(self.periodic_decrease_output())  # 启动设定波形发送任务
+        #TODO: 增加状态消息OSC发送, 比使用 ChatBox 反馈更快
 
     async def periodic_status_update(self):
         """
@@ -206,9 +208,8 @@ class DGLabController:
         if value > 0.0:
             self.current_strength_step = math.ceil(self.map_value(value, 0, 100))  # 向上取整
             logger.info(f"current strength step: {self.current_strength_step}")
-            # self.current_strength_step = self.map_value(value, self.last_strength.a_limit, self.last_strength.b_limit)
 
-    async def handle_osc_message(self, address, *args):
+    async def handle_osc_message_pad(self, address, *args):
         """
         处理 OSC 消息
         1. Bool: Bool 类型变量触发时，VRC 会先后发送 True 与 False, 回调中仅处理 True
@@ -220,28 +221,15 @@ class DGLabController:
         # Parameters Debug
         logger.debug(f"Received OSC message on {address} with arguments {args}")
 
-        # Float 参数映射为强度数值
-        # Note: 好像没有下限设置，那就默认为上限的 40% 吧
-        if address == "/avatar/parameters/DG-LAB/UpperLeg_R":
-            await self.set_float_output(args[0], Channel.A)
-        elif address == "/avatar/parameters/DG-LAB/UpperLeg_L":
-            await self.set_float_output(args[0], Channel.A)
-        elif address == "/avatar/parameters/Tail_Stretch":
-            await self.set_float_output(args[0], Channel.A)
-
-        # A 通道按键功能
-        elif address == "/avatar/parameters/SoundPad/Button/1":
+        #按键功能
+        if address == "/avatar/parameters/SoundPad/Button/1":
             await self.set_mode(args[0], Channel.A)
-
         elif address == "/avatar/parameters/SoundPad/Button/2":
             await self.reset_strength(args[0], Channel.A)
-
         elif address == "/avatar/parameters/SoundPad/Button/3":
             await self.decrease_strength(args[0], Channel.A)
-
         elif address == "/avatar/parameters/SoundPad/Button/4":
             await self.increase_strength(args[0], Channel.A)
-
         elif address == "/avatar/parameters/SoundPad/Button/5":
             await self.strength_fire_mode(args[0], Channel.A)
 
@@ -271,8 +259,32 @@ class DGLabController:
             await self.set_pulse_data(args[0], Channel.A, 1)
 
         # 数值调节
-        elif address == "/avatar/parameters/SoundPad/Volume":
+        elif address == "/avatar/parameters/SoundPad/Volume": # Float
             await self.set_strength_step(args[0])
+        # 通道调节
+        elif address == "/avatar/parameters/SoundPad/Page": # INT
+            await self.set_strength_step(args[0])
+
+    async def handle_osc_message_pb(self, address, *args):
+        """
+        处理 OSC 消息
+        1. Bool: Bool 类型变量触发时，VRC 会先后发送 True 与 False, 回调中仅处理 True
+        2. Float: -1.0 to 1.0， 但对于 Contact 与  Physbones 来说范围为 0.0-1.0
+
+        TODO: 两种控制模式的兼容？
+        应该修改为，通过所有 OSC 参数按当前设定计算好对应通道输出后，再进行发送（触控板可覆盖交互式的输出值？）
+        """
+        # Parameters Debug
+        logger.debug(f"Received OSC message on {address} with arguments {args}")
+
+        # Float 参数映射为强度数值
+        # Note: 好像没有下限设置，那就默认为上限的 40% 吧
+        if address == "/avatar/parameters/DG-LAB/UpperLeg_R":
+            await self.set_float_output(args[0], Channel.A)
+        elif address == "/avatar/parameters/DG-LAB/UpperLeg_L":
+            await self.set_float_output(args[0], Channel.A)
+        elif address == "/avatar/parameters/Tail_Stretch":
+            await self.set_float_output(args[0], Channel.A)
 
     def map_value(self, value, min_value, max_value):
         """

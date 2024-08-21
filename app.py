@@ -8,7 +8,6 @@ logger = logging.getLogger(__name__)
 
 import asyncio
 import io
-from traceback import print_tb, print_list
 
 import qrcode
 from pydglab_ws import StrengthData, FeedbackButton, Channel, StrengthOperationType, RetCode, DGLabWSServer
@@ -27,12 +26,15 @@ def print_qrcode(data: str):
     print(f.read())
 
 
-def handle_osc_message_sync(address, list_object, *args):
+def handle_osc_message_task_pad(address, list_object, *args):
     """
-    将异步处理包装为同步调用，以便在 dispatcher 中使用
+    将异步处理包装为同步调用，以便在 dispatcher 中使用. 实际就是创建新协程？
     TODO: 待优化?
     """
-    asyncio.create_task(list_object[0].handle_osc_message(address, *args))
+    asyncio.create_task(list_object[0].handle_osc_message_pad(address, *args))
+
+def handle_osc_message_task_pb(address, list_object, *args):
+    asyncio.create_task(list_object[0].handle_osc_message_pb(address, *args))
 
 def some_function():
     logger.info("这是一个信息日志")
@@ -54,11 +56,12 @@ async def DGLab_Server():
         controller = DGLabController(client, osc_client)
         # 注册需要进行处理的 OSC 参数，绑定回调
         disp = dispatcher.Dispatcher()
-        disp.map("/avatar/parameters/SoundPad/Button/*", handle_osc_message_sync, controller)  # 匹配所有按键操作
-        disp.map("/avatar/parameters/SoundPad/Volume", handle_osc_message_sync, controller)  # 强度调节步进值
+        disp.map("/avatar/parameters/SoundPad/Button/*", handle_osc_message_task_pad, controller)  # 匹配所有按键操作
+        disp.map("/avatar/parameters/SoundPad/Volume", handle_osc_message_task_pad, controller)    # 原音量设置 -> 强度调节步进值
+        disp.map("/avatar/parameters/SoundPad/Page", handle_osc_message_task_pad, controller)      # 原页面设置 -> 通道设置
         # TODO: 未开启动骨或 Contact 时，detach 这部分 OSC 地址？
-        disp.map("/avatar/parameters/DG-LAB/*", handle_osc_message_sync, controller)  # 自定义参数
-        disp.map("/avatar/parameters/Tail_Stretch", handle_osc_message_sync, controller)  # 自定义参数
+        disp.map("/avatar/parameters/DG-LAB/*", handle_osc_message_task_pb, controller)  # 自定义参数 Contact
+        disp.map("/avatar/parameters/Tail_Stretch", handle_osc_message_task_pb, controller)  # 自定义参数 动骨-尾巴
 
         osc_server_instance = osc_server.AsyncIOOSCUDPServer(
             ("0.0.0.0", 9102), disp, asyncio.get_event_loop()
