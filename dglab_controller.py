@@ -39,6 +39,7 @@ class DGLabController:
         self.send_status_task = asyncio.create_task(self.periodic_status_update())  # 启动ChatBox发送任务
         self.send_pulse_task = asyncio.create_task(self.periodic_send_pulse_data())  # 启动设定波形发送任务
         self.dynamic_bone_mode_output_task = asyncio.create_task(self.periodic_decrease_output())  # 启动设定波形发送任务
+        self.button_press_timer = None # 按键按下计时
         #TODO: 增加状态消息OSC发送, 比使用 ChatBox 反馈更快
         # 回报速率设置为 1HZ，Updates every 0.1 to 1 seconds as needed based on parameter changes (1 to 10 updates per second), but you shouldn't rely on it for fast sync.
 
@@ -140,17 +141,32 @@ class DGLabController:
                     self.map_value(self.final_strength_b, self.last_strength.b_limit * 0.4, self.last_strength.b_limit))
                 await self.client.set_strength(channel, StrengthOperationType.SET_TO, final_output_b)
 
+    async def button_press_timer(self):
+        """3秒计时器 计时结束后切换 Chatbox 状态"""
+        await asyncio.sleep(3)
+
+        self.enable_chatbox_status = not self.enable_chatbox_status
+        mode_name = "开启" if self.enable_chatbox_status else "关闭"
+        logger.info("ChatBox显示状态切换为:" + mode_name)
+        # 若关闭 ChatBox, 则立即发送一次空字符串
+        if not self.enable_chatbox_status:
+            self.send_message_to_vrchat_chatbox("")
+        self.button_press_timer = None
+
     async def toggle_chatbox(self, value):
         """
         开关 ChatBox 内容发送
+        TODO: 修改为按键按下 3 秒后触发 enable_chatbox_status 的变更
         """
-        if value:
-            self.enable_chatbox_status = not self.enable_chatbox_status
-            mode_name = "开启" if self.enable_chatbox_status else "关闭"
-            logger.info("ChatBox显示状态切换为:" + mode_name)
-            # 若关闭 ChatBox, 则立即发送一次空字符串
-            if not self.enable_chatbox_status:
-                self.send_message_to_vrchat_chatbox("")
+        if value == 1: # 按下按键
+            if self.button_press_timer is not None:
+                self.button_press_timer.cancel()
+            self.button_press_timer = asyncio.create_task(self.button_press_timer())
+        elif value == 0: #松开按键
+            if self.button_press_timer:
+                self.button_press_timer.cancel()
+                self.button_press_timer = None
+
 
     async def set_mode(self, value, channel):
         """
@@ -236,6 +252,7 @@ class DGLabController:
             await self.set_mode(args[0], self.current_select_channel)
         elif address == "/avatar/parameters/SoundPad/Button/2":
             await self.reset_strength(args[0], self.current_select_channel)
+            await self.toggle_chatbox(args[0])
         elif address == "/avatar/parameters/SoundPad/Button/3":
             await self.decrease_strength(args[0], self.current_select_channel)
         elif address == "/avatar/parameters/SoundPad/Button/4":
@@ -243,12 +260,9 @@ class DGLabController:
         elif address == "/avatar/parameters/SoundPad/Button/5":
             await self.strength_fire_mode(args[0], self.current_select_channel)
 
-        # 其他功能
-        # Chatbox 发送开关
-        elif address == "/avatar/parameters/SoundPad/Button/6":
-            await self.toggle_chatbox(args[0])
-
         # 波形控制
+        elif address == "/avatar/parameters/SoundPad/Button/6":
+            await self.set_pulse_data(args[0], self.current_select_channel, 10)
         elif address == "/avatar/parameters/SoundPad/Button/7":
             await self.set_pulse_data(args[0], self.current_select_channel, 2)
         elif address == "/avatar/parameters/SoundPad/Button/8":
