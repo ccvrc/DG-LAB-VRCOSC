@@ -40,6 +40,7 @@ class DGLabController:
         self.send_pulse_task = asyncio.create_task(self.periodic_send_pulse_data())  # 启动设定波形发送任务
         self.dynamic_bone_mode_output_task = asyncio.create_task(self.periodic_decrease_output())  # 启动设定波形发送任务
         #TODO: 增加状态消息OSC发送, 比使用 ChatBox 反馈更快
+        # 回报速率设置为 1HZ，Updates every 0.1 to 1 seconds as needed based on parameter changes (1 to 10 updates per second), but you shouldn't rely on it for fast sync.
 
     async def periodic_status_update(self):
         """
@@ -213,8 +214,8 @@ class DGLabController:
         """
         选定当前调节对应的通道, 目前 Page 1-2 为 Channel A， Page 3 为 Channel B
         """
-        if value > 0.0:
-            self.current_select_channel = Channel.A if value <= 2 else Channel.B
+        if value >= 0:
+            self.current_select_channel = Channel.A if value <= 1 else Channel.B
             logger.info(f"set activate channel to: {self.current_select_channel}")
 
 
@@ -314,12 +315,13 @@ class DGLabController:
         if self.last_strength:
             mode_name_a = "交互" if self.is_dynamic_bone_mode_a else "面板"
             mode_name_b = "交互" if self.is_dynamic_bone_mode_b else "面板"
+            channel_strength = f"[A]: {self.last_strength.a} B: {self.last_strength.b}" if self.current_select_channel == Channel.A else f"A: {self.last_strength.a} [B]: {self.last_strength.b}"
             self.send_message_to_vrchat_chatbox(
                 f"MAX A: {self.last_strength.a_limit} B: {self.last_strength.b_limit}\n"
                 f"Mode A: {mode_name_a} B: {mode_name_b} \n"
                 f"Pulse A: {PULSE_NAME[self.pulse_mode_a]} B: {self.pulse_mode_b} \n"
                 f"Fire Step: {self.current_strength_step}\n"
-                f"Current A: {self.last_strength.a} B: {self.last_strength.b}"
+                f"Current: {channel_strength} \n"
             )
         else:
             self.send_message_to_vrchat_chatbox("未连接")
