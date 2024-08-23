@@ -141,9 +141,9 @@ class DGLabController:
                     self.map_value(self.final_strength_b, self.last_strength.b_limit * 0.4, self.last_strength.b_limit))
                 await self.client.set_strength(channel, StrengthOperationType.SET_TO, final_output_b)
 
-    async def button_press_timer(self):
-        """3秒计时器 计时结束后切换 Chatbox 状态"""
-        await asyncio.sleep(3)
+    async def button_press_timer_task(self):
+        """1秒计时器 计时结束后切换 Chatbox 状态"""
+        await asyncio.sleep(1)
 
         self.enable_chatbox_status = not self.enable_chatbox_status
         mode_name = "开启" if self.enable_chatbox_status else "关闭"
@@ -161,7 +161,7 @@ class DGLabController:
         if value == 1: # 按下按键
             if self.button_press_timer is not None:
                 self.button_press_timer.cancel()
-            self.button_press_timer = asyncio.create_task(self.button_press_timer())
+            self.button_press_timer = asyncio.create_task(self.button_press_timer_task())
         elif value == 0: #松开按键
             if self.button_press_timer:
                 self.button_press_timer.cancel()
@@ -252,7 +252,6 @@ class DGLabController:
             await self.set_mode(args[0], self.current_select_channel)
         elif address == "/avatar/parameters/SoundPad/Button/2":
             await self.reset_strength(args[0], self.current_select_channel)
-            await self.toggle_chatbox(args[0])
         elif address == "/avatar/parameters/SoundPad/Button/3":
             await self.decrease_strength(args[0], self.current_select_channel)
         elif address == "/avatar/parameters/SoundPad/Button/4":
@@ -260,9 +259,10 @@ class DGLabController:
         elif address == "/avatar/parameters/SoundPad/Button/5":
             await self.strength_fire_mode(args[0], self.current_select_channel)
 
+        # ChatBox 开关控制
+        elif address == "/avatar/parameters/SoundPad/Button/6":#
+            await self.toggle_chatbox(args[0])
         # 波形控制
-        elif address == "/avatar/parameters/SoundPad/Button/6":
-            await self.set_pulse_data(args[0], self.current_select_channel, 10)
         elif address == "/avatar/parameters/SoundPad/Button/7":
             await self.set_pulse_data(args[0], self.current_select_channel, 2)
         elif address == "/avatar/parameters/SoundPad/Button/8":
