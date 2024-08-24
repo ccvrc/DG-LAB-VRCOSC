@@ -8,17 +8,14 @@ logger = logging.getLogger(__name__)
 
 import asyncio
 import io
-
-import socket
 import webbrowser
 import os
-from PIL import Image
-
 import qrcode
+from PIL import Image
 from pydglab_ws import StrengthData, FeedbackButton, Channel, StrengthOperationType, RetCode, DGLabWSServer
 from pythonosc import dispatcher, osc_server, udp_client
-
 from dglab_controller import DGLabController
+from config import get_settings
 
 
 def print_qrcode(data: str):
@@ -56,69 +53,37 @@ def some_function():
     logger.warning("这是一个警告日志")
     logger.error("这是一个错误日志")
 
-def get_local_ip():
-    # 获取本地计算机的主机名
-    hostname = socket.gethostname()
-    print(hostname)
-    # 获取主机名对应的 IP 地址
-    ip_address = socket.gethostbyname(hostname)
-    print(ip_address)
-    return ip_address
-
-
-def read_ip_from_file(filename):
-    """ 从文件中读取 IP 地址 """
-    if not os.path.isfile(filename):
-        return None
-    
-    with open(filename, 'r') as file:
-        ip = file.read().strip()  # 读取文件内容并去除首尾空白字符
-        return ip if ip else None
-
 
 async def DGLab_Server():
+    settings = get_settings()
+    local_ip = settings['ip']
+    osc_port = settings['port']
+
     async with DGLabWSServer("0.0.0.0", 5678, 60) as server:
-        # 文件名
-        filename = 'ip.txt'
-        # 尝试从文件中读取 IP 地址
-        ip_from_file = read_ip_from_file(filename)
-        # 如果文件中没有 IP 地址，则获取本地计算机的 IP 地址
-        if ip_from_file:
-            local_ip = ip_from_file
-        else:
-            local_ip = get_local_ip()
-        # 替换为当前电脑的实际局域网 IP
         ipurl = f"ws://{local_ip}:5678"
         print(ipurl)
         client = server.new_local_client()
-        url = client.get_qrcode(ipurl)  # 修改为当前电脑的实际局域网 IP，注意 PyCharm 开启时需要允许本地网络访问
+        url = client.get_qrcode(ipurl)
         print("请用 DG-Lab App 扫描二维码以连接")
-        # 建议终端设置字体 Consolas Size13 行高 0.8
         print_qrcode(url)
-        # OSC 客户端用于发送回复
-        osc_client = udp_client.SimpleUDPClient("127.0.0.1", 9000)  # 修改为接收 OSC 回复的目标 IP 和端口, 9000 为 VRChat 默认 OSC 传入接口
+        
+        osc_client = udp_client.SimpleUDPClient("127.0.0.1", 9000)
 
-        # OSC 服务器配置
         controller = DGLabController(client, osc_client)
-        # 注册需要进行处理的 OSC 参数，绑定回调
         disp = dispatcher.Dispatcher()
-        disp.map("/avatar/parameters/SoundPad/Button/*", handle_osc_message_task_pad, controller)  # 匹配所有按键操作
-        disp.map("/avatar/parameters/SoundPad/Volume", handle_osc_message_task_pad, controller)    # 原音量设置 -> 强度调节步进值
-        disp.map("/avatar/parameters/SoundPad/Page", handle_osc_message_task_pad, controller)      # 原页面设置 -> 通道设置
-        # TODO: 未开启动骨或 Contact 时，detach 这部分 OSC 地址？
-        disp.map("/avatar/parameters/DG-LAB/*", handle_osc_message_task_pb, controller)  # 自定义参数 Contact
-        disp.map("/avatar/parameters/Tail_Stretch", handle_osc_message_task_pb, controller)  # 自定义参数 动骨-尾巴
+        disp.map("/avatar/parameters/SoundPad/Button/*", handle_osc_message_task_pad, controller)
+        disp.map("/avatar/parameters/SoundPad/Volume", handle_osc_message_task_pad, controller)
+        disp.map("/avatar/parameters/SoundPad/Page", handle_osc_message_task_pad, controller)
+        disp.map("/avatar/parameters/DG-LAB/*", handle_osc_message_task_pb, controller)
+        disp.map("/avatar/parameters/Tail_Stretch", handle_osc_message_task_pb, controller)
 
         osc_server_instance = osc_server.AsyncIOOSCUDPServer(
-            ("0.0.0.0", 9001), disp, asyncio.get_event_loop()
-            # 修改为接收 OSC 回复的端口。9001 为 VRChat 的默认传出接口，为了兼容 VRCFT 面捕，这里通过 OSC Router 转换为 9102
+            ("0.0.0.0", osc_port), disp, asyncio.get_event_loop()
         )
         osc_transport, osc_protocol = await osc_server_instance.create_serve_endpoint()
 
         logger.info("OSC Recv Serving on {}".format(osc_server_instance._server_address))
 
-        # 等待绑定
-        # TODO 避免在客户端未连接时终端输出 OSC 信息
         await client.bind()
         logger.info(f"已与 App {client.target_id} 成功绑定")
 

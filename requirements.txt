@@ -3,3 +3,5 @@ qrcode
 python-osc
 colorlog
 pillow
+pyyaml
+psutil
