@@ -9,6 +9,11 @@ logger = logging.getLogger(__name__)
 import asyncio
 import io
 
+import socket
+import webbrowser
+import os
+from PIL import Image
+
 import qrcode
 from pydglab_ws import StrengthData, FeedbackButton, Channel, StrengthOperationType, RetCode, DGLabWSServer
 from pythonosc import dispatcher, osc_server, udp_client
@@ -17,13 +22,23 @@ from dglab_controller import DGLabController
 
 
 def print_qrcode(data: str):
-    """输出二维码到终端界面"""
-    qr = qrcode.QRCode()
+    """生成二维码图片并用浏览器打开"""
+    # 生成二维码图片
+    qr = qrcode.QRCode(version=1, box_size=10, border=5)
     qr.add_data(data)
-    f = io.StringIO()
-    qr.print_ascii(out=f)
-    f.seek(0)
-    print(f.read())
+    qr.make(fit=True)
+    img = qr.make_image(fill_color="black", back_color="white")
+    
+    # 保存图片
+    img_path = "qrcode.png"
+    img.save(img_path)
+    
+    # 获取图片的绝对路径
+    abs_path = os.path.abspath(img_path)
+    
+    # 用默认浏览器打开图片
+    webbrowser.open('file://' + abs_path)
+
 
 
 def handle_osc_message_task_pad(address, list_object, *args):
@@ -41,14 +56,45 @@ def some_function():
     logger.warning("这是一个警告日志")
     logger.error("这是一个错误日志")
 
+def get_local_ip():
+    # 获取本地计算机的主机名
+    hostname = socket.gethostname()
+    print(hostname)
+    # 获取主机名对应的 IP 地址
+    ip_address = socket.gethostbyname(hostname)
+    print(ip_address)
+    return ip_address
+
+
+def read_ip_from_file(filename):
+    """ 从文件中读取 IP 地址 """
+    if not os.path.isfile(filename):
+        return None
+    
+    with open(filename, 'r') as file:
+        ip = file.read().strip()  # 读取文件内容并去除首尾空白字符
+        return ip if ip else None
+
+
 async def DGLab_Server():
     async with DGLabWSServer("0.0.0.0", 5678, 60) as server:
+        # 文件名
+        filename = 'ip.txt'
+        # 尝试从文件中读取 IP 地址
+        ip_from_file = read_ip_from_file(filename)
+        # 如果文件中没有 IP 地址，则获取本地计算机的 IP 地址
+        if ip_from_file:
+            local_ip = ip_from_file
+        else:
+            local_ip = get_local_ip()
+        # 替换为当前电脑的实际局域网 IP
+        ipurl = f"ws://{local_ip}:5678"
+        print(ipurl)
         client = server.new_local_client()
-        url = client.get_qrcode("ws://192.168.10.219:5678")  # 修改为当前电脑的实际局域网 IP，注意 PyCharm 开启时需要允许本地网络访问
+        url = client.get_qrcode(ipurl)  # 修改为当前电脑的实际局域网 IP，注意 PyCharm 开启时需要允许本地网络访问
         print("请用 DG-Lab App 扫描二维码以连接")
         # 建议终端设置字体 Consolas Size13 行高 0.8
         print_qrcode(url)
-
         # OSC 客户端用于发送回复
         osc_client = udp_client.SimpleUDPClient("127.0.0.1", 9000)  # 修改为接收 OSC 回复的目标 IP 和端口, 9000 为 VRChat 默认 OSC 传入接口
 
@@ -64,7 +110,7 @@ async def DGLab_Server():
         disp.map("/avatar/parameters/Tail_Stretch", handle_osc_message_task_pb, controller)  # 自定义参数 动骨-尾巴
 
         osc_server_instance = osc_server.AsyncIOOSCUDPServer(
-            ("0.0.0.0", 9102), disp, asyncio.get_event_loop()
+            ("0.0.0.0", 9001), disp, asyncio.get_event_loop()
             # 修改为接收 OSC 回复的端口。9001 为 VRChat 的默认传出接口，为了兼容 VRCFT 面捕，这里通过 OSC Router 转换为 9102
         )
         osc_transport, osc_protocol = await osc_server_instance.create_serve_endpoint()

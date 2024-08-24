@@ -50,7 +50,7 @@ coverage.xml
 .hypothesis/
 .pytest_cache/
 cover/
-
+qrcode.png
 # Translations
 *.mo
 *.pot
