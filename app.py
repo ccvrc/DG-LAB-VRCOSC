@@ -76,6 +76,7 @@ async def DGLab_Server():
         disp.map("/avatar/parameters/SoundPad/Button/*", handle_osc_message_task_pad, controller)
         disp.map("/avatar/parameters/SoundPad/Volume", handle_osc_message_task_pad, controller)
         disp.map("/avatar/parameters/SoundPad/Page", handle_osc_message_task_pad, controller)
+        disp.map("/avatar/parameters/SoundPad/PanelControl", handle_osc_message_task_pad, controller)
         # PB/Contact 交互对应的 OSC 地址
         disp.map("/avatar/parameters/DG-LAB/*", handle_osc_message_task_pb, controller)
         disp.map("/avatar/parameters/Tail_Stretch", handle_osc_message_task_pb, controller)

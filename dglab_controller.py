@@ -24,6 +24,7 @@ class DGLabController:
         self.osc_client = osc_client
         self.last_strength = None  # 记录上次的强度值, 从 app更新, 包含 a b a_limit b_limit
         # 功能控制参数
+        self.disable_panel_control = False   # 禁用面板控制功能
         self.is_dynamic_bone_mode_a = False  # Default mode for Channel A
         self.is_dynamic_bone_mode_b = False  # Default mode for Channel B
         self.pulse_mode_a = 0  # pulse mode for Channel A
@@ -34,8 +35,6 @@ class DGLabController:
         self.fire_mode_origin_strength_b = 0
         self.enable_chatbox_status = 1  # ChatBox 发送状态
         self.previous_chatbox_status = 1  # ChatBox 状态记录, 关闭 ChatBox 后进行内容清除
-
-
         # 定时任务
         self.send_status_task = asyncio.create_task(self.periodic_status_update())  # 启动ChatBox发送任务
         self.send_pulse_task = asyncio.create_task(self.periodic_send_pulse_data())  # 启动设定波形发送任务
@@ -204,10 +203,10 @@ class DGLabController:
             if value:
                 if channel == Channel.A:
                     self.fire_mode_origin_strength_a = self.last_strength.a
-                    await self.client.set_strength(channel, StrengthOperationType.SET_TO, self.fire_mode_origin_strength_a + self.fire_mode_strength_step)
+                    await self.client.set_strength(channel, StrengthOperationType.SET_TO, max(self.fire_mode_origin_strength_a + self.fire_mode_strength_step, self.last_strength.a_limit))
                 if channel == Channel.B:
                     self.fire_mode_origin_strength_b = self.last_strength.b
-                    await self.client.set_strength(channel, StrengthOperationType.SET_TO, self.fire_mode_origin_strength_b + self.fire_mode_strength_step)
+                    await self.client.set_strength(channel, StrengthOperationType.SET_TO, max(self.fire_mode_origin_strength_b + self.fire_mode_strength_step, self.last_strength.b_limit))
             else:
                 if channel == Channel.A:
                     await self.client.set_strength(channel, StrengthOperationType.SET_TO,self.fire_mode_origin_strength_a)
@@ -225,11 +224,21 @@ class DGLabController:
 
     async def set_channel(self, value):
         """
+        value: INT
         选定当前调节对应的通道, 目前 Page 1-2 为 Channel A， Page 3 为 Channel B
         """
         if value >= 0:
             self.current_select_channel = Channel.A if value <= 1 else Channel.B
             logger.info(f"set activate channel to: {self.current_select_channel}")
+
+    async def set_panel_control(self, value):
+        """
+        面板控制功能开关，禁用控制后无法通过 OSC 对郊狼进行调整
+        """
+        if value:
+            self.disable_panel_control = not self.disable_panel_control
+            mode_name = "已禁用面板控制" if self.is_dynamic_bone_mode_a else "开启面板控制"
+            logger.info(f": {mode_name}")
 
 
     async def handle_osc_message_pad(self, address, *args):
@@ -240,6 +249,13 @@ class DGLabController:
         """
         # Parameters Debug
         logger.debug(f"Received OSC message on {address} with arguments {args}")
+
+        # 面板控制功能禁用
+        if address == "/avatar/parameters/SoundPad/PanelControl":
+            await self.set_panel_control(args[0])
+        if self.disable_panel_control:
+            logger.info(f"已禁用面板控制功能")
+            return
 
         #按键功能
         if address == "/avatar/parameters/SoundPad/Button/1":
@@ -291,6 +307,9 @@ class DGLabController:
         """
         # Parameters Debug
         logger.debug(f"Received OSC message on {address} with arguments {args}")
+
+        if self.disable_panel_control:
+            return
 
         # Float 参数映射为强度数值
         # Note: 好像没有下限设置，那就默认为上限的 40% 吧
