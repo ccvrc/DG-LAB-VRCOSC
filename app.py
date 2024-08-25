@@ -72,10 +72,11 @@ async def DGLab_Server():
         controller = DGLabController(client, osc_client)
         # 注册需要进行处理的 OSC 参数，绑定回调
         disp = dispatcher.Dispatcher()
+        # 面板控制对应的 OSC 地址
         disp.map("/avatar/parameters/SoundPad/Button/*", handle_osc_message_task_pad, controller)
         disp.map("/avatar/parameters/SoundPad/Volume", handle_osc_message_task_pad, controller)
         disp.map("/avatar/parameters/SoundPad/Page", handle_osc_message_task_pad, controller)
-        # TODO: 未开启动骨或 Contact 时，detach 这部分 OSC 地址？
+        # PB/Contact 交互对应的 OSC 地址
         disp.map("/avatar/parameters/DG-LAB/*", handle_osc_message_task_pb, controller)
         disp.map("/avatar/parameters/Tail_Stretch", handle_osc_message_task_pb, controller)
 
@@ -88,7 +89,6 @@ async def DGLab_Server():
         logger.info("OSC Recv Serving on {}".format(osc_server_instance._server_address))
         
         # 等待绑定
-        # TODO 避免在客户端未连接时终端输出 OSC 信息
         await client.bind()
         logger.info(f"已与 App {client.target_id} 成功绑定")
 

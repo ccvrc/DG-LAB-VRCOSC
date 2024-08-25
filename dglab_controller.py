@@ -32,13 +32,9 @@ class DGLabController:
         self.current_strength_step = 30  # 一键开火默认强度
         self.enable_chatbox_status = 1  # ChatBox 发送状态
         self.previous_chatbox_status = 1  # ChatBox 状态记录, 关闭 ChatBox 后进行内容清除
-        # dynamic_bone 模式下的最终设定输出，随时间自动回落，总是更新为当前支持参数中的最大值
-        self.final_strength_a = 0.0
-        self.final_strength_b = 0.0
         # 定时任务
         self.send_status_task = asyncio.create_task(self.periodic_status_update())  # 启动ChatBox发送任务
         self.send_pulse_task = asyncio.create_task(self.periodic_send_pulse_data())  # 启动设定波形发送任务
-        self.dynamic_bone_mode_output_task = asyncio.create_task(self.periodic_decrease_output())  # 启动设定波形发送任务
         # 按键延迟触发计时
         self.chatbox_toggle_timer = None
         self.set_mode_timer = None
@@ -107,40 +103,18 @@ class DGLabController:
         specific_pulse_data = PULSE_DATA[PULSE_NAME[pulse_index]]
         await self.client.add_pulses(channel, *(specific_pulse_data * 3))  # 发送三份新选中的波形
 
-    async def periodic_decrease_output(self):
-        """
-        每秒输出值降低可选范围的 50%
-        """
-        while True:
-            try:
-                if self.is_dynamic_bone_mode_a:
-                    self.final_strength_a = self.final_strength_a - 0.5
-                else:
-                    self.final_strength_a = 0
-
-                if self.is_dynamic_bone_mode_b:
-                    self.final_strength_b = self.final_strength_b - 0.5
-                else:
-                    self.final_strength_b = 0
-            except Exception as e:
-                logger.error(f"periodic_decrease_output 任务中发生错误: {e}")
-                await asyncio.sleep(5)  # 延迟后重试
-            await asyncio.sleep(1)
-
     async def set_float_output(self, value, channel):
         """
         动骨与碰撞体激活对应通道输出
         """
-        if value > 0.0:
+        if value >= 0.0:
             if channel == Channel.A and self.is_dynamic_bone_mode_a:
-                self.final_strength_a = max(self.final_strength_a, value)
                 final_output_a = math.ceil(
-                    self.map_value(self.final_strength_a, self.last_strength.a_limit * 0.4, self.last_strength.a_limit))
+                    self.map_value(value, self.last_strength.a_limit * 0.2, self.last_strength.a_limit))
                 await self.client.set_strength(channel, StrengthOperationType.SET_TO, final_output_a)
             elif channel == Channel.B and self.is_dynamic_bone_mode_b:
-                self.final_strength_b = max(self.final_strength_b, value)
                 final_output_b = math.ceil(
-                    self.map_value(self.final_strength_b, self.last_strength.b_limit * 0.4, self.last_strength.b_limit))
+                    self.map_value(value, self.last_strength.b_limit * 0.2, self.last_strength.b_limit))
                 await self.client.set_strength(channel, StrengthOperationType.SET_TO, final_output_b)
 
     async def chatbox_toggle_timer_handle(self):
@@ -320,7 +294,7 @@ class DGLabController:
         elif address == "/avatar/parameters/DG-LAB/UpperLeg_L":
             await self.set_float_output(args[0], Channel.A)
         elif address == "/avatar/parameters/Tail_Stretch":
-            await self.set_float_output(args[0], Channel.A)
+            await self.set_float_output(args[0], Channel.B)
 
     def map_value(self, value, min_value, max_value):
         """
