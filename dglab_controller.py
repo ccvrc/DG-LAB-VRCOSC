@@ -29,9 +29,13 @@ class DGLabController:
         self.pulse_mode_a = 0  # pulse mode for Channel A
         self.pulse_mode_b = 0  # pulse mode for Channel B
         self.current_select_channel = Channel.A  # 通道选择, 默认为 A
-        self.current_strength_step = 30  # 一键开火默认强度
+        self.fire_mode_strength_step = 30  # 一键开火默认强度
+        self.fire_mode_origin_strength_a = 0  # 进入一键开火模式前的强度值
+        self.fire_mode_origin_strength_b = 0
         self.enable_chatbox_status = 1  # ChatBox 发送状态
         self.previous_chatbox_status = 1  # ChatBox 状态记录, 关闭 ChatBox 后进行内容清除
+
+
         # 定时任务
         self.send_status_task = asyncio.create_task(self.periodic_status_update())  # 启动ChatBox发送任务
         self.send_pulse_task = asyncio.create_task(self.periodic_send_pulse_data())  # 启动设定波形发送任务
@@ -193,15 +197,22 @@ class DGLabController:
     async def strength_fire_mode(self, value, channel):
         """
         一键开火：
-            按下后设置为当前的强度上限
-            松开后将强度调整为上限 减去当前 FireMode 步进值
+            按下后设置为当前通道强度值 +30
+            松开后恢复为通道进入前的强度
         """
         if self.last_strength:
-            channel_limit_max = self.last_strength.a_limit if channel == Channel.A else self.last_strength.b_limit
-            if value:  # 按键按下时设置为当前强度上限
-                await self.client.set_strength(channel, StrengthOperationType.SET_TO, channel_limit_max)
-            else:     # 按键松开恢复至 上限减去current_strength_step
-                await self.client.set_strength(channel, StrengthOperationType.SET_TO, max(0, channel_limit_max - self.current_strength_step))
+            if value:
+                if channel == Channel.A:
+                    self.fire_mode_origin_strength_a = self.last_strength.a
+                    await self.client.set_strength(channel, StrengthOperationType.SET_TO, self.fire_mode_origin_strength_a + self.fire_mode_strength_step)
+                if channel == Channel.B:
+                    self.fire_mode_origin_strength_b = self.last_strength.b
+                    await self.client.set_strength(channel, StrengthOperationType.SET_TO, self.fire_mode_origin_strength_b + self.fire_mode_strength_step)
+            else:
+                if channel == Channel.A:
+                    await self.client.set_strength(channel, StrengthOperationType.SET_TO,self.fire_mode_origin_strength_a)
+                if channel == Channel.B:
+                    await self.client.set_strength(channel, StrengthOperationType.SET_TO,self.fire_mode_origin_strength_b)
 
 
     async def set_strength_step(self, value):
@@ -209,8 +220,8 @@ class DGLabController:
         开关 ChatBox 内容发送
         """
         if value > 0.0:
-            self.current_strength_step = math.ceil(self.map_value(value, 0, 100))  # 向上取整
-            logger.info(f"current strength step: {self.current_strength_step}")
+            self.fire_mode_strength_step = math.ceil(self.map_value(value, 0, 100))  # 向上取整
+            logger.info(f"current strength step: {self.fire_mode_strength_step}")
 
     async def set_channel(self, value):
         """
@@ -226,9 +237,6 @@ class DGLabController:
         处理 OSC 消息
         1. Bool: Bool 类型变量触发时，VRC 会先后发送 True 与 False, 回调中仅处理 True
         2. Float: -1.0 to 1.0， 但对于 Contact 与  Physbones 来说范围为 0.0-1.0
-
-        TODO: 两种控制模式的兼容？
-        应该修改为，通过所有 OSC 参数按当前设定计算好对应通道输出后，再进行发送（触控板可覆盖交互式的输出值？）
         """
         # Parameters Debug
         logger.debug(f"Received OSC message on {address} with arguments {args}")
@@ -280,9 +288,6 @@ class DGLabController:
         处理 OSC 消息
         1. Bool: Bool 类型变量触发时，VRC 会先后发送 True 与 False, 回调中仅处理 True
         2. Float: -1.0 to 1.0， 但对于 Contact 与  Physbones 来说范围为 0.0-1.0
-
-        TODO: 两种控制模式的兼容？
-        应该修改为，通过所有 OSC 参数按当前设定计算好对应通道输出后，再进行发送（触控板可覆盖交互式的输出值？）
         """
         # Parameters Debug
         logger.debug(f"Received OSC message on {address} with arguments {args}")
@@ -320,7 +325,7 @@ class DGLabController:
                 f"MAX A: {self.last_strength.a_limit} B: {self.last_strength.b_limit}\n"
                 f"Mode A: {mode_name_a} B: {mode_name_b} \n"
                 f"Pulse A: {PULSE_NAME[self.pulse_mode_a]} B: {self.pulse_mode_b} \n"
-                f"Fire Step: {self.current_strength_step}\n"
+                f"Fire Step: {self.fire_mode_strength_step}\n"
                 f"Current: {channel_strength} \n"
             )
         else:
