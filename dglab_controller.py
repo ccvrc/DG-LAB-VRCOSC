@@ -203,10 +203,10 @@ class DGLabController:
             if value:
                 if channel == Channel.A:
                     self.fire_mode_origin_strength_a = self.last_strength.a
-                    await self.client.set_strength(channel, StrengthOperationType.SET_TO, max(self.fire_mode_origin_strength_a + self.fire_mode_strength_step, self.last_strength.a_limit))
+                    await self.client.set_strength(channel, StrengthOperationType.SET_TO, min(self.fire_mode_origin_strength_a + self.fire_mode_strength_step, self.last_strength.a_limit))
                 if channel == Channel.B:
                     self.fire_mode_origin_strength_b = self.last_strength.b
-                    await self.client.set_strength(channel, StrengthOperationType.SET_TO, max(self.fire_mode_origin_strength_b + self.fire_mode_strength_step, self.last_strength.b_limit))
+                    await self.client.set_strength(channel, StrengthOperationType.SET_TO, min(self.fire_mode_origin_strength_b + self.fire_mode_strength_step, self.last_strength.b_limit))
             else:
                 if channel == Channel.A:
                     await self.client.set_strength(channel, StrengthOperationType.SET_TO,self.fire_mode_origin_strength_a)
