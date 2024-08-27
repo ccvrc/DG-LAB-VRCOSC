@@ -47,7 +47,7 @@ jobs:
 
     - name: Build with PyInstaller
       run: |
-        pyinstaller -F -i cat.ico app.py
+        pyinstaller -F -i docs/images/cat.ico app.py
       shell: pwsh
 
     - name: Upload artifact

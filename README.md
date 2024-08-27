@@ -3,4 +3,6 @@ https://dour-mint-b4d.notion.site/DG-LAB-VRCOSC-PY-432412cbb5054c61baf18fa2a2444
 
 Main: app.py
 
-打包exe: Pyinstaller -F -i cat.ico app.py
+打包exe: Pyinstaller -F -i docs/images/cat.ico app.py
+
+![dg-lab-start](docs/images/dg-lab-start.jpg)
