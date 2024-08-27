@@ -128,8 +128,10 @@ async def DGLab_Server():
             # 接收 心跳 / App 断开通知
             elif data == RetCode.CLIENT_DISCONNECTED:
                 logger.info("App 已断开连接，你可以尝试重新扫码进行连接绑定")
+                controller.app_status_online = False
                 await client.rebind()
                 logger.info("重新绑定成功")
+                controller.app_status_online = True
 
         osc_transport.close()
 
