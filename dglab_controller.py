@@ -206,7 +206,7 @@ class DGLabController:
         """
         logger.info(f"Trigger FireMode: {value}")
 
-        await asyncio.sleep(0.1)
+        await asyncio.sleep(0.01)
 
         # 如果是开始开火并且已经在进行中，直接跳过
         if value and self.fire_mode_active:
