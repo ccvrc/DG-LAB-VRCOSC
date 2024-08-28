@@ -100,6 +100,7 @@ async def DGLab_Server():
             if isinstance(data, StrengthData):
                 logger.info(f"从 App 收到通道强度数据更新：{data}")
                 controller.last_strength = data
+                controller.data_updated_event.set() # 数据更新，触发开火操作的后续事件
                 # controller.send_message_to_vrchat_chatbox(f"当前强度 A:{data.a} B:{data.b}")
 
             # 接收 App 反馈按钮

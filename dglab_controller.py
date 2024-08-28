@@ -31,7 +31,10 @@ class DGLabController:
         self.pulse_mode_a = 0  # pulse mode for Channel A
         self.pulse_mode_b = 0  # pulse mode for Channel B
         self.current_select_channel = Channel.A  # 通道选择, 默认为 A
-        self.fire_mode_strength_step = 30  # 一键开火默认强度
+        self.fire_mode_strength_step = 30    # 一键开火默认强度
+        self.fire_mode_active = False  # 标记当前是否在进行开火操作
+        self.fire_mode_lock = asyncio.Lock()  # 一键开火模式锁
+        self.data_updated_event = asyncio.Event()  # 数据更新事件
         self.fire_mode_origin_strength_a = 0  # 进入一键开火模式前的强度值
         self.fire_mode_origin_strength_b = 0
         self.enable_chatbox_status = 1  # ChatBox 发送状态
@@ -197,23 +200,56 @@ class DGLabController:
     async def strength_fire_mode(self, value, channel):
         """
         一键开火：
-            按下后设置为当前通道强度值 +30
+            按下后设置为当前通道强度值 +fire_mode_strength_step
             松开后恢复为通道进入前的强度
+        TODO: 修复连点开火按键导致输出持续上升的问题
         """
-        if self.last_strength:
+        logger.info(f"Trigger FireMode: {value}")
+
+        await asyncio.sleep(0.1)
+
+        # 如果是开始开火并且已经在进行中，直接跳过
+        if value and self.fire_mode_active:
+            print("已有开火操作在进行中，跳过本次开始请求")
+            return
+        # 如果是结束开火并且当前没有进行中的开火操作，跳过
+        if not value and not self.fire_mode_active:
+            print("没有进行中的开火操作，跳过本次结束请求")
+            return
+
+        async with self.fire_mode_lock:
             if value:
-                if channel == Channel.A:
-                    self.fire_mode_origin_strength_a = self.last_strength.a
-                    await self.client.set_strength(channel, StrengthOperationType.SET_TO, min(self.fire_mode_origin_strength_a + self.fire_mode_strength_step, self.last_strength.a_limit))
-                if channel == Channel.B:
-                    self.fire_mode_origin_strength_b = self.last_strength.b
-                    await self.client.set_strength(channel, StrengthOperationType.SET_TO, min(self.fire_mode_origin_strength_b + self.fire_mode_strength_step, self.last_strength.b_limit))
+                # 开始 fire mode
+                self.fire_mode_active = True
+                logger.debug(f"FIRE START {self.last_strength}")
+                if self.last_strength:
+                    if channel == Channel.A:
+                        self.fire_mode_origin_strength_a = self.last_strength.a
+                        await self.client.set_strength(
+                            channel,
+                            StrengthOperationType.SET_TO,
+                            min(self.fire_mode_origin_strength_a + self.fire_mode_strength_step, self.last_strength.a_limit)
+                        )
+                    elif channel == Channel.B:
+                        self.fire_mode_origin_strength_b = self.last_strength.b
+                        await self.client.set_strength(
+                            channel,
+                            StrengthOperationType.SET_TO,
+                            min(self.fire_mode_origin_strength_b + self.fire_mode_strength_step, self.last_strength.b_limit)
+                        )
+                self.data_updated_event.clear()
+                await self.data_updated_event.wait()
             else:
                 if channel == Channel.A:
-                    await self.client.set_strength(channel, StrengthOperationType.SET_TO,self.fire_mode_origin_strength_a)
-                if channel == Channel.B:
-                    await self.client.set_strength(channel, StrengthOperationType.SET_TO,self.fire_mode_origin_strength_b)
-
+                    await self.client.set_strength(channel, StrengthOperationType.SET_TO, self.fire_mode_origin_strength_a)
+                elif channel == Channel.B:
+                    await self.client.set_strength(channel, StrengthOperationType.SET_TO, self.fire_mode_origin_strength_b)
+                # 等待数据更新
+                self.data_updated_event.clear()  # 清除事件状态
+                await self.data_updated_event.wait()  # 等待下次数据更新
+                # 结束 fire mode
+                logger.debug(f"FIRE END {self.last_strength}")
+                self.fire_mode_active = False
 
     async def set_strength_step(self, value):
         """
