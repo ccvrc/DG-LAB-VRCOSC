@@ -25,7 +25,7 @@ class DGLabController:
         self.last_strength = None  # 记录上次的强度值, 从 app更新, 包含 a b a_limit b_limit
         self.app_status_online = True  # App 端在线情况
         # 功能控制参数
-        self.disable_panel_control = False   # 禁用面板控制功能
+        self.enable_panel_control = True   # 禁用面板控制功能
         self.is_dynamic_bone_mode_a = False  # Default mode for Channel A
         self.is_dynamic_bone_mode_b = False  # Default mode for Channel B
         self.pulse_mode_a = 0  # pulse mode for Channel A
@@ -272,10 +272,12 @@ class DGLabController:
         """
         面板控制功能开关，禁用控制后无法通过 OSC 对郊狼进行调整
         """
-        if value:
-            self.disable_panel_control = not self.disable_panel_control
-            mode_name = "已禁用面板控制" if self.is_dynamic_bone_mode_a else "开启面板控制"
-            logger.info(f": {mode_name}")
+        if value > 0:
+            self.enable_panel_control = True
+        else:
+            self.enable_panel_control = False
+        mode_name = "开启面板控制" if self.enable_panel_control else "已禁用面板控制"
+        logger.info(f": {mode_name}")
 
 
     async def handle_osc_message_pad(self, address, *args):
@@ -290,7 +292,7 @@ class DGLabController:
         # 面板控制功能禁用
         if address == "/avatar/parameters/SoundPad/PanelControl":
             await self.set_panel_control(args[0])
-        if self.disable_panel_control:
+        if not self.enable_panel_control:
             logger.info(f"已禁用面板控制功能")
             return
 
@@ -345,7 +347,7 @@ class DGLabController:
         # Parameters Debug
         logger.debug(f"Received OSC message on {address} with arguments {args}")
 
-        if self.disable_panel_control:
+        if not self.enable_panel_control:
             return
 
         # Float 参数映射为强度数值
