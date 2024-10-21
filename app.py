@@ -3,14 +3,18 @@ import asyncio
 import io
 import qrcode
 import logging
-from PySide6.QtWidgets import QApplication, QMainWindow, QLabel, QVBoxLayout, QWidget, QPushButton, QComboBox, QSpinBox, QFormLayout, QGroupBox, QTextEdit
+from PySide6.QtWidgets import (QApplication, QMainWindow, QLabel, QVBoxLayout, QWidget,
+                               QPushButton, QComboBox, QSpinBox, QFormLayout, QGroupBox,
+                               QTextEdit, QCheckBox)
 from PySide6.QtGui import QPixmap
 from PySide6.QtCore import QByteArray
 from qasync import QEventLoop
 from pydglab_ws import StrengthData, FeedbackButton, Channel, StrengthOperationType, RetCode, DGLabWSServer
-from dglab_controller import DGLabController
 from config import get_active_ip_addresses
 from pythonosc import dispatcher, osc_server, udp_client
+
+from dglab_controller import DGLabController
+from pulse_data import PULSE_NAME
 
 # 配置日志记录器
 logging.basicConfig(level=logging.INFO)
@@ -75,10 +79,37 @@ class MainWindow(QMainWindow):
         self.controller_group = QGroupBox("DGLabController 参数")
         self.controller_form = QFormLayout()
 
+        # 强度步长
         self.strength_step_spinbox = QSpinBox()
         self.strength_step_spinbox.setRange(0, 100)
         self.strength_step_spinbox.setValue(30)
         self.controller_form.addRow("强度步长:", self.strength_step_spinbox)
+
+        # 是否启用面板控制
+        self.enable_panel_control_checkbox = QCheckBox("启用面板控制")
+        self.enable_panel_control_checkbox.setChecked(True)
+        self.controller_form.addRow(self.enable_panel_control_checkbox)
+
+        # 动骨模式选择
+        self.dynamic_bone_mode_a_checkbox = QCheckBox("A通道动骨模式")
+        self.dynamic_bone_mode_b_checkbox = QCheckBox("B通道动骨模式")
+        self.controller_form.addRow(self.dynamic_bone_mode_a_checkbox)
+        self.controller_form.addRow(self.dynamic_bone_mode_b_checkbox)
+
+        # 波形模式选择
+        self.pulse_mode_a_combobox = QComboBox()
+        self.pulse_mode_b_combobox = QComboBox()
+        for pulse_name in PULSE_NAME:
+            self.pulse_mode_a_combobox.addItem(pulse_name)
+            self.pulse_mode_b_combobox.addItem(pulse_name)
+        self.controller_form.addRow("A通道波形模式:", self.pulse_mode_a_combobox)
+        self.controller_form.addRow("B通道波形模式:", self.pulse_mode_b_combobox)
+
+        # ChatBox状态开关
+        self.enable_chatbox_status_checkbox = QCheckBox("启用ChatBox状态")
+        self.enable_chatbox_status_checkbox.setChecked(True)
+        self.controller_form.addRow(self.enable_chatbox_status_checkbox)
+
         self.controller_group.setLayout(self.controller_form)
         self.layout.addWidget(self.controller_group)
 
@@ -122,7 +153,25 @@ class MainWindow(QMainWindow):
         selected_port = self.port_spinbox.value()
         osc_port = self.osc_port_spinbox.value()
         logger.info(f"正在启动 WebSocket 服务器，监听地址: {selected_ip}:{selected_port} 和 OSC 数据接收端口: {osc_port}")
-        asyncio.ensure_future(run_server(self, selected_ip, selected_port, osc_port))
+        try:
+            loop = asyncio.get_running_loop()
+            loop.create_task(run_server(self, selected_ip, selected_port, osc_port))
+            logger.info('WebSocket 服务器已启动')
+        except Exception as e:
+            logger.error(f'启动服务器失败: {e}')
+        self.bind_controller_settings()
+
+    def bind_controller_settings(self):
+        """将GUI设置与DGLabController变量绑定"""
+        if self.controller:
+            self.controller.fire_mode_strength_step = self.strength_step_spinbox.value()
+            self.controller.enable_panel_control = self.enable_panel_control_checkbox.isChecked()
+            self.controller.is_dynamic_bone_mode_a = self.dynamic_bone_mode_a_checkbox.isChecked()
+            self.controller.is_dynamic_bone_mode_b = self.dynamic_bone_mode_b_checkbox.isChecked()
+            self.controller.pulse_mode_a = self.pulse_mode_a_combobox.currentIndex()
+            self.controller.pulse_mode_b = self.pulse_mode_b_combobox.currentIndex()
+            self.controller.enable_chatbox_status = self.enable_chatbox_status_checkbox.isChecked()
+
 
 
 def generate_qrcode(data: str):
@@ -141,8 +190,10 @@ def generate_qrcode(data: str):
 
     return qimage
 
+
 def handle_osc_message_task_pad(address, list_object, *args):
     asyncio.create_task(list_object[0].handle_osc_message_pad(address, *args))
+
 
 def handle_osc_message_task_pb(address, list_object, *args):
     asyncio.create_task(list_object[0].handle_osc_message_pb(address, *args))
@@ -186,6 +237,8 @@ async def run_server(window: MainWindow, ip: str, port: int, osc_port: int):
         async for data in client.data_generator():
             if isinstance(data, StrengthData):
                 window.update_status(data, controller.pulse_mode_a, controller.pulse_mode_b)
+                controller.last_strength = data
+                controller.data_updated_event.set()  # 数据更新，触发开火操作的后续事件
                 logger.info(f"接收到数据包 - A通道: {data.a}, B通道: {data.b}")
             # 接收 App 反馈按钮
             elif isinstance(data, FeedbackButton):
