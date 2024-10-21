@@ -3,7 +3,7 @@ import asyncio
 import io
 import qrcode
 import logging
-from PySide6.QtWidgets import (QApplication, QMainWindow, QLabel, QVBoxLayout, QWidget,
+from PySide6.QtWidgets import (QApplication, QMainWindow, QLabel, QVBoxLayout, QHBoxLayout, QWidget,
                                QPushButton, QComboBox, QSpinBox, QFormLayout, QGroupBox,
                                QTextEdit, QCheckBox)
 from PySide6.QtGui import QPixmap
@@ -33,11 +33,14 @@ class QTextEditHandler(logging.Handler):
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("DG-Lab WebSocket Controller")
+        self.setWindowTitle("DG-Lab WebSocket Controller for Misaka")
         self.setGeometry(300, 300, 600, 800)
 
         # 创建主布局
         self.layout = QVBoxLayout()
+
+        # # 创建一个水平布局，用于放置网络配置和二维码
+        self.network_layout = QHBoxLayout()
 
         # 创建网络配置组
         self.network_config_group = QGroupBox("网络配置")
@@ -63,11 +66,16 @@ class MainWindow(QMainWindow):
         self.form_layout.addRow("OSC接收端口:", self.osc_port_spinbox)
 
         self.network_config_group.setLayout(self.form_layout)
-        self.layout.addWidget(self.network_config_group)
+
+        # 将网络配置组添加到水平布局
+        self.network_layout.addWidget(self.network_config_group)
 
         # 二维码显示
         self.qrcode_label = QLabel(self)
-        self.layout.addWidget(self.qrcode_label)
+        self.network_layout.addWidget(self.qrcode_label)
+
+        # 将水平布局添加到主布局
+        self.layout.addLayout(self.network_layout)
 
         # 当前通道强度和波形
         self.strength_label = QLabel("A通道强度: 0, B通道强度: 0")
@@ -86,13 +94,13 @@ class MainWindow(QMainWindow):
         self.controller_form.addRow("强度步长:", self.strength_step_spinbox)
 
         # 是否启用面板控制
-        self.enable_panel_control_checkbox = QCheckBox("启用面板控制")
+        self.enable_panel_control_checkbox = QCheckBox("允许 avatar 控制设备") # PanelControl 关闭后忽略所有游戏内传入的控制
         self.enable_panel_control_checkbox.setChecked(True)
         self.controller_form.addRow(self.enable_panel_control_checkbox)
 
         # 动骨模式选择
-        self.dynamic_bone_mode_a_checkbox = QCheckBox("A通道动骨模式")
-        self.dynamic_bone_mode_b_checkbox = QCheckBox("B通道动骨模式")
+        self.dynamic_bone_mode_a_checkbox = QCheckBox("A通道交互模式")
+        self.dynamic_bone_mode_b_checkbox = QCheckBox("B通道交互模式")
         self.controller_form.addRow(self.dynamic_bone_mode_a_checkbox)
         self.controller_form.addRow(self.dynamic_bone_mode_b_checkbox)
 
@@ -106,7 +114,7 @@ class MainWindow(QMainWindow):
         self.controller_form.addRow("B通道波形模式:", self.pulse_mode_b_combobox)
 
         # ChatBox状态开关
-        self.enable_chatbox_status_checkbox = QCheckBox("启用ChatBox状态")
+        self.enable_chatbox_status_checkbox = QCheckBox("启用ChatBox状态显示")
         self.enable_chatbox_status_checkbox.setChecked(False)
         self.controller_form.addRow(self.enable_chatbox_status_checkbox)
 
@@ -127,6 +135,7 @@ class MainWindow(QMainWindow):
         self.debug_group = QGroupBox("调试信息")
         self.debug_group.setCheckable(True)
         self.debug_group.setChecked(False)  # 默认折叠状态
+        self.debug_group.toggled.connect(self.toggle_debug_info)  # 连接信号槽
 
         self.debug_layout = QVBoxLayout()
         self.debug_label = QLabel("DGLabController 参数:")
@@ -190,6 +199,8 @@ class MainWindow(QMainWindow):
             loop = asyncio.get_running_loop()
             loop.create_task(run_server(self, selected_ip, selected_port, osc_port))
             logger.info('WebSocket 服务器已启动')
+            # 关闭调试界面
+            self.toggle_debug_info(False)
         except Exception as e:
             logger.error(f'启动服务器失败: {e}')
 
@@ -208,6 +219,12 @@ class MainWindow(QMainWindow):
             self.param_label.setText(params)
         else:
             self.param_label.setText("控制器未初始化.")
+
+    def toggle_debug_info(self, checked):
+        """当调试组被启用/禁用时折叠或展开内容"""
+        # 控制调试信息组中所有子组件的可见性，而不是整个调试组
+        for child in self.debug_group.findChildren(QWidget):
+            child.setVisible(checked)
 
     def bind_controller_settings(self):
         """将GUI设置与DGLabController变量绑定"""
@@ -234,6 +251,7 @@ class MainWindow(QMainWindow):
         if self.controller:
             self.controller.enable_panel_control = bool(state)
             logger.info(f"Panel control enabled: {self.controller.enable_panel_control}")
+            self.controller.send_value_to_vrchat("/avatar/parameters/SoundPad/PanelControl", bool(state))
 
     def update_dynamic_bone_mode_a(self, state):
         if self.controller:
