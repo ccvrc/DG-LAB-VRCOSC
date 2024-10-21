@@ -5,3 +5,5 @@ colorlog
 pillow
 pyyaml
 psutil
+PySide6
+qasync

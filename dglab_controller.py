@@ -13,31 +13,33 @@ logger = logging.getLogger(__name__)
 
 
 class DGLabController:
-    def __init__(self, client, osc_client):
+    def __init__(self, client, osc_client, ui_callback=None):
         """
         初始化 DGLabController 实例
         :param client: DGLabWSServer 的客户端实例
         :param osc_client: 用于发送 OSC 回复的客户端实例
         :param is_dynamic_bone_mode 强度控制模式，交互模式通过动骨和Contact控制输出强度，非动骨交互模式下仅可通过按键控制输出
+        此处的默认参数会被 UI 界面的默认参数覆盖
         """
         self.client = client
         self.osc_client = osc_client
+        self.ui_callback = ui_callback
         self.last_strength = None  # 记录上次的强度值, 从 app更新, 包含 a b a_limit b_limit
         self.app_status_online = True  # App 端在线情况
         # 功能控制参数
-        self.enable_panel_control = True   # 禁用面板控制功能
-        self.is_dynamic_bone_mode_a = False  # Default mode for Channel A
-        self.is_dynamic_bone_mode_b = False  # Default mode for Channel B
-        self.pulse_mode_a = 0  # pulse mode for Channel A
-        self.pulse_mode_b = 0  # pulse mode for Channel B
-        self.current_select_channel = Channel.A  # 通道选择, 默认为 A
-        self.fire_mode_strength_step = 30    # 一键开火默认强度
+        self.enable_panel_control = True   # 禁用面板控制功能 (双向)
+        self.is_dynamic_bone_mode_a = False  # Default mode for Channel A (仅程序端)
+        self.is_dynamic_bone_mode_b = False  # Default mode for Channel B (仅程序端)
+        self.pulse_mode_a = 0  # pulse mode for Channel A (双向 - 更新名称)
+        self.pulse_mode_b = 0  # pulse mode for Channel B (双向 - 更新名称)
+        self.current_select_channel = Channel.A  # 游戏内面板控制的通道选择, 默认为 A (双向)
+        self.fire_mode_strength_step = 30    # 一键开火默认强度 (双向)
         self.fire_mode_active = False  # 标记当前是否在进行开火操作
         self.fire_mode_lock = asyncio.Lock()  # 一键开火模式锁
         self.data_updated_event = asyncio.Event()  # 数据更新事件
         self.fire_mode_origin_strength_a = 0  # 进入一键开火模式前的强度值
         self.fire_mode_origin_strength_b = 0
-        self.enable_chatbox_status = 1  # ChatBox 发送状态
+        self.enable_chatbox_status = 1  # ChatBox 发送状态 (双向，游戏内暂无直接开关变量)
         self.previous_chatbox_status = 1  # ChatBox 状态记录, 关闭 ChatBox 后进行内容清除
         # 定时任务
         self.send_status_task = asyncio.create_task(self.periodic_status_update())  # 启动ChatBox发送任务
@@ -135,6 +137,10 @@ class DGLabController:
         if not self.enable_chatbox_status:
             self.send_message_to_vrchat_chatbox("")
         self.chatbox_toggle_timer = None
+        # 更新UI
+        self.ui_callback.enable_chatbox_status_checkbox.blockSignals(True)  # 防止触发 valueChanged 事件
+        self.ui_callback.enable_chatbox_status_checkbox.setChecked(self.enable_chatbox_status)
+        self.ui_callback.enable_chatbox_status_checkbox.blockSignals(False)
 
     async def toggle_chatbox(self, value):
         """
@@ -157,10 +163,18 @@ class DGLabController:
             self.is_dynamic_bone_mode_a = not self.is_dynamic_bone_mode_a
             mode_name = "可交互模式" if self.is_dynamic_bone_mode_a else "面板设置模式"
             logger.info("通道 A 切换为" + mode_name)
+            # 更新UI
+            self.ui_callback.dynamic_bone_mode_a_checkbox.blockSignals(True)  # 防止触发 valueChanged 事件
+            self.ui_callback.dynamic_bone_mode_a_checkbox.setChecked(self.is_dynamic_bone_mode_a)
+            self.ui_callback.dynamic_bone_mode_a_checkbox.blockSignals(False)
         elif channel == Channel.B:
             self.is_dynamic_bone_mode_b = not self.is_dynamic_bone_mode_b
             mode_name = "可交互模式" if self.is_dynamic_bone_mode_b else "面板设置模式"
             logger.info("通道 B 切换为" + mode_name)
+            # 更新UI
+            self.ui_callback.dynamic_bone_mode_b_checkbox.blockSignals(True)  # 防止触发 valueChanged 事件
+            self.ui_callback.dynamic_bone_mode_b_checkbox.setChecked(self.is_dynamic_bone_mode_b)
+            self.ui_callback.dynamic_bone_mode_b_checkbox.blockSignals(False)
 
     async def set_mode(self, value, channel):
         """
@@ -253,11 +267,15 @@ class DGLabController:
 
     async def set_strength_step(self, value):
         """
-        开关 ChatBox 内容发送
+          开火模式步进值设定
         """
         if value > 0.0:
             self.fire_mode_strength_step = math.ceil(self.map_value(value, 0, 100))  # 向上取整
             logger.info(f"current strength step: {self.fire_mode_strength_step}")
+            # 更新 UI 组件 (QSpinBox) 以反映新的值
+            self.ui_callback.strength_step_spinbox.blockSignals(True)  # 防止触发 valueChanged 事件
+            self.ui_callback.strength_step_spinbox.setValue(self.fire_mode_strength_step)
+            self.ui_callback.strength_step_spinbox.blockSignals(False)
 
     async def set_channel(self, value):
         """
@@ -278,6 +296,10 @@ class DGLabController:
             self.enable_panel_control = False
         mode_name = "开启面板控制" if self.enable_panel_control else "已禁用面板控制"
         logger.info(f": {mode_name}")
+        # 更新 UI 组件 (QSpinBox) 以反映新的值
+        self.ui_callback.enable_panel_control_checkbox.blockSignals(True)  # 防止触发 valueChanged 事件
+        self.ui_callback.enable_panel_control_checkbox.setChecked(self.enable_panel_control)
+        self.ui_callback.enable_panel_control_checkbox.blockSignals(False)
 
 
     async def handle_osc_message_pad(self, address, *args):
@@ -287,7 +309,7 @@ class DGLabController:
         2. Float: -1.0 to 1.0， 但对于 Contact 与  Physbones 来说范围为 0.0-1.0
         """
         # Parameters Debug
-        logger.debug(f"Received OSC message on {address} with arguments {args}")
+        logger.info(f"Received OSC message on {address} with arguments {args}")
 
         # 面板控制功能禁用
         if address == "/avatar/parameters/SoundPad/PanelControl":
@@ -370,6 +392,12 @@ class DGLabController:
         /chatbox/input s b n Input text into the chatbox.
         '''
         self.osc_client.send_message("/chatbox/input", [message, True, False])
+
+    def send_value_to_vrchat(self, path: str, value):
+        '''
+        /chatbox/input s b n Input text into the chatbox.
+        '''
+        self.osc_client.send_message(path, value)
 
     async def send_strength_status(self):
         """
