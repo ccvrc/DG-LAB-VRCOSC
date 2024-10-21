@@ -107,7 +107,7 @@ class MainWindow(QMainWindow):
 
         # ChatBox状态开关
         self.enable_chatbox_status_checkbox = QCheckBox("启用ChatBox状态")
-        self.enable_chatbox_status_checkbox.setChecked(True)
+        self.enable_chatbox_status_checkbox.setChecked(False)
         self.controller_form.addRow(self.enable_chatbox_status_checkbox)
 
         self.controller_group.setLayout(self.controller_form)
@@ -157,6 +157,17 @@ class MainWindow(QMainWindow):
         self.timer.timeout.connect(self.update_debug_info)
         self.timer.start(1000)  # 每秒刷新一次
 
+        # Connect UI to controller update methods
+        self.strength_step_spinbox.valueChanged.connect(self.update_strength_step)
+        self.enable_panel_control_checkbox.stateChanged.connect(self.update_panel_control)
+        self.dynamic_bone_mode_a_checkbox.stateChanged.connect(self.update_dynamic_bone_mode_a)
+        self.dynamic_bone_mode_b_checkbox.stateChanged.connect(self.update_dynamic_bone_mode_b)
+        self.pulse_mode_a_combobox.currentIndexChanged.connect(self.update_pulse_mode_a)
+        self.pulse_mode_b_combobox.currentIndexChanged.connect(self.update_pulse_mode_b)
+        self.enable_chatbox_status_checkbox.stateChanged.connect(self.update_chatbox_status)
+
+
+
     def update_qrcode(self, qrcode_pixmap):
         """更新二维码并调整QLabel的大小"""
         self.qrcode_label.setPixmap(qrcode_pixmap)
@@ -182,6 +193,22 @@ class MainWindow(QMainWindow):
         except Exception as e:
             logger.error(f'启动服务器失败: {e}')
 
+    def update_debug_info(self):
+        """更新调试信息"""
+        if self.controller:
+            params = (
+                f"Enable Panel Control: {self.controller.enable_panel_control}\n"
+                f"Dynamic Bone Mode A: {self.controller.is_dynamic_bone_mode_a}\n"
+                f"Dynamic Bone Mode B: {self.controller.is_dynamic_bone_mode_b}\n"
+                f"Pulse Mode A: {self.controller.pulse_mode_a}\n"
+                f"Pulse Mode B: {self.controller.pulse_mode_b}\n"
+                f"Fire Mode Strength Step: {self.controller.fire_mode_strength_step}\n"
+                f"Enable ChatBox Status: {self.controller.enable_chatbox_status}\n"
+            )
+            self.param_label.setText(params)
+        else:
+            self.param_label.setText("控制器未初始化.")
+
     def bind_controller_settings(self):
         """将GUI设置与DGLabController变量绑定"""
         if self.controller:
@@ -196,22 +223,41 @@ class MainWindow(QMainWindow):
         else:
             logger.warning("Controller is not initialized yet.")
 
-    def update_debug_info(self):
-        """更新调试信息"""
+    # Controller update methods
+    def update_strength_step(self, value):
         if self.controller:
-            params = (
-                f"A: {self.controller.last_strength.a}  B: {self.controller.last_strength.b}\n"
-                f"Enable Panel Control: {self.controller.enable_panel_control}\n"
-                f"Dynamic Bone Mode A: {self.controller.is_dynamic_bone_mode_a}\n"
-                f"Dynamic Bone Mode B: {self.controller.is_dynamic_bone_mode_b}\n"
-                f"Pulse Mode A: {self.controller.pulse_mode_a}\n"
-                f"Pulse Mode B: {self.controller.pulse_mode_b}\n"
-                f"Fire Mode Strength Step: {self.controller.fire_mode_strength_step}\n"
-                f"Enable ChatBox Status: {self.controller.enable_chatbox_status}\n"
-            )
-            self.param_label.setText(params)
-        else:
-            self.param_label.setText("控制器未初始化.")
+            self.controller.fire_mode_strength_step = value
+            logger.info(f"Updated strength step to {value}")
+
+    def update_panel_control(self, state):
+        if self.controller:
+            self.controller.enable_panel_control = bool(state)
+            logger.info(f"Panel control enabled: {self.controller.enable_panel_control}")
+
+    def update_dynamic_bone_mode_a(self, state):
+        if self.controller:
+            self.controller.is_dynamic_bone_mode_a = bool(state)
+            logger.info(f"Dynamic bone mode A: {self.controller.is_dynamic_bone_mode_a}")
+
+    def update_dynamic_bone_mode_b(self, state):
+        if self.controller:
+            self.controller.is_dynamic_bone_mode_b = bool(state)
+            logger.info(f"Dynamic bone mode B: {self.controller.is_dynamic_bone_mode_b}")
+
+    def update_pulse_mode_a(self, index):
+        if self.controller:
+            self.controller.pulse_mode_a = index
+            logger.info(f"Pulse mode A updated to {PULSE_NAME[index]}")
+
+    def update_pulse_mode_b(self, index):
+        if self.controller:
+            self.controller.pulse_mode_b = index
+            logger.info(f"Pulse mode B updated to {PULSE_NAME[index]}")
+
+    def update_chatbox_status(self, state):
+        if self.controller:
+            self.controller.enable_chatbox_status = bool(state)
+            logger.info(f"ChatBox status enabled: {self.controller.enable_chatbox_status}")
 
 def generate_qrcode(data: str):
     """生成二维码并转换为PySide6可显示的QPixmap"""
