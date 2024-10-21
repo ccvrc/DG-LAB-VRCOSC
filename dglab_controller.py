@@ -287,7 +287,7 @@ class DGLabController:
         2. Float: -1.0 to 1.0， 但对于 Contact 与  Physbones 来说范围为 0.0-1.0
         """
         # Parameters Debug
-        logger.debug(f"Received OSC message on {address} with arguments {args}")
+        logger.info(f"Received OSC message on {address} with arguments {args}")
 
         # 面板控制功能禁用
         if address == "/avatar/parameters/SoundPad/PanelControl":

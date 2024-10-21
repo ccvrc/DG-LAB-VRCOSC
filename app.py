@@ -10,6 +10,7 @@ from qasync import QEventLoop
 from pydglab_ws import StrengthData, FeedbackButton, Channel, StrengthOperationType, RetCode, DGLabWSServer
 from dglab_controller import DGLabController
 from config import get_active_ip_addresses
+from pythonosc import dispatcher, osc_server, udp_client
 
 # 配置日志记录器
 logging.basicConfig(level=logging.INFO)
@@ -29,7 +30,7 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("DG-Lab WebSocket Controller")
-        self.setGeometry(300, 300, 600, 500)
+        self.setGeometry(300, 300, 600, 800)
 
         # 创建主布局
         self.layout = QVBoxLayout()
@@ -50,6 +51,12 @@ class MainWindow(QMainWindow):
         self.port_spinbox.setRange(1024, 65535)
         self.port_spinbox.setValue(5678)
         self.form_layout.addRow("WS连接端口:", self.port_spinbox)
+
+        # OSC端口选择
+        self.osc_port_spinbox = QSpinBox()
+        self.osc_port_spinbox.setRange(1024, 65535)
+        self.osc_port_spinbox.setValue(9001)  # Default OSC recv port for VRChat
+        self.form_layout.addRow("OSC接收端口:", self.osc_port_spinbox)
 
         self.network_config_group.setLayout(self.form_layout)
         self.layout.addWidget(self.network_config_group)
@@ -113,13 +120,14 @@ class MainWindow(QMainWindow):
         """启动 WebSocket 服务器"""
         selected_ip = self.ip_combobox.currentText().split(": ")[-1]
         selected_port = self.port_spinbox.value()
-        logger.info(f"正在启动 WebSocket 服务器，监听地址: {selected_ip}:{selected_port}")
-        asyncio.ensure_future(run_server(self, selected_ip, selected_port))
+        osc_port = self.osc_port_spinbox.value()
+        logger.info(f"正在启动 WebSocket 服务器，监听地址: {selected_ip}:{selected_port} 和 OSC 数据接收端口: {osc_port}")
+        asyncio.ensure_future(run_server(self, selected_ip, selected_port, osc_port))
 
 
 def generate_qrcode(data: str):
     """生成二维码并转换为PySide6可显示的QPixmap"""
-    qr = qrcode.QRCode(version=1, error_correction=qrcode.constants.ERROR_CORRECT_L, box_size=10, border=4)
+    qr = qrcode.QRCode(version=1, error_correction=qrcode.constants.ERROR_CORRECT_L, box_size=6, border=2)
     qr.add_data(data)
     qr.make(fit=True)
     img = qr.make_image(fill='black', back_color='white')
@@ -133,11 +141,18 @@ def generate_qrcode(data: str):
 
     return qimage
 
+def handle_osc_message_task_pad(address, list_object, *args):
+    asyncio.create_task(list_object[0].handle_osc_message_pad(address, *args))
 
-async def run_server(window: MainWindow, ip: str, port: int):
-    """运行服务器"""
+def handle_osc_message_task_pb(address, list_object, *args):
+    asyncio.create_task(list_object[0].handle_osc_message_pb(address, *args))
+
+
+async def run_server(window: MainWindow, ip: str, port: int, osc_port: int):
+    """运行服务器并启动OSC服务器"""
     async with DGLabWSServer(ip, port, 60) as server:
         client = server.new_local_client()
+        logger.info("WebSocket 客户端已初始化")
 
         # 生成二维码
         url = client.get_qrcode(f"ws://{ip}:{port}")
@@ -145,16 +160,39 @@ async def run_server(window: MainWindow, ip: str, port: int):
         window.update_qrcode(qrcode_image)
         logger.info(f"二维码已生成，WebSocket URL: ws://{ip}:{port}")
 
+        osc_client = udp_client.SimpleUDPClient("127.0.0.1", 9000)
         # 初始化控制器
-        controller = DGLabController(client, None)
+        controller = DGLabController(client, osc_client)
         window.controller = controller
-        logger.info("WebSocket 客户端已初始化")
+        logger.info("DGLabController 已初始化")
+
+        # 设置OSC服务器
+        disp = dispatcher.Dispatcher()
+        disp.map("/avatar/parameters/SoundPad/Button/*", handle_osc_message_task_pad, controller)
+        disp.map("/avatar/parameters/DG-LAB/*", handle_osc_message_task_pb, controller)
+
+        osc_server_instance = osc_server.AsyncIOOSCUDPServer(
+            ("0.0.0.0", osc_port), disp, asyncio.get_event_loop()
+        )
+        osc_transport, osc_protocol = await osc_server_instance.create_serve_endpoint()
+        logger.info(f"OSC Server Listening on port {osc_port}")
 
         async for data in client.data_generator():
             if isinstance(data, StrengthData):
                 window.update_status(data, controller.pulse_mode_a, controller.pulse_mode_b)
                 logger.info(f"接收到数据包 - A通道: {data.a}, B通道: {data.b}")
+            # 接收 App 反馈按钮
+            elif isinstance(data, FeedbackButton):
+                logger.info(f"App 触发了反馈按钮：{data.name}")
+            # 接收 心跳 / App 断开通知
+            elif data == RetCode.CLIENT_DISCONNECTED:
+                logger.info("App 已断开连接，你可以尝试重新扫码进行连接绑定")
+                controller.app_status_online = False
+                await client.rebind()
+                logger.info("重新绑定成功")
+                controller.app_status_online = True
 
+        osc_transport.close()
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
