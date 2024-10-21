@@ -7,7 +7,7 @@ from PySide6.QtWidgets import (QApplication, QMainWindow, QLabel, QVBoxLayout, Q
                                QPushButton, QComboBox, QSpinBox, QFormLayout, QGroupBox,
                                QTextEdit, QCheckBox)
 from PySide6.QtGui import QPixmap
-from PySide6.QtCore import QByteArray
+from PySide6.QtCore import QByteArray, QTimer
 from qasync import QEventLoop
 from pydglab_ws import StrengthData, FeedbackButton, Channel, StrengthOperationType, RetCode, DGLabWSServer
 from config import get_active_ip_addresses
@@ -123,6 +123,22 @@ class MainWindow(QMainWindow):
         self.start_button.clicked.connect(self.start_server)
         self.layout.addWidget(self.start_button)
 
+        # 增加可折叠的调试界面
+        self.debug_group = QGroupBox("调试信息")
+        self.debug_group.setCheckable(True)
+        self.debug_group.setChecked(False)  # 默认折叠状态
+
+        self.debug_layout = QVBoxLayout()
+        self.debug_label = QLabel("DGLabController 参数:")
+        self.debug_layout.addWidget(self.debug_label)
+
+        # 显示控制器的参数
+        self.param_label = QLabel("正在加载控制器参数...")
+        self.debug_layout.addWidget(self.param_label)
+
+        self.debug_group.setLayout(self.debug_layout)
+        self.layout.addWidget(self.debug_group)
+
         # 设置窗口布局
         container = QWidget()
         container.setLayout(self.layout)
@@ -133,7 +149,13 @@ class MainWindow(QMainWindow):
         logger.addHandler(self.log_handler)
         logger.setLevel(logging.INFO)
 
+        # 设置 controller 初始为 None
         self.controller = None
+
+        # 启动定时器，每秒刷新一次调试信息
+        self.timer = QTimer(self)
+        self.timer.timeout.connect(self.update_debug_info)
+        self.timer.start(1000)  # 每秒刷新一次
 
     def update_qrcode(self, qrcode_pixmap):
         """更新二维码并调整QLabel的大小"""
@@ -159,7 +181,6 @@ class MainWindow(QMainWindow):
             logger.info('WebSocket 服务器已启动')
         except Exception as e:
             logger.error(f'启动服务器失败: {e}')
-        self.bind_controller_settings()
 
     def bind_controller_settings(self):
         """将GUI设置与DGLabController变量绑定"""
@@ -171,8 +192,26 @@ class MainWindow(QMainWindow):
             self.controller.pulse_mode_a = self.pulse_mode_a_combobox.currentIndex()
             self.controller.pulse_mode_b = self.pulse_mode_b_combobox.currentIndex()
             self.controller.enable_chatbox_status = self.enable_chatbox_status_checkbox.isChecked()
+            logger.info("DGLabController 参数已绑定")
+        else:
+            logger.warning("Controller is not initialized yet.")
 
-
+    def update_debug_info(self):
+        """更新调试信息"""
+        if self.controller:
+            params = (
+                f"A: {self.controller.last_strength.a}  B: {self.controller.last_strength.b}\n"
+                f"Enable Panel Control: {self.controller.enable_panel_control}\n"
+                f"Dynamic Bone Mode A: {self.controller.is_dynamic_bone_mode_a}\n"
+                f"Dynamic Bone Mode B: {self.controller.is_dynamic_bone_mode_b}\n"
+                f"Pulse Mode A: {self.controller.pulse_mode_a}\n"
+                f"Pulse Mode B: {self.controller.pulse_mode_b}\n"
+                f"Fire Mode Strength Step: {self.controller.fire_mode_strength_step}\n"
+                f"Enable ChatBox Status: {self.controller.enable_chatbox_status}\n"
+            )
+            self.param_label.setText(params)
+        else:
+            self.param_label.setText("控制器未初始化.")
 
 def generate_qrcode(data: str):
     """生成二维码并转换为PySide6可显示的QPixmap"""
@@ -216,6 +255,8 @@ async def run_server(window: MainWindow, ip: str, port: int, osc_port: int):
         controller = DGLabController(client, osc_client)
         window.controller = controller
         logger.info("DGLabController 已初始化")
+        # 在 controller 初始化后调用绑定函数
+        window.bind_controller_settings()
 
         # 设置OSC服务器
         disp = dispatcher.Dispatcher()
