@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 
 
 class DGLabController:
-    def __init__(self, client, osc_client):
+    def __init__(self, client, osc_client, ui_callback=None):
         """
         初始化 DGLabController 实例
         :param client: DGLabWSServer 的客户端实例
@@ -22,6 +22,7 @@ class DGLabController:
         """
         self.client = client
         self.osc_client = osc_client
+        self.ui_callback = ui_callback
         self.last_strength = None  # 记录上次的强度值, 从 app更新, 包含 a b a_limit b_limit
         self.app_status_online = True  # App 端在线情况
         # 功能控制参数
@@ -253,11 +254,15 @@ class DGLabController:
 
     async def set_strength_step(self, value):
         """
-        开关 ChatBox 内容发送
+          开火模式步进值设定
         """
         if value > 0.0:
             self.fire_mode_strength_step = math.ceil(self.map_value(value, 0, 100))  # 向上取整
             logger.info(f"current strength step: {self.fire_mode_strength_step}")
+            # 更新 UI 组件 (QSpinBox) 以反映新的值
+            self.ui_callback.strength_step_spinbox.blockSignals(True)  # 防止触发 valueChanged 事件
+            self.ui_callback.strength_step_spinbox.setValue(self.fire_mode_strength_step)
+            self.ui_callback.strength_step_spinbox.blockSignals(False)
 
     async def set_channel(self, value):
         """
@@ -370,6 +375,12 @@ class DGLabController:
         /chatbox/input s b n Input text into the chatbox.
         '''
         self.osc_client.send_message("/chatbox/input", [message, True, False])
+
+    def send_value_to_vrchat(self, path: str, value):
+        '''
+        /chatbox/input s b n Input text into the chatbox.
+        '''
+        self.osc_client.send_message(path, value)
 
     async def send_strength_status(self):
         """

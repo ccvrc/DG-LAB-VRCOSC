@@ -59,7 +59,7 @@ class MainWindow(QMainWindow):
         # OSC端口选择
         self.osc_port_spinbox = QSpinBox()
         self.osc_port_spinbox.setRange(1024, 65535)
-        self.osc_port_spinbox.setValue(9001)  # Default OSC recv port for VRChat
+        self.osc_port_spinbox.setValue(9102)  # Default OSC recv port for VRChat is 9001
         self.form_layout.addRow("OSC接收端口:", self.osc_port_spinbox)
 
         self.network_config_group.setLayout(self.form_layout)
@@ -228,6 +228,7 @@ class MainWindow(QMainWindow):
         if self.controller:
             self.controller.fire_mode_strength_step = value
             logger.info(f"Updated strength step to {value}")
+            self.controller.send_value_to_vrchat("/avatar/parameters/SoundPad/Volume", 0.01*value)
 
     def update_panel_control(self, state):
         if self.controller:
@@ -298,7 +299,7 @@ async def run_server(window: MainWindow, ip: str, port: int, osc_port: int):
 
         osc_client = udp_client.SimpleUDPClient("127.0.0.1", 9000)
         # 初始化控制器
-        controller = DGLabController(client, osc_client)
+        controller = DGLabController(client, osc_client, window)
         window.controller = controller
         logger.info("DGLabController 已初始化")
         # 在 controller 初始化后调用绑定函数
