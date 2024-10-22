@@ -47,11 +47,11 @@ jobs:
 
     - name: Build with PyInstaller
       run: |
-        pyinstaller -F -i docs/images/cat.ico app.py
+        pyinstaller -F --windowed -i docs/images/cat.ico --name DG-LAB-VRCOSC app.py
       shell: pwsh
 
     - name: Upload artifact
       uses: actions/upload-artifact@v4
       with:
         name: DG-LAB-VRCOSC
-        path: dist/app.exe
+        path: dist/DG-LAB-VRCOSC.exe
