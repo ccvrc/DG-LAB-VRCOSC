@@ -36,7 +36,7 @@ class QTextEditHandler(logging.Handler):
         elif record.levelno == logging.WARNING:
             msg = f"<b style='color:orange;'>{msg}</b>"  # Display warnings in orange
         else:
-            msg = f"<b style='color:white;'>{msg}</b>"  # Ensure normal logs are black
+            msg = f"<span>{msg}</span>"  # 默认使用普通字体
         # Append the message to the text edit and reset the cursor position
         self.text_edit.append(msg)
         self.text_edit.ensureCursorVisible()  # Ensure the latest log is visible
