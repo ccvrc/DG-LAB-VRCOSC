@@ -11,7 +11,7 @@ from PySide6.QtGui import QPixmap, QIcon, QTextCursor
 from PySide6.QtCore import Qt, QByteArray, QTimer, QPoint
 from qasync import QEventLoop
 from pydglab_ws import StrengthData, FeedbackButton, Channel, StrengthOperationType, RetCode, DGLabWSServer
-from config import get_active_ip_addresses
+from config import load_settings, save_settings, get_active_ip_addresses
 from pythonosc import dispatcher, osc_server, udp_client
 
 from dglab_controller import DGLabController
@@ -56,6 +56,13 @@ class MainWindow(QMainWindow):
         # 设置窗口图标
         self.setWindowIcon(QIcon(resource_path('docs/images/cat.ico')))
 
+        # Load settings from file or use defaults
+        self.settings = load_settings() or {
+            'interface': '',
+            'ip': '',
+            'port': 5678,
+            'osc_port': 9001
+        }
         # 创建主布局
         self.layout = QVBoxLayout()
 
@@ -76,13 +83,13 @@ class MainWindow(QMainWindow):
         # 端口选择
         self.port_spinbox = QSpinBox()
         self.port_spinbox.setRange(1024, 65535)
-        self.port_spinbox.setValue(5678)
+        self.port_spinbox.setValue(self.settings['port'])  # Set the default or loaded value
         self.form_layout.addRow("WS连接端口:", self.port_spinbox)
 
         # OSC端口选择
         self.osc_port_spinbox = QSpinBox()
         self.osc_port_spinbox.setRange(1024, 65535)
-        self.osc_port_spinbox.setValue(9102)  # Default OSC recv port for VRChat is 9001
+        self.osc_port_spinbox.setValue(self.settings['osc_port'])  # Set the default or loaded value
         self.form_layout.addRow("OSC接收端口:", self.osc_port_spinbox)
 
         # 添加客户端连接状态标签
@@ -233,7 +240,40 @@ class MainWindow(QMainWindow):
         self.pulse_mode_b_combobox.currentIndexChanged.connect(self.update_pulse_mode_b)
         self.enable_chatbox_status_checkbox.stateChanged.connect(self.update_chatbox_status)
 
+        # Apply loaded settings to the UI components
+        self.apply_settings_to_ui()
 
+        # Save settings whenever network configuration is changed
+        self.ip_combobox.currentTextChanged.connect(self.save_network_settings)
+        self.port_spinbox.valueChanged.connect(self.save_network_settings)
+        self.osc_port_spinbox.valueChanged.connect(self.save_network_settings)
+
+    def apply_settings_to_ui(self):
+        """Apply the loaded settings to the UI elements."""
+        # Find the correct index for the loaded interface and IP
+        for i in range(self.ip_combobox.count()):
+            interface_ip = self.ip_combobox.itemText(i).split(": ")
+            if len(interface_ip) == 2:
+                interface, ip = interface_ip
+                if interface == self.settings['interface'] and ip == self.settings['ip']:
+                    self.ip_combobox.setCurrentIndex(i)
+                    logger.info("set to previous used network interface")
+                    break
+
+    def save_network_settings(self):
+        """Save network settings to the settings.yml file."""
+        selected_interface_ip = self.ip_combobox.currentText().split(": ")
+        if len(selected_interface_ip) == 2:
+            selected_interface, selected_ip = selected_interface_ip
+            selected_port = self.port_spinbox.value()
+            osc_port = self.osc_port_spinbox.value()
+            self.settings['interface'] = selected_interface
+            self.settings['ip'] = selected_ip
+            self.settings['port'] = selected_port
+            self.settings['osc_port'] = osc_port
+
+            save_settings(self.settings)
+            logger.info("Network settings saved.")
 
     def update_qrcode(self, qrcode_pixmap):
         """更新二维码并调整QLabel的大小"""
