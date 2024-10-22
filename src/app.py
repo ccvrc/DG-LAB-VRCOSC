@@ -42,10 +42,12 @@ class QTextEditHandler(logging.Handler):
         self.text_edit.ensureCursorVisible()  # Ensure the latest log is visible
 
 def resource_path(relative_path):
-    """ 获取资源的绝对路径，在开发和打包后的环境中都能正常使用。 """
-    if hasattr(sys, '_MEIPASS'):
+    """ 获取资源的绝对路径，确保开发和打包后都能正常使用。 """
+    if hasattr(sys, '_MEIPASS'):  # PyInstaller 打包后的路径
         return os.path.join(sys._MEIPASS, relative_path)
-    return os.path.join(os.path.abspath("."), relative_path)
+    # 对于开发环境下，从 src 跳到项目根目录，再进入 docs/images
+    return os.path.join(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')), relative_path)
+
 
 class MainWindow(QMainWindow):
     def __init__(self):
