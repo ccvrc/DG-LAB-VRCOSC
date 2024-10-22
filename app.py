@@ -6,7 +6,7 @@ import logging
 from PySide6.QtWidgets import (QApplication, QMainWindow, QLabel, QVBoxLayout, QHBoxLayout, QWidget,
                                QPushButton, QComboBox, QSpinBox, QFormLayout, QGroupBox, QSlider,
                                QTextEdit, QCheckBox, QToolTip)
-from PySide6.QtGui import QPixmap, QIcon
+from PySide6.QtGui import QPixmap, QIcon, QTextCursor
 from PySide6.QtCore import Qt, QByteArray, QTimer, QPoint
 from qasync import QEventLoop
 from pydglab_ws import StrengthData, FeedbackButton, Channel, StrengthOperationType, RetCode, DGLabWSServer
@@ -22,14 +22,20 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 class QTextEditHandler(logging.Handler):
-    """自定义日志处理器，用于将日志消息输出到 QTextEdit"""
+    """Custom log handler to output log messages to QTextEdit."""
     def __init__(self, text_edit):
         super().__init__()
         self.text_edit = text_edit
 
     def emit(self, record):
         msg = self.format(record)
+        # Highlight error logs in red
+        if record.levelno >= logging.ERROR:
+            msg = f"<b style='color:red;'>{msg}</b>"  # Display error messages in red
+        elif record.levelno == logging.WARNING:
+            msg = f"<b style='color:orange;'>{msg}</b>"  # Display warnings in orange
         self.text_edit.append(msg)
+        self.text_edit.ensureCursorVisible()  # 确保最新日志可见
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -170,6 +176,7 @@ class MainWindow(QMainWindow):
         self.log_text_edit = QTextEdit(self)
         self.log_text_edit.setReadOnly(True)
         self.layout.addWidget(self.log_text_edit)
+        self.app_setup_logging()
 
         # 增加可折叠的调试界面
         self.debug_group = QGroupBox("调试信息")
@@ -301,15 +308,22 @@ class MainWindow(QMainWindow):
         selected_ip = self.ip_combobox.currentText().split(": ")[-1]
         selected_port = self.port_spinbox.value()
         osc_port = self.osc_port_spinbox.value()
-        logger.info(f"正在启动 WebSocket 服务器，监听地址: {selected_ip}:{selected_port} 和 OSC 数据接收端口: {osc_port}")
+        logger.info(
+            f"正在启动 WebSocket 服务器，监听地址: {selected_ip}:{selected_port} 和 OSC 数据接收端口: {osc_port}")
         try:
             loop = asyncio.get_running_loop()
             loop.create_task(run_server(self, selected_ip, selected_port, osc_port))
             logger.info('WebSocket 服务器已启动')
             # 关闭调试界面
             self.toggle_debug_info(False)
-        except Exception as e:
-            logger.error(f'启动服务器失败: {e}')
+        except OSError as e:
+            error_message = f"启动服务器失败: {str(e)}"
+            # Log the error with error level
+            logger.error(error_message)
+            # Update the UI to reflect the error
+            self.start_button.setText("启动失败")
+            self.start_button.setStyleSheet("background-color: red; color: white;")
+            self.log_text_edit.append(f"ERROR: {error_message}")
 
     def update_debug_info(self):
         """更新调试信息"""
@@ -424,6 +438,60 @@ class MainWindow(QMainWindow):
         # 显示提示框
         QToolTip.showText(QPoint(tooltip_x, tooltip_y), f"{value}", slider)
 
+    class SimpleFormatter(logging.Formatter):
+        """自定义格式化器，将日志级别缩写并调整时间格式"""
+
+        def format(self, record):
+            level_short = {
+                'DEBUG': 'D',
+                'INFO': 'I',
+                'WARNING': 'W',
+                'ERROR': 'E',
+                'CRITICAL': 'C'
+            }.get(record.levelname, 'I')  # 默认 INFO
+            record.levelname = level_short
+            return super().format(record)
+
+    def app_setup_logging(self):
+        """设置日志系统输出到 QTextEdit 和控制台"""
+        logger = logging.getLogger()
+        logger.setLevel(logging.INFO)
+
+        # 创建 QTextEditHandler 并添加到日志系统中
+        self.log_handler = QTextEditHandler(self.log_text_edit)
+        self.log_handler.setLevel(logging.DEBUG)  # 捕获所有日志级别
+
+        # 使用自定义格式化器，简化时间和日志级别
+        formatter = self.SimpleFormatter('%(asctime)s-%(levelname)s: %(message)s', datefmt='%H:%M:%S')
+        self.log_handler.setFormatter(formatter)
+
+        # 添加 QTextEditHandler 到 logger
+        logger.addHandler(self.log_handler)
+
+        # 限制日志框中的最大行数
+        self.log_text_edit.textChanged.connect(lambda: self.limit_log_lines(max_lines=100))
+
+    def limit_log_lines(self, max_lines=500):
+        """限制 QTextEdit 中的最大行数，保留颜色和格式，并保持显示最新日志"""
+        document = self.log_text_edit.document()
+        block_count = document.blockCount()
+        cursor = self.log_text_edit.textCursor()
+        # 如果当前行数超过最大行数
+        if block_count > max_lines:
+            cursor.movePosition(QTextCursor.Start)  # 移动到文本开头
+
+            # 选择并删除前面的行，直到行数符合要求
+            for _ in range(block_count - max_lines):
+                cursor.select(QTextCursor.BlockUnderCursor)
+                cursor.removeSelectedText()
+                cursor.deleteChar()  # 删除行后保留格式
+        # 无论是否删除行，都移动光标到文本末尾
+        cursor.movePosition(QTextCursor.End)
+        self.log_text_edit.setTextCursor(cursor)
+        # 确保最新日志可见
+        self.log_text_edit.ensureCursorVisible()
+
+
 def generate_qrcode(data: str):
     """生成二维码并转换为PySide6可显示的QPixmap"""
     qr = qrcode.QRCode(version=1, error_correction=qrcode.constants.ERROR_CORRECT_L, box_size=6, border=2)
@@ -451,63 +519,73 @@ def handle_osc_message_task_pb(address, list_object, *args):
 
 async def run_server(window: MainWindow, ip: str, port: int, osc_port: int):
     """运行服务器并启动OSC服务器"""
-    async with DGLabWSServer(ip, port, 60) as server:
-        client = server.new_local_client()
-        logger.info("WebSocket 客户端已初始化")
+    try:
+        async with DGLabWSServer(ip, port, 60) as server:
+            client = server.new_local_client()
+            logger.info("WebSocket 客户端已初始化")
 
-        # 生成二维码
-        url = client.get_qrcode(f"ws://{ip}:{port}")
-        qrcode_image = generate_qrcode(url)
-        window.update_qrcode(qrcode_image)
-        logger.info(f"二维码已生成，WebSocket URL: ws://{ip}:{port}")
+            # 生成二维码
+            url = client.get_qrcode(f"ws://{ip}:{port}")
+            qrcode_image = generate_qrcode(url)
+            window.update_qrcode(qrcode_image)
+            logger.info(f"二维码已生成，WebSocket URL: ws://{ip}:{port}")
 
-        osc_client = udp_client.SimpleUDPClient("127.0.0.1", 9000)
-        # 初始化控制器
-        controller = DGLabController(client, osc_client, window)
-        window.controller = controller
-        logger.info("DGLabController 已初始化")
-        # 在 controller 初始化后调用绑定函数
-        window.bind_controller_settings()
+            osc_client = udp_client.SimpleUDPClient("127.0.0.1", 9000)
+            # 初始化控制器
+            controller = DGLabController(client, osc_client, window)
+            window.controller = controller
+            logger.info("DGLabController 已初始化")
+            # 在 controller 初始化后调用绑定函数
+            window.bind_controller_settings()
 
-        # 设置OSC服务器
-        disp = dispatcher.Dispatcher()
-        # 面板控制对应的 OSC 地址
-        disp.map("/avatar/parameters/SoundPad/Button/*", handle_osc_message_task_pad, controller)
-        disp.map("/avatar/parameters/SoundPad/Volume", handle_osc_message_task_pad, controller)
-        disp.map("/avatar/parameters/SoundPad/Page", handle_osc_message_task_pad, controller)
-        disp.map("/avatar/parameters/SoundPad/PanelControl", handle_osc_message_task_pad, controller)
-        # PB/Contact 交互对应的 OSC 地址
-        disp.map("/avatar/parameters/DG-LAB/*", handle_osc_message_task_pb, controller)
-        disp.map("/avatar/parameters/Tail_Stretch", handle_osc_message_task_pb, controller)
+            # 设置OSC服务器
+            disp = dispatcher.Dispatcher()
+            # 面板控制对应的 OSC 地址
+            disp.map("/avatar/parameters/SoundPad/Button/*", handle_osc_message_task_pad, controller)
+            disp.map("/avatar/parameters/SoundPad/Volume", handle_osc_message_task_pad, controller)
+            disp.map("/avatar/parameters/SoundPad/Page", handle_osc_message_task_pad, controller)
+            disp.map("/avatar/parameters/SoundPad/PanelControl", handle_osc_message_task_pad, controller)
+            # PB/Contact 交互对应的 OSC 地址
+            disp.map("/avatar/parameters/DG-LAB/*", handle_osc_message_task_pb, controller)
+            disp.map("/avatar/parameters/Tail_Stretch", handle_osc_message_task_pb, controller)
 
-        osc_server_instance = osc_server.AsyncIOOSCUDPServer(
-            ("0.0.0.0", osc_port), disp, asyncio.get_event_loop()
-        )
-        osc_transport, osc_protocol = await osc_server_instance.create_serve_endpoint()
-        logger.info(f"OSC Server Listening on port {osc_port}")
+            osc_server_instance = osc_server.AsyncIOOSCUDPServer(
+                ("0.0.0.0", osc_port), disp, asyncio.get_event_loop()
+            )
+            osc_transport, osc_protocol = await osc_server_instance.create_serve_endpoint()
+            logger.info(f"OSC Server Listening on port {osc_port}")
 
-        async for data in client.data_generator():
-            if isinstance(data, StrengthData):
-                controller.last_strength = data
-                controller.data_updated_event.set()  # 数据更新，触发开火操作的后续事件
-                logger.info(f"接收到数据包 - A通道: {data.a}, B通道: {data.b}")
-                controller.app_status_online = True
-                window.update_connection_status(controller.app_status_online)
-                window.update_status(data)
-            # 接收 App 反馈按钮
-            elif isinstance(data, FeedbackButton):
-                logger.info(f"App 触发了反馈按钮：{data.name}")
-            # 接收 心跳 / App 断开通知
-            elif data == RetCode.CLIENT_DISCONNECTED:
-                logger.info("App 已断开连接，你可以尝试重新扫码进行连接绑定")
-                controller.app_status_online = False
-                window.update_connection_status(controller.app_status_online)
-                await client.rebind()
-                logger.info("重新绑定成功")
-                controller.app_status_online = True
-                window.update_connection_status(controller.app_status_online)
+            async for data in client.data_generator():
+                if isinstance(data, StrengthData):
+                    controller.last_strength = data
+                    controller.data_updated_event.set()  # 数据更新，触发开火操作的后续事件
+                    logger.info(f"接收到数据包 - A通道: {data.a}, B通道: {data.b}")
+                    controller.app_status_online = True
+                    window.update_connection_status(controller.app_status_online)
+                    window.update_status(data)
+                # 接收 App 反馈按钮
+                elif isinstance(data, FeedbackButton):
+                    logger.info(f"App 触发了反馈按钮：{data.name}")
+                # 接收 心跳 / App 断开通知
+                elif data == RetCode.CLIENT_DISCONNECTED:
+                    logger.info("App 已断开连接，你可以尝试重新扫码进行连接绑定")
+                    controller.app_status_online = False
+                    window.update_connection_status(controller.app_status_online)
+                    await client.rebind()
+                    logger.info("重新绑定成功")
+                    controller.app_status_online = True
+                    window.update_connection_status(controller.app_status_online)
 
-        osc_transport.close()
+            osc_transport.close()
+    except OSError as e:
+        # Handle specific errors and log them
+        error_message = f"WebSocket 服务器启动失败: {str(e)}"
+        logger.error(error_message)
+
+        # Update the UI to reflect the error
+        window.start_button.setText("启动失败")
+        window.start_button.setStyleSheet("background-color: red; color: white;")
+        window.log_text_edit.append(f"ERROR: {error_message}")
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
