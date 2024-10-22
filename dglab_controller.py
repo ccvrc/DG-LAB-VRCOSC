@@ -25,7 +25,7 @@ class DGLabController:
         self.osc_client = osc_client
         self.ui_callback = ui_callback
         self.last_strength = None  # 记录上次的强度值, 从 app更新, 包含 a b a_limit b_limit
-        self.app_status_online = True  # App 端在线情况
+        self.app_status_online = False  # App 端在线情况
         # 功能控制参数
         self.enable_panel_control = True   # 禁用面板控制功能 (双向)
         self.is_dynamic_bone_mode_a = False  # Default mode for Channel A (仅程序端)
@@ -403,7 +403,7 @@ class DGLabController:
         """
         通过 ChatBox 发送当前强度数值
         """
-        if self.last_strength and self.app_status_online:
+        if self.last_strength:
             mode_name_a = "交互" if self.is_dynamic_bone_mode_a else "面板"
             mode_name_b = "交互" if self.is_dynamic_bone_mode_b else "面板"
             channel_strength = f"[A]: {self.last_strength.a} B: {self.last_strength.b}" if self.current_select_channel == Channel.A else f"A: {self.last_strength.a} [B]: {self.last_strength.b}"
@@ -414,7 +414,5 @@ class DGLabController:
                 f"Fire Step: {self.fire_mode_strength_step}\n"
                 f"Current: {channel_strength} \n"
             )
-        elif not self.app_status_online:
-            self.send_message_to_vrchat_chatbox("APP连接已断开")
         else:
             self.send_message_to_vrchat_chatbox("未连接")

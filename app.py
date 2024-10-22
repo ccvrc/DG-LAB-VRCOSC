@@ -5,9 +5,9 @@ import qrcode
 import logging
 from PySide6.QtWidgets import (QApplication, QMainWindow, QLabel, QVBoxLayout, QHBoxLayout, QWidget,
                                QPushButton, QComboBox, QSpinBox, QFormLayout, QGroupBox, QSlider,
-                               QTextEdit, QCheckBox)
-from PySide6.QtGui import QPixmap
-from PySide6.QtCore import Qt, QByteArray, QTimer
+                               QTextEdit, QCheckBox, QToolTip)
+from PySide6.QtGui import QPixmap, QIcon
+from PySide6.QtCore import Qt, QByteArray, QTimer, QPoint
 from qasync import QEventLoop
 from pydglab_ws import StrengthData, FeedbackButton, Channel, StrengthOperationType, RetCode, DGLabWSServer
 from config import get_active_ip_addresses
@@ -36,6 +36,9 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.setWindowTitle("DG-Lab WebSocket Controller for VRChat")
         self.setGeometry(300, 300, 600, 800)
+
+        # 设置窗口图标
+        self.setWindowIcon(QIcon("docs/images/cat.ico"))
 
         # 创建主布局
         self.layout = QVBoxLayout()
@@ -66,11 +69,26 @@ class MainWindow(QMainWindow):
         self.osc_port_spinbox.setValue(9102)  # Default OSC recv port for VRChat is 9001
         self.form_layout.addRow("OSC接收端口:", self.osc_port_spinbox)
 
+        # 添加客户端连接状态标签
+        self.connection_status_label = QLabel("未连接, 请在点击启动后扫描二维码连接")
+        self.connection_status_label.setAlignment(Qt.AlignCenter)  # 设置内容居中
+        self.connection_status_label.setStyleSheet("""
+            QLabel {
+                background-color: red;
+                color: white;
+                border-radius: 10px;  # 圆角
+                padding: 5px;
+            }
+        """)
+        self.connection_status_label.adjustSize()  # 调整大小以适应内容
+        self.form_layout.addRow("客户端连接状态:", self.connection_status_label)
+
         # 启动按钮
         self.start_button = QPushButton("启动")
         self.start_button.setStyleSheet("background-color: green; color: white;")  # 设置按钮初始为绿色
         self.start_button.clicked.connect(self.start_server_button_clicked)
         self.form_layout.addRow(self.start_button)
+
 
         self.network_config_group.setLayout(self.form_layout)
 
@@ -84,12 +102,6 @@ class MainWindow(QMainWindow):
         # 将水平布局添加到主布局
         self.layout.addLayout(self.network_layout)
 
-        # 当前通道强度和波形
-        self.strength_label = QLabel("A通道强度: 0, B通道强度: 0")
-        self.pulse_label = QLabel("A通道波形: N/A, B通道波形: N/A")
-        self.layout.addWidget(self.strength_label)
-        self.layout.addWidget(self.pulse_label)
-
         # 添加 A 通道滑动条和标签
         self.a_channel_label = QLabel("A 通道强度: 0 / 100")  # 默认显示
         self.a_channel_slider = QSlider(Qt.Horizontal)
@@ -97,6 +109,7 @@ class MainWindow(QMainWindow):
         self.a_channel_slider.valueChanged.connect(self.set_a_channel_strength)
         self.a_channel_slider.sliderPressed.connect(self.disable_a_channel_updates)  # 用户开始拖动时禁用外部更新
         self.a_channel_slider.sliderReleased.connect(self.enable_a_channel_updates)  # 用户释放时重新启用外部更新
+        self.a_channel_slider.valueChanged.connect(lambda: self.show_tooltip(self.a_channel_slider))  # 实时显示提示
         self.layout.addWidget(self.a_channel_label)
         self.layout.addWidget(self.a_channel_slider)
 
@@ -107,6 +120,7 @@ class MainWindow(QMainWindow):
         self.b_channel_slider.valueChanged.connect(self.set_b_channel_strength)
         self.b_channel_slider.sliderPressed.connect(self.disable_b_channel_updates)  # 用户开始拖动时禁用外部更新
         self.b_channel_slider.sliderReleased.connect(self.enable_b_channel_updates)  # 用户释放时重新启用外部更新
+        self.b_channel_slider.valueChanged.connect(lambda: self.show_tooltip(self.b_channel_slider))  # 实时显示提示
         self.layout.addWidget(self.b_channel_label)
         self.layout.addWidget(self.b_channel_slider)
 
@@ -118,16 +132,18 @@ class MainWindow(QMainWindow):
         self.controller_group = QGroupBox("DGLabController 参数")
         self.controller_form = QFormLayout()
 
-        # 强度步长
-        self.strength_step_spinbox = QSpinBox()
-        self.strength_step_spinbox.setRange(0, 100)
-        self.strength_step_spinbox.setValue(30)
-        self.controller_form.addRow("强度步长:", self.strength_step_spinbox)
-
         # 是否启用面板控制
         self.enable_panel_control_checkbox = QCheckBox("允许 avatar 控制设备") # PanelControl 关闭后忽略所有游戏内传入的控制
         self.enable_panel_control_checkbox.setChecked(True)
         self.controller_form.addRow(self.enable_panel_control_checkbox)
+
+        # ChatBox状态开关
+        self.enable_chatbox_status_checkbox = QCheckBox("启用ChatBox状态显示")
+        self.enable_chatbox_status_checkbox.setChecked(False)
+        self.controller_form.addRow(self.enable_chatbox_status_checkbox)
+
+        self.controller_group.setLayout(self.controller_form)
+        self.layout.addWidget(self.controller_group)
 
         # 动骨模式选择
         self.dynamic_bone_mode_a_checkbox = QCheckBox("A通道交互模式")
@@ -144,13 +160,11 @@ class MainWindow(QMainWindow):
         self.controller_form.addRow("A通道波形模式:", self.pulse_mode_a_combobox)
         self.controller_form.addRow("B通道波形模式:", self.pulse_mode_b_combobox)
 
-        # ChatBox状态开关
-        self.enable_chatbox_status_checkbox = QCheckBox("启用ChatBox状态显示")
-        self.enable_chatbox_status_checkbox.setChecked(False)
-        self.controller_form.addRow(self.enable_chatbox_status_checkbox)
-
-        self.controller_group.setLayout(self.controller_form)
-        self.layout.addWidget(self.controller_group)
+        # 强度步长
+        self.strength_step_spinbox = QSpinBox()
+        self.strength_step_spinbox.setRange(0, 100)
+        self.strength_step_spinbox.setValue(30)
+        self.controller_form.addRow("开火强度步长:", self.strength_step_spinbox)
 
         # 日志显示框
         self.log_text_edit = QTextEdit(self)
@@ -209,15 +223,13 @@ class MainWindow(QMainWindow):
         self.qrcode_label.setFixedSize(qrcode_pixmap.size())  # 根据二维码尺寸调整QLabel大小
         logger.info("二维码已更新")
 
-    def update_status(self, strength_data, pulse_a, pulse_b):
+    def update_status(self, strength_data):
         """更新通道强度和波形"""
-        # self.strength_label.setText(f"A通道强度: {strength_data.a}, B通道强度: {strength_data.b}")
-        # self.pulse_label.setText(f"A通道波形: {pulse_a}, B通道波形: {pulse_b}")
         logger.info(f"通道状态已更新 - A通道强度: {strength_data.a}, B通道强度: {strength_data.b}")
 
         if self.controller and self.controller.last_strength:
             # 仅当允许外部更新时更新 A 通道滑动条
-            if self.allow_a_channel_update and self.controller.last_strength.a != self.a_channel_slider.value():
+            if self.allow_a_channel_update:
                 self.a_channel_slider.blockSignals(True)
                 self.a_channel_slider.setRange(0, self.controller.last_strength.a_limit)  # 根据限制更新范围
                 self.a_channel_slider.setValue(self.controller.last_strength.a)
@@ -226,13 +238,38 @@ class MainWindow(QMainWindow):
                     f"A 通道强度: {self.controller.last_strength.a} 强度上限: {self.controller.last_strength.a_limit}  波形: {PULSE_NAME[self.controller.pulse_mode_a]}")
 
             # 仅当允许外部更新时更新 B 通道滑动条
-            if self.allow_b_channel_update and self.controller.last_strength.b != self.b_channel_slider.value():
+            if self.allow_b_channel_update:
                 self.b_channel_slider.blockSignals(True)
                 self.b_channel_slider.setRange(0, self.controller.last_strength.b_limit)  # 根据限制更新范围
                 self.b_channel_slider.setValue(self.controller.last_strength.b)
                 self.b_channel_slider.blockSignals(False)
                 self.b_channel_label.setText(
                     f"B 通道强度: {self.controller.last_strength.b} 强度上限: {self.controller.last_strength.b_limit}  波形: {PULSE_NAME[self.controller.pulse_mode_b]}")
+
+    def update_connection_status(self, is_online):
+        """根据设备连接状态更新标签的文本和颜色"""
+        if is_online:
+            self.connection_status_label.setText("已连接")
+            self.connection_status_label.setStyleSheet("""
+                QLabel {
+                    background-color: green;
+                    color: white;
+                    border-radius: 10px;
+                    padding: 5px;
+                }
+            """)
+        else:
+            self.connection_status_label.setText("未连接")
+            self.connection_status_label.setStyleSheet("""
+                QLabel {
+                    background-color: red;
+                    color: white;
+                    border-radius: 10px;
+                    padding: 5px;
+                }
+            """)
+        # 根据内容调整标签的宽度
+        self.connection_status_label.adjustSize()
 
     def disable_a_channel_updates(self):
         """禁用 A 通道的外部更新"""
@@ -256,7 +293,7 @@ class MainWindow(QMainWindow):
         """启动按钮被点击后的处理逻辑"""
         self.start_button.setText("已启动")  # 修改按钮文本
         self.start_button.setStyleSheet("background-color: grey; color: white;")  # 将按钮置灰
-        self.start_button.setEnabled(False)  # 禁用按钮
+        # self.start_button.setEnabled(False)  # 禁用按钮
         self.start_server()  # 调用现有的启动服务器逻辑
 
     def start_server(self):
@@ -278,6 +315,7 @@ class MainWindow(QMainWindow):
         """更新调试信息"""
         if self.controller:
             params = (
+                f"Device online: app_status_online= {self.controller.app_status_online}\n "
                 f"Enable Panel Control: {self.controller.enable_panel_control}\n"
                 f"Dynamic Bone Mode A: {self.controller.is_dynamic_bone_mode_a}\n"
                 f"Dynamic Bone Mode B: {self.controller.is_dynamic_bone_mode_b}\n"
@@ -285,6 +323,9 @@ class MainWindow(QMainWindow):
                 f"Pulse Mode B: {self.controller.pulse_mode_b}\n"
                 f"Fire Mode Strength Step: {self.controller.fire_mode_strength_step}\n"
                 f"Enable ChatBox Status: {self.controller.enable_chatbox_status}\n"
+                f"GUI Parameters:\n"
+                f"A  strength allow update:{self.allow_a_channel_update}\n"
+                f"B  strength allow update:{self.allow_a_channel_update}\n"
             )
             self.param_label.setText(params)
         else:
@@ -362,6 +403,27 @@ class MainWindow(QMainWindow):
             self.controller.last_strength.b = value  # 同步更新 last_strength 的 B 通道值
             self.b_channel_slider.setToolTip(f"SET B 通道强度: {value}")
 
+    def show_tooltip(self, slider):
+        """显示滑动条当前值的工具提示在滑块上方"""
+        value = slider.value()
+
+        # 获取滑块的位置
+        slider_min = slider.minimum()
+        slider_max = slider.maximum()
+        slider_range = slider_max - slider_min
+        slider_length = slider.width()  # 滑条的总长度
+
+        # 计算滑块的位置
+        slider_pos = (value - slider_min) / slider_range * slider_length
+
+        # 滑块的位置转换为全局坐标，并计算显示位置
+        global_pos = slider.mapToGlobal(slider.rect().topLeft())
+        tooltip_x = global_pos.x() + slider_pos - 15  # 调整 tooltip 水平位置，使其居中
+        tooltip_y = global_pos.y() - 40  # 调整 tooltip 垂直位置，使其显示在滑块上方
+
+        # 显示提示框
+        QToolTip.showText(QPoint(tooltip_x, tooltip_y), f"{value}", slider)
+
 def generate_qrcode(data: str):
     """生成二维码并转换为PySide6可显示的QPixmap"""
     qr = qrcode.QRCode(version=1, error_correction=qrcode.constants.ERROR_CORRECT_L, box_size=6, border=2)
@@ -426,10 +488,12 @@ async def run_server(window: MainWindow, ip: str, port: int, osc_port: int):
 
         async for data in client.data_generator():
             if isinstance(data, StrengthData):
-                window.update_status(data, controller.pulse_mode_a, controller.pulse_mode_b)
                 controller.last_strength = data
                 controller.data_updated_event.set()  # 数据更新，触发开火操作的后续事件
                 logger.info(f"接收到数据包 - A通道: {data.a}, B通道: {data.b}")
+                controller.app_status_online = True
+                window.update_connection_status(controller.app_status_online)
+                window.update_status(data)
             # 接收 App 反馈按钮
             elif isinstance(data, FeedbackButton):
                 logger.info(f"App 触发了反馈按钮：{data.name}")
@@ -437,9 +501,11 @@ async def run_server(window: MainWindow, ip: str, port: int, osc_port: int):
             elif data == RetCode.CLIENT_DISCONNECTED:
                 logger.info("App 已断开连接，你可以尝试重新扫码进行连接绑定")
                 controller.app_status_online = False
+                window.update_connection_status(controller.app_status_online)
                 await client.rebind()
                 logger.info("重新绑定成功")
                 controller.app_status_online = True
+                window.update_connection_status(controller.app_status_online)
 
         osc_transport.close()
 
