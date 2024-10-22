@@ -4,10 +4,10 @@ import io
 import qrcode
 import logging
 from PySide6.QtWidgets import (QApplication, QMainWindow, QLabel, QVBoxLayout, QHBoxLayout, QWidget,
-                               QPushButton, QComboBox, QSpinBox, QFormLayout, QGroupBox,
+                               QPushButton, QComboBox, QSpinBox, QFormLayout, QGroupBox, QSlider,
                                QTextEdit, QCheckBox)
 from PySide6.QtGui import QPixmap
-from PySide6.QtCore import QByteArray, QTimer
+from PySide6.QtCore import Qt, QByteArray, QTimer
 from qasync import QEventLoop
 from pydglab_ws import StrengthData, FeedbackButton, Channel, StrengthOperationType, RetCode, DGLabWSServer
 from config import get_active_ip_addresses
@@ -33,7 +33,7 @@ class QTextEditHandler(logging.Handler):
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("DG-Lab WebSocket Controller for Misaka")
+        self.setWindowTitle("DG-Lab WebSocket Controller for VRChat")
         self.setGeometry(300, 300, 600, 800)
 
         # 创建主布局
@@ -65,6 +65,12 @@ class MainWindow(QMainWindow):
         self.osc_port_spinbox.setValue(9102)  # Default OSC recv port for VRChat is 9001
         self.form_layout.addRow("OSC接收端口:", self.osc_port_spinbox)
 
+        # 启动按钮
+        self.start_button = QPushButton("启动")
+        self.start_button.setStyleSheet("background-color: green; color: white;")  # 设置按钮初始为绿色
+        self.start_button.clicked.connect(self.start_server_button_clicked)
+        self.form_layout.addRow(self.start_button)
+
         self.network_config_group.setLayout(self.form_layout)
 
         # 将网络配置组添加到水平布局
@@ -82,6 +88,30 @@ class MainWindow(QMainWindow):
         self.pulse_label = QLabel("A通道波形: N/A, B通道波形: N/A")
         self.layout.addWidget(self.strength_label)
         self.layout.addWidget(self.pulse_label)
+
+        # 添加 A 通道滑动条和标签
+        self.a_channel_label = QLabel("A 通道强度: 0 / 100")  # 默认显示
+        self.a_channel_slider = QSlider(Qt.Horizontal)
+        self.a_channel_slider.setRange(0, 100)  # 默认范围
+        self.a_channel_slider.valueChanged.connect(self.set_a_channel_strength)
+        self.a_channel_slider.sliderPressed.connect(self.disable_a_channel_updates)  # 用户开始拖动时禁用外部更新
+        self.a_channel_slider.sliderReleased.connect(self.enable_a_channel_updates)  # 用户释放时重新启用外部更新
+        self.layout.addWidget(self.a_channel_label)
+        self.layout.addWidget(self.a_channel_slider)
+
+        # 添加 B 通道滑动条和标签
+        self.b_channel_label = QLabel("B 通道强度: 0 / 100")  # 默认显示
+        self.b_channel_slider = QSlider(Qt.Horizontal)
+        self.b_channel_slider.setRange(0, 100)  # 默认范围
+        self.b_channel_slider.valueChanged.connect(self.set_b_channel_strength)
+        self.b_channel_slider.sliderPressed.connect(self.disable_b_channel_updates)  # 用户开始拖动时禁用外部更新
+        self.b_channel_slider.sliderReleased.connect(self.enable_b_channel_updates)  # 用户释放时重新启用外部更新
+        self.layout.addWidget(self.b_channel_label)
+        self.layout.addWidget(self.b_channel_slider)
+
+        # 控制滑动条外部更新的状态标志
+        self.allow_a_channel_update = True
+        self.allow_b_channel_update = True
 
         # 控制器参数设置
         self.controller_group = QGroupBox("DGLabController 参数")
@@ -125,11 +155,6 @@ class MainWindow(QMainWindow):
         self.log_text_edit = QTextEdit(self)
         self.log_text_edit.setReadOnly(True)
         self.layout.addWidget(self.log_text_edit)
-
-        # 启动按钮
-        self.start_button = QPushButton("启动")
-        self.start_button.clicked.connect(self.start_server)
-        self.layout.addWidget(self.start_button)
 
         # 增加可折叠的调试界面
         self.debug_group = QGroupBox("调试信息")
@@ -185,9 +210,53 @@ class MainWindow(QMainWindow):
 
     def update_status(self, strength_data, pulse_a, pulse_b):
         """更新通道强度和波形"""
-        self.strength_label.setText(f"A通道强度: {strength_data.a}, B通道强度: {strength_data.b}")
-        self.pulse_label.setText(f"A通道波形: {pulse_a}, B通道波形: {pulse_b}")
+        # self.strength_label.setText(f"A通道强度: {strength_data.a}, B通道强度: {strength_data.b}")
+        # self.pulse_label.setText(f"A通道波形: {pulse_a}, B通道波形: {pulse_b}")
         logger.info(f"通道状态已更新 - A通道强度: {strength_data.a}, B通道强度: {strength_data.b}")
+
+        if self.controller and self.controller.last_strength:
+            # 仅当允许外部更新时更新 A 通道滑动条
+            if self.allow_a_channel_update and self.controller.last_strength.a != self.a_channel_slider.value():
+                self.a_channel_slider.blockSignals(True)
+                self.a_channel_slider.setRange(0, self.controller.last_strength.a_limit)  # 根据限制更新范围
+                self.a_channel_slider.setValue(self.controller.last_strength.a)
+                self.a_channel_slider.blockSignals(False)
+                self.a_channel_label.setText(
+                    f"A 通道强度: {self.controller.last_strength.a} 强度上限: {self.controller.last_strength.a_limit}  波形: {PULSE_NAME[self.controller.pulse_mode_a]}")
+
+            # 仅当允许外部更新时更新 B 通道滑动条
+            if self.allow_b_channel_update and self.controller.last_strength.b != self.b_channel_slider.value():
+                self.b_channel_slider.blockSignals(True)
+                self.b_channel_slider.setRange(0, self.controller.last_strength.b_limit)  # 根据限制更新范围
+                self.b_channel_slider.setValue(self.controller.last_strength.b)
+                self.b_channel_slider.blockSignals(False)
+                self.b_channel_label.setText(
+                    f"B 通道强度: {self.controller.last_strength.b} 强度上限: {self.controller.last_strength.b_limit}  波形: {PULSE_NAME[self.controller.pulse_mode_b]}")
+
+    def disable_a_channel_updates(self):
+        """禁用 A 通道的外部更新"""
+        self.allow_a_channel_update = False
+
+    def enable_a_channel_updates(self):
+        """启用 A 通道的外部更新"""
+        self.allow_a_channel_update = True
+        self.set_a_channel_strength(self.a_channel_slider.value())  # 用户释放时，更新设备
+
+    def disable_b_channel_updates(self):
+        """禁用 B 通道的外部更新"""
+        self.allow_b_channel_update = False
+
+    def enable_b_channel_updates(self):
+        """启用 B 通道的外部更新"""
+        self.allow_b_channel_update = True
+        self.set_b_channel_strength(self.b_channel_slider.value())  # 用户释放时，更新设备
+
+    def start_server_button_clicked(self):
+        """启动按钮被点击后的处理逻辑"""
+        self.start_button.setText("已启动")  # 修改按钮文本
+        self.start_button.setStyleSheet("background-color: grey; color: white;")  # 将按钮置灰
+        self.start_button.setEnabled(False)  # 禁用按钮
+        self.start_server()  # 调用现有的启动服务器逻辑
 
     def start_server(self):
         """启动 WebSocket 服务器"""
@@ -265,18 +334,32 @@ class MainWindow(QMainWindow):
 
     def update_pulse_mode_a(self, index):
         if self.controller:
-            self.controller.pulse_mode_a = index
+            asyncio.create_task(self.controller.set_pulse_data(None,Channel.A,index))
             logger.info(f"Pulse mode A updated to {PULSE_NAME[index]}")
 
     def update_pulse_mode_b(self, index):
         if self.controller:
-            self.controller.pulse_mode_b = index
+            asyncio.create_task(self.controller.set_pulse_data(None, Channel.B, index))
             logger.info(f"Pulse mode B updated to {PULSE_NAME[index]}")
 
     def update_chatbox_status(self, state):
         if self.controller:
             self.controller.enable_chatbox_status = bool(state)
             logger.info(f"ChatBox status enabled: {self.controller.enable_chatbox_status}")
+
+    def set_a_channel_strength(self, value):
+        """根据滑动条的值设定 A 通道强度"""
+        if self.controller:
+            asyncio.create_task(self.controller.client.set_strength(Channel.A, StrengthOperationType.SET_TO, value))
+            self.controller.last_strength.a = value  # 同步更新 last_strength 的 A 通道值
+            self.a_channel_slider.setToolTip(f"SET A 通道强度: {value}")
+
+    def set_b_channel_strength(self, value):
+        """根据滑动条的值设定 B 通道强度"""
+        if self.controller:
+            asyncio.create_task(self.controller.client.set_strength(Channel.B, StrengthOperationType.SET_TO, value))
+            self.controller.last_strength.b = value  # 同步更新 last_strength 的 B 通道值
+            self.b_channel_slider.setToolTip(f"SET B 通道强度: {value}")
 
 def generate_qrcode(data: str):
     """生成二维码并转换为PySide6可显示的QPixmap"""
