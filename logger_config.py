@@ -5,7 +5,7 @@ import os
 
 def setup_logging():
     # 获取当前时间，用于生成日志文件名
-    log_filename = datetime.now().strftime("app_%Y-%m-%d_%H-%M-%S.log")
+    log_filename = datetime.now().strftime("DG-LAB-VRCOSC_%Y-%m-%d_%H-%M-%S.log")
 
     # 创建日志目录（如果不存在）
     log_dir = "logs"
@@ -45,4 +45,5 @@ def setup_logging():
     # 可选：禁用第三方库的日志
     logging.getLogger("websockets.server").setLevel(logging.WARNING)
     logging.getLogger("websockets.protocol").setLevel(logging.WARNING)
+    logging.getLogger('qasync').setLevel(logging.WARNING)
 

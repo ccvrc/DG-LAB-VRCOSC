@@ -15,7 +15,8 @@ from pythonosc import dispatcher, osc_server, udp_client
 
 from dglab_controller import DGLabController
 from pulse_data import PULSE_NAME
-
+from logger_config import setup_logging
+setup_logging()
 # 配置日志记录器
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
