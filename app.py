@@ -118,6 +118,11 @@ class MainWindow(QMainWindow):
         # 将水平布局添加到主布局
         self.layout.addLayout(self.network_layout)
 
+        # 控制器参数设置
+        self.controller_group = QGroupBox("DGLabController 设置")
+        self.controller_group.setEnabled(False)  # 默认禁用
+        self.controller_form = QFormLayout()
+
         # 添加 A 通道滑动条和标签
         self.a_channel_label = QLabel("A 通道强度: 0 / 100")  # 默认显示
         self.a_channel_slider = QSlider(Qt.Horizontal)
@@ -126,8 +131,8 @@ class MainWindow(QMainWindow):
         self.a_channel_slider.sliderPressed.connect(self.disable_a_channel_updates)  # 用户开始拖动时禁用外部更新
         self.a_channel_slider.sliderReleased.connect(self.enable_a_channel_updates)  # 用户释放时重新启用外部更新
         self.a_channel_slider.valueChanged.connect(lambda: self.show_tooltip(self.a_channel_slider))  # 实时显示提示
-        self.layout.addWidget(self.a_channel_label)
-        self.layout.addWidget(self.a_channel_slider)
+        self.controller_form.addRow(self.a_channel_label)
+        self.controller_form.addRow(self.a_channel_slider)
 
         # 添加 B 通道滑动条和标签
         self.b_channel_label = QLabel("B 通道强度: 0 / 100")  # 默认显示
@@ -137,16 +142,12 @@ class MainWindow(QMainWindow):
         self.b_channel_slider.sliderPressed.connect(self.disable_b_channel_updates)  # 用户开始拖动时禁用外部更新
         self.b_channel_slider.sliderReleased.connect(self.enable_b_channel_updates)  # 用户释放时重新启用外部更新
         self.b_channel_slider.valueChanged.connect(lambda: self.show_tooltip(self.b_channel_slider))  # 实时显示提示
-        self.layout.addWidget(self.b_channel_label)
-        self.layout.addWidget(self.b_channel_slider)
+        self.controller_form.addRow(self.b_channel_label)
+        self.controller_form.addRow(self.b_channel_slider)
 
         # 控制滑动条外部更新的状态标志
         self.allow_a_channel_update = True
         self.allow_b_channel_update = True
-
-        # 控制器参数设置
-        self.controller_group = QGroupBox("DGLabController 设置")
-        self.controller_form = QFormLayout()
 
         # 是否启用面板控制
         self.enable_panel_control_checkbox = QCheckBox("允许 avatar 控制设备") # PanelControl 关闭后忽略所有游戏内传入的控制
@@ -275,6 +276,8 @@ class MainWindow(QMainWindow):
                     padding: 5px;
                 }
             """)
+            # 启用 DGLabController 设置
+            self.controller_group.setEnabled(True)  # 启用控制器设置
         else:
             self.connection_status_label.setText("未连接")
             self.connection_status_label.setStyleSheet("""
@@ -285,8 +288,9 @@ class MainWindow(QMainWindow):
                     padding: 5px;
                 }
             """)
-        # 根据内容调整标签的宽度
-        self.connection_status_label.adjustSize()
+            # 禁用 DGLabController 设置
+            self.controller_group.setEnabled(False)  # 禁用控制器设置
+        self.connection_status_label.adjustSize()  # 根据内容调整标签大小
 
     def disable_a_channel_updates(self):
         """禁用 A 通道的外部更新"""
