@@ -47,7 +47,7 @@ jobs:
 
     - name: Build with PyInstaller
       run: |
-        pyinstaller -F --windowed -i docs/images/cat.ico --name DG-LAB-VRCOSC app.py
+        pyinstaller -F --windowed -i docs/images/cat.ico --name DG-LAB-VRCOSC --add-data "docs/images/cat.ico;docs/images" app.py
       shell: pwsh
 
     - name: Upload artifact

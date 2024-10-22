@@ -1,6 +1,7 @@
 import sys
 import asyncio
 import io
+import os
 import qrcode
 import logging
 from PySide6.QtWidgets import (QApplication, QMainWindow, QLabel, QVBoxLayout, QHBoxLayout, QWidget,
@@ -34,8 +35,17 @@ class QTextEditHandler(logging.Handler):
             msg = f"<b style='color:red;'>{msg}</b>"  # Display error messages in red
         elif record.levelno == logging.WARNING:
             msg = f"<b style='color:orange;'>{msg}</b>"  # Display warnings in orange
+        else:
+            msg = f"<b style='color:white;'>{msg}</b>"  # Ensure normal logs are black
+        # Append the message to the text edit and reset the cursor position
         self.text_edit.append(msg)
-        self.text_edit.ensureCursorVisible()  # 确保最新日志可见
+        self.text_edit.ensureCursorVisible()  # Ensure the latest log is visible
+
+def resource_path(relative_path):
+    """ 获取资源的绝对路径，在开发和打包后的环境中都能正常使用。 """
+    if hasattr(sys, '_MEIPASS'):
+        return os.path.join(sys._MEIPASS, relative_path)
+    return os.path.join(os.path.abspath("."), relative_path)
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -44,7 +54,7 @@ class MainWindow(QMainWindow):
         self.setGeometry(300, 300, 650, 800)
 
         # 设置窗口图标
-        self.setWindowIcon(QIcon("docs/images/cat.ico"))
+        self.setWindowIcon(QIcon(resource_path('docs/images/cat.ico')))
 
         # 创建主布局
         self.layout = QVBoxLayout()
@@ -300,7 +310,7 @@ class MainWindow(QMainWindow):
         """启动按钮被点击后的处理逻辑"""
         self.start_button.setText("已启动")  # 修改按钮文本
         self.start_button.setStyleSheet("background-color: grey; color: white;")  # 将按钮置灰
-        # self.start_button.setEnabled(False)  # 禁用按钮
+        self.start_button.setEnabled(False)  # 禁用按钮
         self.start_server()  # 调用现有的启动服务器逻辑
 
     def start_server(self):
@@ -316,14 +326,20 @@ class MainWindow(QMainWindow):
             logger.info('WebSocket 服务器已启动')
             # 关闭调试界面
             self.toggle_debug_info(False)
+            # 启动成功后，将按钮设为灰绿色并禁用
+            self.start_button.setText("已启动")
+            self.start_button.setStyleSheet("background-color: grey; color: white;")
+            self.start_button.setEnabled(False)
         except OSError as e:
             error_message = f"启动服务器失败: {str(e)}"
             # Log the error with error level
             logger.error(error_message)
             # Update the UI to reflect the error
-            self.start_button.setText("启动失败")
+            self.start_button.setText("启动失败,请重试")
             self.start_button.setStyleSheet("background-color: red; color: white;")
-            self.log_text_edit.append(f"ERROR: {error_message}")
+            self.start_button.setEnabled(True)
+            # 记录异常日志
+            logger.error(f"服务器启动过程中发生异常: {str(e)}")
 
     def update_debug_info(self):
         """更新调试信息"""
@@ -582,9 +598,10 @@ async def run_server(window: MainWindow, ip: str, port: int, osc_port: int):
         error_message = f"WebSocket 服务器启动失败: {str(e)}"
         logger.error(error_message)
 
-        # Update the UI to reflect the error
-        window.start_button.setText("启动失败")
+        # 启动过程中发生异常，恢复按钮状态为可点击的红色
+        window.start_button.setText("启动失败，请重试")
         window.start_button.setStyleSheet("background-color: red; color: white;")
+        window.start_button.setEnabled(True)
         window.log_text_edit.append(f"ERROR: {error_message}")
 
 if __name__ == "__main__":
