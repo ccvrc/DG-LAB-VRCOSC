@@ -35,7 +35,7 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("DG-Lab WebSocket Controller for VRChat")
-        self.setGeometry(300, 300, 600, 800)
+        self.setGeometry(300, 300, 650, 800)
 
         # 设置窗口图标
         self.setWindowIcon(QIcon("docs/images/cat.ico"))
@@ -76,7 +76,7 @@ class MainWindow(QMainWindow):
             QLabel {
                 background-color: red;
                 color: white;
-                border-radius: 10px;  # 圆角
+                border-radius: 5px;  # 圆角
                 padding: 5px;
             }
         """)
@@ -129,7 +129,7 @@ class MainWindow(QMainWindow):
         self.allow_b_channel_update = True
 
         # 控制器参数设置
-        self.controller_group = QGroupBox("DGLabController 参数")
+        self.controller_group = QGroupBox("DGLabController 设置")
         self.controller_form = QFormLayout()
 
         # 是否启用面板控制
@@ -254,7 +254,7 @@ class MainWindow(QMainWindow):
                 QLabel {
                     background-color: green;
                     color: white;
-                    border-radius: 10px;
+                    border-radius: 5px;
                     padding: 5px;
                 }
             """)
@@ -264,7 +264,7 @@ class MainWindow(QMainWindow):
                 QLabel {
                     background-color: red;
                     color: white;
-                    border-radius: 10px;
+                    border-radius: 5px;
                     padding: 5px;
                 }
             """)
