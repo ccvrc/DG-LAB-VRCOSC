@@ -7,3 +7,4 @@ pyyaml
 psutil
 PySide6
 qasync
+websockets

@@ -17,6 +17,7 @@ from pythonosc import dispatcher, osc_server, udp_client
 from dglab_controller import DGLabController
 from pulse_data import PULSE_NAME
 from logger_config import setup_logging
+from ton_websocket_handler import WebSocketClient
 setup_logging()
 # 配置日志记录器
 logging.basicConfig(level=logging.INFO)
@@ -192,11 +193,51 @@ class MainWindow(QMainWindow):
         self.strength_step_spinbox.setValue(30)
         self.controller_form.addRow("开火强度步长:", self.strength_step_spinbox)
 
+        # 日志
+        # 日志显示框 - 使用 QGroupBox 包装
+        self.log_groupbox = QGroupBox("日志显示")
+        self.log_groupbox.setCheckable(True)
+        self.log_groupbox.setChecked(True)
+        self.log_groupbox.toggled.connect(self.toggle_log_display)
+
         # 日志显示框
         self.log_text_edit = QTextEdit(self)
         self.log_text_edit.setReadOnly(True)
-        self.layout.addWidget(self.log_text_edit)
+
+        # 将日志显示框添加到 GroupBox 的布局中
+        log_layout = QVBoxLayout()
+        log_layout.addWidget(self.log_text_edit)
+        self.log_groupbox.setLayout(log_layout)
+
+        # 将 GroupBox 添加到主布局
+        self.layout.addWidget(self.log_groupbox)
+
+        # 启动日志记录系统
         self.app_setup_logging()
+
+        # TON
+        # GroupBox for WebSocket settings and display
+        self.websocket_groupbox = QGroupBox("WebSocket Status")
+        self.websocket_groupbox.setCheckable(True)
+        self.websocket_groupbox.setChecked(False)  # Initially disabled and folded
+        self.websocket_groupbox.toggled.connect(self.toggle_websocket)
+
+        # Layout inside the GroupBox
+        self.websocket_layout = QVBoxLayout()
+
+        # WebSocket Message Display
+        self.ws_message_display = QTextEdit(self)
+        self.ws_message_display.setReadOnly(True)
+        self.ws_message_display.setPlaceholderText("WebSocket messages will appear here...")
+        self.websocket_layout.addWidget(self.ws_message_display)
+
+        # Set the layout for the GroupBox
+        self.websocket_groupbox.setLayout(self.websocket_layout)
+
+        # Add the GroupBox to the main layout
+        self.layout.addWidget(self.websocket_groupbox)
+        # Initialize WebSocket client, but do not connect until groupbox is opened
+        self.websocket_client = None
 
         # 增加可折叠的调试界面
         self.debug_group = QGroupBox("调试信息")
@@ -552,6 +593,41 @@ class MainWindow(QMainWindow):
         self.log_text_edit.setTextCursor(cursor)
         # 确保最新日志可见
         self.log_text_edit.ensureCursorVisible()
+
+    # 当 GroupBox 展开时，显示日志内容；当折叠时，隐藏日志框
+    def toggle_log_display(self, enabled):
+        """折叠或展开日志显示框"""
+        if enabled:
+            self.log_text_edit.show()  # 展开时显示日志框
+        else:
+            self.log_text_edit.hide()  # 折叠时隐藏日志框
+
+    def toggle_websocket(self, enabled):
+        """Enable or disable WebSocket connection based on GroupBox state."""
+        if enabled:
+            # If enabled, create WebSocket client and connect
+            self.websocket_client = WebSocketClient("ws://localhost:11398")
+            self.websocket_client.status_update_signal.connect(self.update_ws_display)
+            self.websocket_client.error_signal.connect(self.display_ws_error)
+            asyncio.ensure_future(
+                self.websocket_client.start_connection())  # Use start_connection() instead of connect()
+        else:
+            # If disabled, close the WebSocket connection and remove the client
+            if self.websocket_client:
+                asyncio.ensure_future(self.websocket_client.close())
+                self.websocket_client = None
+                self.ws_message_display.append("WebSocket disconnected.")
+                self.ws_message_display.ensureCursorVisible()
+
+    def update_ws_display(self, status):
+        """Update the QTextEdit with the latest WebSocket message."""
+        self.ws_message_display.append(f"WS Update: {status}")
+        self.ws_message_display.ensureCursorVisible()
+
+    def display_ws_error(self, error_message):
+        """Display WebSocket errors in the QTextEdit."""
+        self.ws_message_display.append(f"WS Error: {error_message}")
+        self.ws_message_display.ensureCursorVisible()
 
 
 def generate_qrcode(data: str):
