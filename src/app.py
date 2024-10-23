@@ -57,7 +57,7 @@ class MainWindow(QMainWindow):
         self.setGeometry(300, 300, 650, 800)
 
         # 设置窗口图标
-        self.setWindowIcon(QIcon(resource_path('docs/images/cat.ico')))
+        self.setWindowIcon(QIcon(resource_path('docs/images/fish-cake.ico')))
 
         # Load settings from file or use defaults
         self.settings = load_settings() or {

@@ -9,6 +9,7 @@ on:
       - "master"
       - "action-test"
       - "feature/*"
+      - "feat-*"
   pull_request:
     branches:
       - "master"
@@ -47,7 +48,7 @@ jobs:
 
     - name: Build with PyInstaller
       run: |
-        pyinstaller -F --windowed -i docs/images/cat.ico --name DG-LAB-VRCOSC --add-data "docs/images/cat.ico;docs/images" src/app.py
+        pyinstaller -F --windowed -i docs/images/fish-cake.ico --name DG-LAB-VRCOSC --add-data "docs/images/fish-cake.ico;docs/images" src/app.py
       shell: pwsh
 
     - name: Upload artifact
