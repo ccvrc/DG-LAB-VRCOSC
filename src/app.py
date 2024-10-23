@@ -5,10 +5,11 @@ import os
 import qrcode
 import logging
 import json
+import time
 from PySide6.QtWidgets import (QApplication, QMainWindow, QLabel, QVBoxLayout, QHBoxLayout, QWidget,
                                QPushButton, QComboBox, QSpinBox, QFormLayout, QGroupBox, QSlider,
                                QTextEdit, QCheckBox, QToolTip, QTableWidget, QTableWidgetItem, QHeaderView)
-from PySide6.QtGui import QPixmap, QIcon, QTextCursor
+from PySide6.QtGui import QPixmap, QIcon, QTextCursor, QColor
 from PySide6.QtCore import Qt, QByteArray, QTimer, QPoint
 from qasync import QEventLoop
 from pydglab_ws import StrengthData, FeedbackButton, Channel, StrengthOperationType, RetCode, DGLabWSServer
@@ -223,12 +224,27 @@ class MainWindow(QMainWindow):
         self.websocket_groupbox.setChecked(False)  # Initially disabled
         self.websocket_groupbox.toggled.connect(self.toggle_websocket)
 
+        # Keep track of last updated times for each key
+        self.last_update_times = {}
+
         # 创建表格，用于显示 STATS 类型数据
         self.ws_status_table = QTableWidget(self)
-        self.ws_status_table.setColumnCount(2)
-        self.ws_status_table.setHorizontalHeaderLabels(['参数名称', '数值'])
+        self.ws_status_table.setColumnCount(3)  # Three columns: Parameter, Value, Last Updated
+        self.ws_status_table.setHorizontalHeaderLabels(['参数名称', '数值', '更新时间'])
         self.ws_status_table.horizontalHeader().setStretchLastSection(True)
         self.ws_status_table.setEditTriggers(QTableWidget.NoEditTriggers)  # 禁止编辑
+
+        # Timer to update the "Last Updated" column every second
+        self.update_timer = QTimer(self)
+        self.update_timer.timeout.connect(self.update_time_since_last_update)
+        self.update_timer.start(1000)  # Update every second
+
+        # Add a checkbox to toggle WebSocket message display
+        self.show_ws_messages_checkbox = QCheckBox("显示其他WebSocket 消息", self)
+        self.show_ws_messages_checkbox.setChecked(True)  # Default to showing messages
+
+        # Connect the checkbox to a function to hide/show the message display
+        self.show_ws_messages_checkbox.stateChanged.connect(self.toggle_ws_message_display)
 
         # 创建用于显示普通消息的 QTextEdit
         self.ws_message_display = QTextEdit(self)
@@ -237,6 +253,7 @@ class MainWindow(QMainWindow):
         # 将表格和消息显示框添加到 GroupBox 中
         self.websocket_layout = QVBoxLayout()
         self.websocket_layout.addWidget(self.ws_status_table)
+        self.websocket_layout.addWidget(self.show_ws_messages_checkbox)
         self.websocket_layout.addWidget(self.ws_message_display)
         self.websocket_groupbox.setLayout(self.websocket_layout)
 
@@ -625,55 +642,103 @@ class MainWindow(QMainWindow):
                 self.ws_message_display.ensureCursorVisible()
 
     def update_ws_display(self, message):
-        """更新 WebSocket 表格和 QTextEdit 显示."""
-        self.ws_status_table.clearContents()  # 清除表格内容
+        """Update the WebSocket table and display, respecting the checkbox."""
 
         try:
-            # 尝试将消息解析为 JSON
             json_data = json.loads(message)
+            stats_data_dict = {}
 
-            # 用于收集所有的 STATS 数据
-            stats_data_list = []
-
-            # 递归解析函数，处理嵌套结构中的 STATS 数据
             def parse_stats(data):
                 if isinstance(data, dict):
                     if data.get("Type") == "STATS":
-                        stats_data_list.append((data.get("Name"), data.get("Value")))
-                    # 递归解析嵌套在 Args 中的数据
+                        stats_data_dict[data.get("Name")] = data.get("Value")
                     if "Args" in data and isinstance(data["Args"], list):
                         for item in data["Args"]:
                             parse_stats(item)
                 elif isinstance(data, list):
-                    # 如果是列表，递归处理每个元素
                     for item in data:
                         parse_stats(item)
 
-            # 从顶层 JSON 数据开始解析
             parse_stats(json_data)
 
-            # 将 STATS 数据展示在表格中
-            if stats_data_list:
-                self.ws_status_table.setRowCount(len(stats_data_list))  # 根据数据项的数量调整表格行数
+            current_time = time.time()  # Get the current timestamp
 
-                # 填充表格的每个参数和数值
-                for row, (key, value) in enumerate(stats_data_list):
-                    self.ws_status_table.setItem(row, 0, QTableWidgetItem(key))  # 参数名称
-                    self.ws_status_table.setItem(row, 1, QTableWidgetItem(str(value)))  # 数值
-            else:
-                # 对于非 STATS 消息类型，显示在 QTextEdit 中
-                self.ws_message_display.append(f"{json.dumps(json_data, indent=4)}")
-                self.ws_message_display.ensureCursorVisible()
+            if stats_data_dict:
+                for key, value in stats_data_dict.items():
+                    existing_row = None
+                    for row in range(self.ws_status_table.rowCount()):
+                        if self.ws_status_table.item(row, 0) and self.ws_status_table.item(row, 0).text() == key:
+                            existing_row = row
+                            break
+
+                    # Update or insert new data into the table
+                    if existing_row is not None:
+                        self.ws_status_table.setItem(existing_row, 1, QTableWidgetItem(str(value)))
+                    else:
+                        row_count = self.ws_status_table.rowCount()
+                        self.ws_status_table.insertRow(row_count)
+                        self.ws_status_table.setItem(row_count, 0, QTableWidgetItem(key))
+                        self.ws_status_table.setItem(row_count, 1, QTableWidgetItem(str(value)))
+
+                    # Update the timestamp for when this key was last updated
+                    self.last_update_times[key] = current_time
 
         except json.JSONDecodeError:
-            # 如果消息无法解析为 JSON，直接显示原始消息
-            self.ws_message_display.append(message)
-            self.ws_message_display.ensureCursorVisible()
+            if self.show_ws_messages_checkbox.isChecked():  # Only display messages if the checkbox is checked
+                self.ws_message_display.append(message)
+                self.ws_message_display.ensureCursorVisible()
 
+    def update_time_since_last_update(self):
+        """Update the 'Last Updated' column with the time since the last update and apply gradient color to the value cells."""
+        current_time = time.time()
+        for row in range(self.ws_status_table.rowCount()):
+            key = self.ws_status_table.item(row, 0).text()
+            if key in self.last_update_times:
+                # Calculate the time since the last update
+                time_since_update = current_time - self.last_update_times[key]
+                time_text = self.format_time_since(time_since_update)
+                self.ws_status_table.setItem(row, 2, QTableWidgetItem(time_text))
+
+                # Calculate color gradient (bright green to off-white)
+                if time_since_update < 60:
+                    # Define the start color (bright green) and end color (off-white)
+                    start_color = QColor(144, 238, 144)  # Light green (comfortable shade)
+                    end_color = QColor(220, 220, 220)  # Slightly off-white
+
+                    # Interpolate between green and off-white based on time
+                    ratio = min(time_since_update / 60, 1)  # Normalize to range [0, 1]
+                    red = int(start_color.red() + ratio * (end_color.red() - start_color.red()))
+                    green = int(start_color.green() + ratio * (end_color.green() - start_color.green()))
+                    blue = int(start_color.blue() + ratio * (end_color.blue() - start_color.blue()))
+
+                    color = QColor(red, green, blue)
+                else:
+                    color = QColor(220, 220, 220)  # After 60 seconds, use off-white
+
+                # Apply the gradient color to the value column (second column)
+                self.ws_status_table.item(row, 1).setForeground(color)
+
+    def format_time_since(self, seconds):
+        """Helper function to format time in seconds into a human-readable form."""
+        if seconds < 60:
+            return f"{int(seconds)} 秒前"
+        elif seconds < 3600:
+            return f"{int(seconds // 60)} 分钟前"
+        else:
+            return f"{int(seconds // 3600)} 小时前"
     def display_ws_error(self, error_message):
         """显示 WebSocket 错误信息."""
         self.ws_message_display.append(f"WS Error: {error_message}")
         self.ws_message_display.ensureCursorVisible()
+
+    def toggle_ws_message_display(self, state):
+        """Toggle the visibility of the WebSocket message display."""
+        if state == Qt.Checked:
+            self.ws_message_display.show()
+        else:
+            # Clear the message display when hiding it to optimize the display
+            self.ws_message_display.clear()
+            self.ws_message_display.hide()
 
 
 def generate_qrcode(data: str):
