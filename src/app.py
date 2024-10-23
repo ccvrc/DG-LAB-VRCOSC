@@ -4,9 +4,10 @@ import io
 import os
 import qrcode
 import logging
+import json
 from PySide6.QtWidgets import (QApplication, QMainWindow, QLabel, QVBoxLayout, QHBoxLayout, QWidget,
                                QPushButton, QComboBox, QSpinBox, QFormLayout, QGroupBox, QSlider,
-                               QTextEdit, QCheckBox, QToolTip)
+                               QTextEdit, QCheckBox, QToolTip, QTableWidget, QTableWidgetItem, QHeaderView)
 from PySide6.QtGui import QPixmap, QIcon, QTextCursor
 from PySide6.QtCore import Qt, QByteArray, QTimer, QPoint
 from qasync import QEventLoop
@@ -216,27 +217,32 @@ class MainWindow(QMainWindow):
         self.app_setup_logging()
 
         # TON
-        # GroupBox for WebSocket settings and display
+        # 创建 WebSocket 状态显示的 GroupBox
         self.websocket_groupbox = QGroupBox("WebSocket Status")
         self.websocket_groupbox.setCheckable(True)
-        self.websocket_groupbox.setChecked(False)  # Initially disabled and folded
+        self.websocket_groupbox.setChecked(False)  # Initially disabled
         self.websocket_groupbox.toggled.connect(self.toggle_websocket)
 
-        # Layout inside the GroupBox
-        self.websocket_layout = QVBoxLayout()
+        # 创建表格，用于显示 STATS 类型数据
+        self.ws_status_table = QTableWidget(self)
+        self.ws_status_table.setColumnCount(2)
+        self.ws_status_table.setHorizontalHeaderLabels(['参数名称', '数值'])
+        self.ws_status_table.horizontalHeader().setStretchLastSection(True)
+        self.ws_status_table.setEditTriggers(QTableWidget.NoEditTriggers)  # 禁止编辑
 
-        # WebSocket Message Display
+        # 创建用于显示普通消息的 QTextEdit
         self.ws_message_display = QTextEdit(self)
         self.ws_message_display.setReadOnly(True)
-        self.ws_message_display.setPlaceholderText("WebSocket messages will appear here...")
-        self.websocket_layout.addWidget(self.ws_message_display)
 
-        # Set the layout for the GroupBox
+        # 将表格和消息显示框添加到 GroupBox 中
+        self.websocket_layout = QVBoxLayout()
+        self.websocket_layout.addWidget(self.ws_status_table)
+        self.websocket_layout.addWidget(self.ws_message_display)
         self.websocket_groupbox.setLayout(self.websocket_layout)
 
-        # Add the GroupBox to the main layout
+        # 将 GroupBox 添加到主布局
         self.layout.addWidget(self.websocket_groupbox)
-        # Initialize WebSocket client, but do not connect until groupbox is opened
+        # 初始化 WebSocket 客户端变量
         self.websocket_client = None
 
         # 增加可折叠的调试界面
@@ -603,29 +609,69 @@ class MainWindow(QMainWindow):
             self.log_text_edit.hide()  # 折叠时隐藏日志框
 
     def toggle_websocket(self, enabled):
-        """Enable or disable WebSocket connection based on GroupBox state."""
+        """启用或禁用 WebSocket 连接，基于 GroupBox 的状态."""
         if enabled:
-            # If enabled, create WebSocket client and connect
+            # 创建 WebSocket 客户端并连接
             self.websocket_client = WebSocketClient("ws://localhost:11398")
             self.websocket_client.status_update_signal.connect(self.update_ws_display)
             self.websocket_client.error_signal.connect(self.display_ws_error)
-            asyncio.ensure_future(
-                self.websocket_client.start_connection())  # Use start_connection() instead of connect()
+            asyncio.ensure_future(self.websocket_client.start_connection())  # 启动连接
         else:
-            # If disabled, close the WebSocket connection and remove the client
+            # 关闭 WebSocket 连接
             if self.websocket_client:
                 asyncio.ensure_future(self.websocket_client.close())
                 self.websocket_client = None
                 self.ws_message_display.append("WebSocket disconnected.")
                 self.ws_message_display.ensureCursorVisible()
 
-    def update_ws_display(self, status):
-        """Update the QTextEdit with the latest WebSocket message."""
-        self.ws_message_display.append(f"WS Update: {status}")
-        self.ws_message_display.ensureCursorVisible()
+    def update_ws_display(self, message):
+        """更新 WebSocket 表格和 QTextEdit 显示."""
+        self.ws_status_table.clearContents()  # 清除表格内容
+
+        try:
+            # 尝试将消息解析为 JSON
+            json_data = json.loads(message)
+
+            # 用于收集所有的 STATS 数据
+            stats_data_list = []
+
+            # 递归解析函数，处理嵌套结构中的 STATS 数据
+            def parse_stats(data):
+                if isinstance(data, dict):
+                    if data.get("Type") == "STATS":
+                        stats_data_list.append((data.get("Name"), data.get("Value")))
+                    # 递归解析嵌套在 Args 中的数据
+                    if "Args" in data and isinstance(data["Args"], list):
+                        for item in data["Args"]:
+                            parse_stats(item)
+                elif isinstance(data, list):
+                    # 如果是列表，递归处理每个元素
+                    for item in data:
+                        parse_stats(item)
+
+            # 从顶层 JSON 数据开始解析
+            parse_stats(json_data)
+
+            # 将 STATS 数据展示在表格中
+            if stats_data_list:
+                self.ws_status_table.setRowCount(len(stats_data_list))  # 根据数据项的数量调整表格行数
+
+                # 填充表格的每个参数和数值
+                for row, (key, value) in enumerate(stats_data_list):
+                    self.ws_status_table.setItem(row, 0, QTableWidgetItem(key))  # 参数名称
+                    self.ws_status_table.setItem(row, 1, QTableWidgetItem(str(value)))  # 数值
+            else:
+                # 对于非 STATS 消息类型，显示在 QTextEdit 中
+                self.ws_message_display.append(f"{json.dumps(json_data, indent=4)}")
+                self.ws_message_display.ensureCursorVisible()
+
+        except json.JSONDecodeError:
+            # 如果消息无法解析为 JSON，直接显示原始消息
+            self.ws_message_display.append(message)
+            self.ws_message_display.ensureCursorVisible()
 
     def display_ws_error(self, error_message):
-        """Display WebSocket errors in the QTextEdit."""
+        """显示 WebSocket 错误信息."""
         self.ws_message_display.append(f"WS Error: {error_message}")
         self.ws_message_display.ensureCursorVisible()
 

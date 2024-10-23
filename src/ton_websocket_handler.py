@@ -1,61 +1,53 @@
-# src/ton_websocket_handler.py
+# ton_websocket_handler.py
 import asyncio
 import websockets
 import json
 import logging
 from PySide6.QtCore import Signal, QObject
 
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
 class WebSocketClient(QObject):
     status_update_signal = Signal(str)
     error_signal = Signal(str)
 
-    def __init__(self, uri="ws://localhost:11398", parent=None):
-        super().__init__(parent)
-        self.uri = uri
+    def __init__(self, url):
+        super().__init__()
+        self.url = url
         self.websocket = None
-        self.connected = False
-        self.logger = logging.getLogger("WebSocketClient")
 
     async def start_connection(self):
-        """Establish the WebSocket connection and start listening for messages."""
+        """Starts the WebSocket connection and listens for messages."""
         try:
-            async with websockets.connect(self.uri) as ws:
+            async with websockets.connect(self.url) as ws:
                 self.websocket = ws
-                self.connected = True
-                self.logger.info("Connected to WebSocket server")
-                await self.listen()
+                async for message in ws:
+                    # Process received message
+                    await self.process_message(message)
         except Exception as e:
-            self.logger.error(f"Connection failed: {e}")
-            self.error_signal.emit(str(e))
-            self.connected = False
+            self.error_signal.emit(f"WebSocket connection error: {e}")
 
-    async def listen(self):
-        """Listen for incoming messages from the WebSocket server."""
+    async def process_message(self, message):
+        """Process the received WebSocket message and parse JSON."""
+        logger.info(message)
         try:
-            async for message in self.websocket:
-                self.logger.info(f"Received message: {message}")
-                data = json.loads(message)
-                if "Type" in data:
-                    self.status_update_signal.emit(f"Event: {data['Type']}, Details: {data}")
-                else:
-                    self.status_update_signal.emit(f"Unknown message: {message}")
-        except websockets.ConnectionClosed as e:
-            self.logger.warning(f"Connection closed: {e}")
-            self.connected = False
-        except Exception as e:
-            self.logger.error(f"Error receiving message: {e}")
+            # 直接解析收到的消息，不添加 'Received: ' 前缀
+            json_data = json.loads(message)
 
-    async def send(self, message):
-        """Send a message to the WebSocket server."""
-        if self.connected and self.websocket:
-            await self.websocket.send(message)
-            self.logger.info(f"Sent message: {message}")
-        else:
-            self.logger.warning("WebSocket is not connected")
+            # Process based on message type
+            if json_data.get("type") == "STATS":
+                stats_data = json_data.get("data", {})
+                formatted_stats = "\n".join([f"{key}: {value}" for key, value in stats_data.items()])
+                self.status_update_signal.emit(f"STATS Update:\n{formatted_stats}")
+            else:
+                # Emit the full JSON formatted message for other types
+                self.status_update_signal.emit(f"{json.dumps(json_data, indent=4)}")
+        except json.JSONDecodeError:
+            # 如果消息不是 JSON 格式，显示原始消息
+            self.status_update_signal.emit(message)
 
     async def close(self):
         """Close the WebSocket connection."""
         if self.websocket:
             await self.websocket.close()
-            self.logger.info("WebSocket connection closed")
-            self.connected = False
