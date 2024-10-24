@@ -8,7 +8,8 @@ from pydglab_ws import StrengthData, FeedbackButton, Channel, StrengthOperationT
 from pulse_data import PULSE_DATA, PULSE_NAME
 
 import logging
-
+from logger_config import setup_logging
+setup_logging()
 logger = logging.getLogger(__name__)
 
 
@@ -211,7 +212,7 @@ class DGLabController:
         if value:
             await self.client.set_strength(channel, StrengthOperationType.DECREASE, 5)
 
-    async def strength_fire_mode(self, value, channel):
+    async def strength_fire_mode(self, value, channel, fire_strength, last_strength):
         """
         一键开火：
             按下后设置为当前通道强度值 +fire_mode_strength_step
@@ -235,21 +236,21 @@ class DGLabController:
             if value:
                 # 开始 fire mode
                 self.fire_mode_active = True
-                logger.debug(f"FIRE START {self.last_strength}")
-                if self.last_strength:
+                logger.debug(f"FIRE START {last_strength}")
+                if last_strength:
                     if channel == Channel.A:
-                        self.fire_mode_origin_strength_a = self.last_strength.a
+                        self.fire_mode_origin_strength_a = last_strength.a
                         await self.client.set_strength(
                             channel,
                             StrengthOperationType.SET_TO,
-                            min(self.fire_mode_origin_strength_a + self.fire_mode_strength_step, self.last_strength.a_limit)
+                            min(self.fire_mode_origin_strength_a + fire_strength, last_strength.a_limit)
                         )
                     elif channel == Channel.B:
-                        self.fire_mode_origin_strength_b = self.last_strength.b
+                        self.fire_mode_origin_strength_b = last_strength.b
                         await self.client.set_strength(
                             channel,
                             StrengthOperationType.SET_TO,
-                            min(self.fire_mode_origin_strength_b + self.fire_mode_strength_step, self.last_strength.b_limit)
+                            min(self.fire_mode_origin_strength_b + fire_strength, last_strength.b_limit)
                         )
                 self.data_updated_event.clear()
                 await self.data_updated_event.wait()
@@ -262,7 +263,7 @@ class DGLabController:
                 self.data_updated_event.clear()  # 清除事件状态
                 await self.data_updated_event.wait()  # 等待下次数据更新
                 # 结束 fire mode
-                logger.debug(f"FIRE END {self.last_strength}")
+                logger.debug(f"FIRE END {last_strength}")
                 self.fire_mode_active = False
 
     async def set_strength_step(self, value):
@@ -328,7 +329,7 @@ class DGLabController:
         elif address == "/avatar/parameters/SoundPad/Button/4":
             await self.increase_strength(args[0], self.current_select_channel)
         elif address == "/avatar/parameters/SoundPad/Button/5":
-            await self.strength_fire_mode(args[0], self.current_select_channel)
+            await self.strength_fire_mode(args[0], self.current_select_channel, self.fire_mode_strength_step, self.last_strength)
 
         # ChatBox 开关控制
         elif address == "/avatar/parameters/SoundPad/Button/6":#

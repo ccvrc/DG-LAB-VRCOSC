@@ -1,13 +1,16 @@
+import math
 import sys
 import asyncio
 import io
 import os
 import qrcode
 import logging
+import json
+import time
 from PySide6.QtWidgets import (QApplication, QMainWindow, QLabel, QVBoxLayout, QHBoxLayout, QWidget,
                                QPushButton, QComboBox, QSpinBox, QFormLayout, QGroupBox, QSlider,
-                               QTextEdit, QCheckBox, QToolTip)
-from PySide6.QtGui import QPixmap, QIcon, QTextCursor
+                               QTextEdit, QCheckBox, QToolTip, QProgressBar)
+from PySide6.QtGui import QPixmap, QIcon, QTextCursor, QColor
 from PySide6.QtCore import Qt, QByteArray, QTimer, QPoint
 from qasync import QEventLoop
 from pydglab_ws import StrengthData, FeedbackButton, Channel, StrengthOperationType, RetCode, DGLabWSServer
@@ -17,6 +20,8 @@ from pythonosc import dispatcher, osc_server, udp_client
 from dglab_controller import DGLabController
 from pulse_data import PULSE_NAME
 from logger_config import setup_logging
+from ton_websocket_handler import WebSocketClient
+
 setup_logging()
 # 配置日志记录器
 logging.basicConfig(level=logging.INFO)
@@ -53,10 +58,10 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("DG-Lab WebSocket Controller for VRChat")
-        self.setGeometry(300, 300, 650, 800)
+        self.setGeometry(300, 300, 650, 900)
 
         # 设置窗口图标
-        self.setWindowIcon(QIcon(resource_path('docs/images/cat.ico')))
+        self.setWindowIcon(QIcon(resource_path('docs/images/fish-cake.ico')))
 
         # Load settings from file or use defaults
         self.settings = load_settings() or {
@@ -192,10 +197,124 @@ class MainWindow(QMainWindow):
         self.strength_step_spinbox.setValue(30)
         self.controller_form.addRow("开火强度步长:", self.strength_step_spinbox)
 
+        # TON
+        # Damage System UI
+        self.damage_group = QGroupBox("Terrors of Nowhere")
+        self.damage_group.setEnabled(False)
+        self.damage_layout = QFormLayout()
+
+        self.damage_info_layout = QHBoxLayout()
+        # Enable Damage System Checkbox
+        self.enable_damage_checkbox = QCheckBox("ToN Damage System")
+        self.enable_damage_checkbox.stateChanged.connect(self.toggle_damage_system)
+        self.damage_info_layout.addWidget(self.enable_damage_checkbox)  # 使用 addWidget() 而不是 addRow()
+
+        # 增加用于显示 DisplayName 的标签
+        self.display_name_label = QLabel("User Display Name: 未知")  # 默认显示为 "未知"
+        self.damage_info_layout.addWidget(self.display_name_label)  # 使用 addWidget() 而不是 addRow()
+
+        # WebSocket Status Label
+        self.websocket_status_label = QLabel("WebSocket Status: Disconnected")
+        self.damage_info_layout.addWidget(self.websocket_status_label)  # 使用 addWidget() 而不是 addRow()
+
+        # 将水平布局添加到主布局中
+        self.damage_layout.addRow(self.damage_info_layout)
+
+        # Damage Progress Bar
+        self.damage_progress_bar = QProgressBar()
+        self.damage_progress_bar.setRange(0, 100)
+        self.damage_progress_bar.setValue(0)  # Initial damage is 0%
+        self.damage_layout.addRow("累计伤害:", self.damage_progress_bar)
+
+        # 统一滑动条的宽度
+        slider_max_width = 450
+
+        # 创建横向布局，用于伤害减免滑动条和标签
+        self.damage_reduction_layout = QHBoxLayout()
+        self.damage_reduction_label = QLabel("每秒伤害减免强度: 2 / 10")  # 默认显示
+        self.damage_reduction_slider = QSlider(Qt.Horizontal)
+        self.damage_reduction_slider.setRange(0, 10)
+        self.damage_reduction_slider.setValue(2)  # Default reduction strength per second
+        self.damage_reduction_slider.setMaximumWidth(slider_max_width)  # 设置滑动条的最大宽度
+        self.damage_reduction_slider.valueChanged.connect(
+            lambda value: self.damage_reduction_label.setText(f"每秒伤害减免强度: {value} / 10"))
+        self.damage_reduction_slider.valueChanged.connect(
+            lambda: self.show_tooltip(self.damage_reduction_slider))  # 实时显示提示
+        self.damage_reduction_layout.addWidget(self.damage_reduction_label)
+        self.damage_reduction_layout.addWidget(self.damage_reduction_slider)
+        self.damage_reduction_layout.setAlignment(Qt.AlignRight)  # 使整个布局靠右对齐
+        self.damage_layout.addRow(self.damage_reduction_layout)
+
+        # 创建横向布局，用于伤害强度滑动条和标签
+        self.damage_strength_layout = QHBoxLayout()
+        self.damage_strength_label = QLabel("伤害对应强度上限: 50 / 200")  # 默认显示
+        self.damage_strength_slider = QSlider(Qt.Horizontal)
+        self.damage_strength_slider.setRange(0, 200)
+        self.damage_strength_slider.setValue(60)  # Default strength multiplier
+        self.damage_strength_slider.setMaximumWidth(slider_max_width)  # 设置滑动条的最大宽度
+        self.damage_strength_slider.valueChanged.connect(
+            lambda value: self.damage_strength_label.setText(f"伤害对应强度上限: {value} / 100"))
+        self.damage_strength_slider.valueChanged.connect(
+            lambda: self.show_tooltip(self.damage_strength_slider))  # 实时显示提示
+        self.damage_strength_layout.addWidget(self.damage_strength_label)
+        self.damage_strength_layout.addWidget(self.damage_strength_slider)
+        self.damage_strength_layout.setAlignment(Qt.AlignRight)  # 使整个布局靠右对齐
+        self.damage_layout.addRow(self.damage_strength_layout)
+
+        # 创建横向布局，用于死亡惩罚强度滑动条和标签
+        self.death_penalty_strength_layout = QHBoxLayout()
+        self.death_penalty_strength_label = QLabel("死亡惩罚强度: 30 / 100")  # 默认显示
+        self.death_penalty_strength_slider = QSlider(Qt.Horizontal)
+        self.death_penalty_strength_slider.setRange(0, 100)
+        self.death_penalty_strength_slider.setValue(30)  # Default death penalty strength is 100%
+        self.death_penalty_strength_slider.setMaximumWidth(slider_max_width)  # 设置滑动条的最大宽度
+        self.death_penalty_strength_slider.valueChanged.connect(
+            lambda value: self.death_penalty_strength_label.setText(f"死亡惩罚强度: {value} / 100"))
+        self.death_penalty_strength_slider.valueChanged.connect(
+            lambda: self.show_tooltip(self.death_penalty_strength_slider))  # 实时显示提示
+        self.death_penalty_strength_layout.addWidget(self.death_penalty_strength_label)
+        self.death_penalty_strength_layout.addWidget(self.death_penalty_strength_slider)
+        self.death_penalty_strength_layout.setAlignment(Qt.AlignRight)  # 使整个布局靠右对齐
+        self.damage_layout.addRow(self.death_penalty_strength_layout)
+
+        # 死亡惩罚持续时间
+        self.death_penalty_time_spinbox = QSpinBox()
+        self.death_penalty_time_spinbox.setRange(0, 60)
+        self.death_penalty_time_spinbox.setValue(5)  # Default penalty time is 10 seconds
+        self.damage_layout.addRow("死亡惩罚持续时间 (s):", self.death_penalty_time_spinbox)
+
+
+
+        self.damage_group.setLayout(self.damage_layout)
+        self.layout.addWidget(self.damage_group)
+
+        # Main Timer for Damage Reduction
+        self.damage_timer = QTimer(self)
+        self.damage_timer.timeout.connect(self.reduce_damage)
+
+        # WebSocket Client (Initialized as None)
+        self.websocket_client = None
+
+        # 日志
+        # 日志显示框 - 使用 QGroupBox 包装
+        self.log_groupbox = QGroupBox("简约日志")
+        self.log_groupbox.setCheckable(True)
+        self.log_groupbox.setChecked(True)
+        self.log_groupbox.toggled.connect(self.toggle_log_display)
+
         # 日志显示框
         self.log_text_edit = QTextEdit(self)
         self.log_text_edit.setReadOnly(True)
-        self.layout.addWidget(self.log_text_edit)
+
+        # 将日志显示框添加到 GroupBox 的布局中
+        log_layout = QVBoxLayout()
+        log_layout.addWidget(self.log_text_edit)
+        self.log_groupbox.setLayout(log_layout)
+
+        # 将 GroupBox 添加到主布局
+        self.layout.addWidget(self.log_groupbox)
+
+        # 启动日志记录系统
         self.app_setup_logging()
 
         # 增加可折叠的调试界面
@@ -227,6 +346,7 @@ class MainWindow(QMainWindow):
 
         # 设置 controller 初始为 None
         self.controller = None
+        self.app_status_online = False
 
         # 启动定时器，每秒刷新一次调试信息
         self.timer = QTimer(self)
@@ -307,6 +427,7 @@ class MainWindow(QMainWindow):
                     f"B 通道强度: {self.controller.last_strength.b} 强度上限: {self.controller.last_strength.b_limit}  波形: {PULSE_NAME[self.controller.pulse_mode_b]}")
 
     def update_connection_status(self, is_online):
+        self.app_status_online = is_online
         """根据设备连接状态更新标签的文本和颜色"""
         if is_online:
             self.connection_status_label.setText("已连接")
@@ -320,6 +441,7 @@ class MainWindow(QMainWindow):
             """)
             # 启用 DGLabController 设置
             self.controller_group.setEnabled(True)  # 启用控制器设置
+            self.damage_group.setEnabled(True)
         else:
             self.connection_status_label.setText("未连接")
             self.connection_status_label.setStyleSheet("""
@@ -332,6 +454,7 @@ class MainWindow(QMainWindow):
             """)
             # 禁用 DGLabController 设置
             self.controller_group.setEnabled(False)  # 禁用控制器设置
+            self.damage_group.setEnabled(False)
         self.connection_status_label.adjustSize()  # 根据内容调整标签大小
 
     def disable_a_channel_updates(self):
@@ -553,6 +676,135 @@ class MainWindow(QMainWindow):
         # 确保最新日志可见
         self.log_text_edit.ensureCursorVisible()
 
+    # 当 GroupBox 展开时，显示日志内容；当折叠时，隐藏日志框
+    def toggle_log_display(self, enabled):
+        """折叠或展开日志显示框"""
+        if enabled:
+            self.log_text_edit.show()  # 展开时显示日志框
+        else:
+            self.log_text_edit.hide()  # 折叠时隐藏日志框
+
+    def toggle_damage_system(self, enabled):
+        """Enable or disable the damage system, including WebSocket connection."""
+        if enabled:
+            logger.info("Enabling damage system and starting WebSocket connection.")
+            # Start WebSocket connection and damage timer
+            self.websocket_client = WebSocketClient("ws://localhost:11398")
+            self.websocket_client.status_update_signal.connect(self.handle_websocket_status_update)
+            self.websocket_client.message_received.connect(self.handle_websocket_message)
+            self.websocket_client.error_signal.connect(self.handle_websocket_error)
+            loop = asyncio.get_event_loop()
+            asyncio.run_coroutine_threadsafe(self.websocket_client.start_connection(), loop)
+            self.damage_timer.start(1000)  # Reduce damage every second
+        else:
+            logger.info("Disabling damage system and closing WebSocket connection.")
+            # Stop WebSocket connection and damage timer
+            if self.websocket_client:
+                loop = asyncio.get_event_loop()
+                asyncio.run_coroutine_threadsafe(self.websocket_client.close(), loop)
+                self.websocket_client = None
+            self.damage_timer.stop()
+            self.reset_damage()
+            self.websocket_status_label.setText("WebSocket Status: 未连接")
+            self.websocket_status_label.setStyleSheet("color: red;")
+
+    def reduce_damage(self):
+        """Reduce the accumulated damage based on the set reduction strength every second."""
+        reduction_strength = self.damage_reduction_slider.value()
+        current_value = self.damage_progress_bar.value()
+        new_value = max(0, current_value - reduction_strength)  # Ensure damage does not go below 0%
+        new_strength = math.floor(0.01 * new_value * self.damage_strength_slider.value())
+        self.damage_progress_bar.setValue(new_value)
+        if current_value > 0:
+            logger.info(f"Damage reduced by {reduction_strength}%. Current damage: {new_value}%")
+        if self.app_status_online and self.controller.last_strength.a is not new_value and not self.controller.fire_mode_active:
+            asyncio.create_task(self.controller.client.set_strength(Channel.A, StrengthOperationType.SET_TO, new_strength))
+
+    def handle_websocket_message(self, message):
+        """Handle incoming WebSocket messages and update status or damage accordingly."""
+        logger.info(f"Received WebSocket message: {message}")
+
+        # 如果消息是字符串类型，尝试解析为 JSON
+        if isinstance(message, str):
+            try:
+                message = json.loads(message)
+            except json.JSONDecodeError:
+                logger.error("Received message is not valid JSON format.")
+                return
+
+        # 处理不同类型的消息
+        if message.get("Type") == "DAMAGED":
+            damage_value = message.get("Value", 0)  # 确保获取大小写正确的 "Value"
+            self.accumulate_damage(damage_value)
+        elif message.get("Type") == "SAVED":
+            self.reset_damage()
+            logger.info("存档更新，重置强度")
+        elif message.get("Type") == "ALIVE":
+            is_alive = message.get("Value", 0)
+            if not is_alive:
+                asyncio.create_task(self.trigger_death_penalty())
+                logger.info("已死亡，触发死亡惩罚")
+        elif message.get("Type") == "STATS":
+            if message.get("DisplayName"):
+                user_display_name = message.get("DisplayName")
+                self.display_name_label.setText(f"User Display Name: {user_display_name}")
+        elif message.get("Type") == "CONNECTED":
+            if message.get("DisplayName"):
+                user_display_name = message.get("DisplayName")
+                self.display_name_label.setText(f"User Display Name: {user_display_name}")
+
+
+    def handle_websocket_status_update(self, status):
+        """Update WebSocket status label based on connection status."""
+        logger.info(f"WebSocket status updated: {status}")
+        # Log the exact value of the status for better debugging
+        if status.lower() == "connected":
+            self.websocket_status_label.setText("WebSocket Status: 已连接")
+            self.websocket_status_label.setStyleSheet("color: green;")
+        elif status.lower() == "disconnected":
+            self.websocket_status_label.setText("WebSocket Status: 未连接")
+            self.websocket_status_label.setStyleSheet("color: red;")
+        else:
+            logger.warning(f"Unexpected WebSocket status: {status}")
+            self.websocket_status_label.setText(f"WebSocket Status: 错误 - {status}")
+            self.websocket_status_label.setStyleSheet("color: orange;")
+
+    def handle_websocket_error(self, error_message):
+        """Handle WebSocket errors by displaying an error message."""
+        logger.error(f"WebSocket error: {error_message}")
+        self.websocket_status_label.setText(f"WebSocket Status: 错误 - {error_message}")
+        self.websocket_status_label.setStyleSheet("color: orange;")
+
+    def accumulate_damage(self, value):
+        """Accumulate damage based on incoming value."""
+        current_value = self.damage_progress_bar.value()
+        new_value = min(100, current_value + value)  # Cap damage at 100%
+        self.damage_progress_bar.setValue(new_value)
+        logger.info(f"Accumulated damage by {value}%. Current damage: {new_value}%")
+
+    def reset_damage(self):
+        """Reset the damage accumulation."""
+        logger.info("Resetting damage accumulation.")
+        self.damage_progress_bar.setValue(0)
+        if self.app_status_online:
+            asyncio.create_task(self.controller.client.set_strength(Channel.A, StrengthOperationType.SET_TO, 0))
+            asyncio.create_task(self.controller.strength_fire_mode(False, Channel.A, self.death_penalty_strength_slider.value(), self.controller.last_strength)) #可能遗漏
+
+    async def trigger_death_penalty(self):
+        """Trigger death penalty by setting damage to 100% and applying penalty."""
+        penalty_strength = self.death_penalty_strength_slider.value()  # 获取惩罚强度
+        penalty_time = self.death_penalty_time_spinbox.value()  # 获取惩罚持续时间
+        logger.warning(f"Death penalty triggered: Strength={penalty_strength}, Time={penalty_time}s")
+        self.damage_progress_bar.setValue(100)  # 将伤害设置为 100%
+        # asyncio.create_task(self.controller.client.set_strength(Channel.A, StrengthOperationType.SET_TO, self.damage_strength_slider.value()))
+        last_strength_mod = self.controller.last_strength
+        last_strength_mod.a = self.damage_strength_slider.value() # 开火值基于伤害强度上限更新
+        logger.warning(f"Death penalty triggered: a {last_strength_mod.a} fire {penalty_strength}")
+        # 开始惩罚
+        if self.app_status_online:
+            asyncio.create_task(self.controller.strength_fire_mode(True, Channel.A, penalty_strength, last_strength_mod))
+            await asyncio.sleep(penalty_time)  # 等待指定的惩罚持续时间
+            asyncio.create_task(self.controller.strength_fire_mode(False, Channel.A, penalty_strength, last_strength_mod))
 
 def generate_qrcode(data: str):
     """生成二维码并转换为PySide6可显示的QPixmap"""

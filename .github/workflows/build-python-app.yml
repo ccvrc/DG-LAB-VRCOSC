@@ -9,6 +9,7 @@ on:
       - "master"
       - "action-test"
       - "feature/*"
+      - "feat-*"
   pull_request:
     branches:
       - "master"
@@ -47,11 +48,19 @@ jobs:
 
     - name: Build with PyInstaller
       run: |
-        pyinstaller -F --windowed -i docs/images/cat.ico --name DG-LAB-VRCOSC --add-data "docs/images/cat.ico;docs/images" src/app.py
+        pyinstaller -F --windowed -i docs/images/fish-cake.ico --name DG-LAB-VRCOSC --add-data "docs/images/fish-cake.ico;docs/images" src/app.py
+      shell: pwsh
+
+    - name: Generate commit hash and timestamp file
+      run: |
+        $timestamp = Get-Date -Format "yyyyMMdd-HHmm"
+        $commitHash = (git rev-parse --short HEAD)
+        $fileContent = "Commit Hash: $commitHash`nTimestamp: $timestamp"
+        Set-Content -Path dist/build-info.txt -Value $fileContent
       shell: pwsh
 
     - name: Upload artifact
       uses: actions/upload-artifact@v4
       with:
         name: DG-LAB-VRCOSC
-        path: dist/DG-LAB-VRCOSC.exe
+        path: dist/
