@@ -201,14 +201,22 @@ class MainWindow(QMainWindow):
         self.damage_group = QGroupBox("Terrors of Nowhere")
         self.damage_layout = QFormLayout()
 
+        self.damage_info_layout = QHBoxLayout()
         # Enable Damage System Checkbox
         self.enable_damage_checkbox = QCheckBox("ToN Damage System")
         self.enable_damage_checkbox.stateChanged.connect(self.toggle_damage_system)
-        self.damage_layout.addRow("Enable Damage System:", self.enable_damage_checkbox)
+        self.damage_info_layout.addWidget(self.enable_damage_checkbox)  # 使用 addWidget() 而不是 addRow()
 
         # 增加用于显示 DisplayName 的标签
         self.display_name_label = QLabel("User Display Name: 未知")  # 默认显示为 "未知"
-        self.damage_layout.addRow(self.display_name_label)  # 将标签添加到界面中
+        self.damage_info_layout.addWidget(self.display_name_label)  # 使用 addWidget() 而不是 addRow()
+
+        # WebSocket Status Label
+        self.websocket_status_label = QLabel("WebSocket Status: Disconnected")
+        self.damage_info_layout.addWidget(self.websocket_status_label)  # 使用 addWidget() 而不是 addRow()
+
+        # 将水平布局添加到主布局中
+        self.damage_layout.addRow(self.damage_info_layout)
 
         # Damage Progress Bar
         self.damage_progress_bar = QProgressBar()
@@ -272,9 +280,7 @@ class MainWindow(QMainWindow):
         self.death_penalty_time_spinbox.setValue(10)  # Default penalty time is 10 seconds
         self.damage_layout.addRow("死亡惩罚持续时间 (s):", self.death_penalty_time_spinbox)
 
-        # WebSocket Status Label
-        self.websocket_status_label = QLabel("WebSocket Status: Disconnected")
-        self.damage_layout.addRow("WebSocket Status:", self.websocket_status_label)
+
 
         self.damage_group.setLayout(self.damage_layout)
         self.layout.addWidget(self.damage_group)
@@ -727,10 +733,14 @@ class MainWindow(QMainWindow):
             if not is_alive:
                 self.trigger_death_penalty()
                 logger.info("已死亡，触发死亡惩罚")
-        elif "DisplayName" in message:
-            display_name = message.get("DisplayName")
-            # 通过信号更新主窗口中的显示标签
-            self.display_name_label.setText(f"User Display Name: {display_name}")
+        elif message.get("Type") == "STATS":
+            if message.get("DisplayName"):
+                user_display_name = message.get("DisplayName")
+                self.display_name_label.setText(f"User Display Name: {user_display_name}")
+        elif message.get("Type") == "CONNECTED":
+            if message.get("DisplayName"):
+                user_display_name = message.get("DisplayName")
+                self.display_name_label.setText(f"User Display Name: {user_display_name}")
 
 
     def handle_websocket_status_update(self, status):
