@@ -8,4 +8,3 @@ psutil
 PySide6
 qasync
 websockets
-matplotlib

@@ -8,7 +8,7 @@ import json
 import time
 from PySide6.QtWidgets import (QApplication, QMainWindow, QLabel, QVBoxLayout, QHBoxLayout, QWidget,
                                QPushButton, QComboBox, QSpinBox, QFormLayout, QGroupBox, QSlider,
-                               QTextEdit, QCheckBox, QToolTip, QTableWidget, QTableWidgetItem, QHeaderView)
+                               QTextEdit, QCheckBox, QToolTip, QProgressBar)
 from PySide6.QtGui import QPixmap, QIcon, QTextCursor, QColor
 from PySide6.QtCore import Qt, QByteArray, QTimer, QPoint
 from qasync import QEventLoop
@@ -219,48 +219,56 @@ class MainWindow(QMainWindow):
         self.app_setup_logging()
 
         # TON
-        # 创建 WebSocket 状态显示的 GroupBox
-        self.websocket_groupbox = QGroupBox("WebSocket Status")
-        self.websocket_groupbox.setCheckable(True)
-        self.websocket_groupbox.setChecked(False)  # Initially disabled
-        self.websocket_groupbox.toggled.connect(self.toggle_websocket)
+        # Damage System UI
+        self.damage_group = QGroupBox("Damage System")
+        self.damage_layout = QFormLayout()
 
-        # Keep track of last updated times for each key
-        self.last_update_times = {}
+        # Enable Damage System Checkbox
+        self.enable_damage_checkbox = QCheckBox("Enable Damage System")
+        self.enable_damage_checkbox.stateChanged.connect(self.toggle_damage_system)
+        self.damage_layout.addRow("Enable Damage System:", self.enable_damage_checkbox)
 
-        # 创建表格，用于显示 STATS 类型数据
-        self.ws_status_table = QTableWidget(self)
-        self.ws_status_table.setColumnCount(3)  # Three columns: Parameter, Value, Last Updated
-        self.ws_status_table.setHorizontalHeaderLabels(['参数名称', '数值', '更新时间'])
-        self.ws_status_table.horizontalHeader().setStretchLastSection(True)
-        self.ws_status_table.setEditTriggers(QTableWidget.NoEditTriggers)  # 禁止编辑
+        # Damage Progress Bar
+        self.damage_progress_bar = QProgressBar()
+        self.damage_progress_bar.setRange(0, 100)
+        self.damage_progress_bar.setValue(0)  # Initial damage is 0%
+        self.damage_layout.addRow("Damage Accumulation:", self.damage_progress_bar)
 
-        # Timer to update the "Last Updated" column every second
-        self.update_timer = QTimer(self)
-        self.update_timer.timeout.connect(self.update_time_since_last_update)
-        self.update_timer.start(1000)  # Update every second
+        # Damage Reduction Strength Slider
+        self.damage_reduction_slider = QSlider(Qt.Horizontal)
+        self.damage_reduction_slider.setRange(0, 10)
+        self.damage_reduction_slider.setValue(2)  # Default reduction strength per second
+        self.damage_layout.addRow("Damage Reduction Strength per Second:", self.damage_reduction_slider)
 
-        # Add a checkbox to toggle WebSocket message display
-        self.show_ws_messages_checkbox = QCheckBox("显示其他WebSocket 消息", self)
-        self.show_ws_messages_checkbox.setChecked(True)  # Default to showing messages
+        # Damage Strength Slider
+        self.damage_strength_slider = QSlider(Qt.Horizontal)
+        self.damage_strength_slider.setRange(0, 100)
+        self.damage_strength_slider.setValue(50)  # Default strength multiplier
+        self.damage_layout.addRow("Damage Strength:", self.damage_strength_slider)
 
-        # Connect the checkbox to a function to hide/show the message display
-        self.show_ws_messages_checkbox.stateChanged.connect(self.toggle_ws_message_display)
+        # Death Penalty Strength and Time
+        self.death_penalty_strength_slider = QSlider(Qt.Horizontal)
+        self.death_penalty_strength_slider.setRange(0, 100)
+        self.death_penalty_strength_slider.setValue(100)  # Default death penalty strength is 100%
+        self.damage_layout.addRow("Death Penalty Strength:", self.death_penalty_strength_slider)
 
-        # 创建用于显示普通消息的 QTextEdit
-        self.ws_message_display = QTextEdit(self)
-        self.ws_message_display.setReadOnly(True)
+        self.death_penalty_time_spinbox = QSpinBox()
+        self.death_penalty_time_spinbox.setRange(0, 60)
+        self.death_penalty_time_spinbox.setValue(10)  # Default penalty time is 10 seconds
+        self.damage_layout.addRow("Death Penalty Time (s):", self.death_penalty_time_spinbox)
 
-        # 将表格和消息显示框添加到 GroupBox 中
-        self.websocket_layout = QVBoxLayout()
-        self.websocket_layout.addWidget(self.ws_status_table)
-        self.websocket_layout.addWidget(self.show_ws_messages_checkbox)
-        self.websocket_layout.addWidget(self.ws_message_display)
-        self.websocket_groupbox.setLayout(self.websocket_layout)
+        # WebSocket Status Label
+        self.websocket_status_label = QLabel("WebSocket Status: Disconnected")
+        self.damage_layout.addRow("WebSocket Status:", self.websocket_status_label)
 
-        # 将 GroupBox 添加到主布局
-        self.layout.addWidget(self.websocket_groupbox)
-        # 初始化 WebSocket 客户端变量
+        self.damage_group.setLayout(self.damage_layout)
+        self.layout.addWidget(self.damage_group)
+
+        # Main Timer for Damage Reduction
+        self.damage_timer = QTimer(self)
+        self.damage_timer.timeout.connect(self.reduce_damage)
+
+        # WebSocket Client (Initialized as None)
         self.websocket_client = None
 
         # 增加可折叠的调试界面
@@ -626,125 +634,93 @@ class MainWindow(QMainWindow):
         else:
             self.log_text_edit.hide()  # 折叠时隐藏日志框
 
-    def toggle_websocket(self, enabled):
-        """启用或禁用 WebSocket 连接，基于 GroupBox 的状态."""
+    def toggle_damage_system(self, enabled):
+        """Enable or disable the damage system, including WebSocket connection."""
         if enabled:
-            # 创建 WebSocket 客户端并连接
+            logger.info("Enabling damage system and starting WebSocket connection.")
+            # Start WebSocket connection and damage timer
             self.websocket_client = WebSocketClient("ws://localhost:11398")
-            self.websocket_client.status_update_signal.connect(self.update_ws_display)
-            self.websocket_client.error_signal.connect(self.display_ws_error)
-            asyncio.ensure_future(self.websocket_client.start_connection())  # 启动连接
+            self.websocket_client.status_update_signal.connect(self.handle_websocket_status_update)
+            self.websocket_client.message_received.connect(self.handle_websocket_message)
+            self.websocket_client.error_signal.connect(self.handle_websocket_error)
+            loop = asyncio.get_event_loop()
+            asyncio.run_coroutine_threadsafe(self.websocket_client.start_connection(), loop)
+            self.damage_timer.start(1000)  # Reduce damage every second
         else:
-            # 关闭 WebSocket 连接
+            logger.info("Disabling damage system and closing WebSocket connection.")
+            # Stop WebSocket connection and damage timer
             if self.websocket_client:
-                asyncio.ensure_future(self.websocket_client.close())
+                loop = asyncio.get_event_loop()
+                asyncio.run_coroutine_threadsafe(self.websocket_client.close(), loop)
                 self.websocket_client = None
-                self.ws_message_display.append("WebSocket disconnected.")
-                self.ws_message_display.ensureCursorVisible()
+            self.damage_timer.stop()
+            self.reset_damage()
+            self.websocket_status_label.setText("WebSocket Status: 未连接")
+            self.websocket_status_label.setStyleSheet("color: red;")
 
-    def update_ws_display(self, message):
-        """Update the WebSocket table and display, respecting the checkbox."""
+    def reduce_damage(self):
+        """Reduce the accumulated damage based on the set reduction strength every second."""
+        reduction_strength = self.damage_reduction_slider.value()
+        current_value = self.damage_progress_bar.value()
+        new_value = max(0, current_value - reduction_strength)  # Ensure damage does not go below 0%
+        self.damage_progress_bar.setValue(new_value)
+        logger.info(f"Damage reduced by {reduction_strength}%. Current damage: {new_value}%")
 
-        try:
-            json_data = json.loads(message)
-            stats_data_dict = {}
-            current_time = time.time()  # Get the current timestamp
+    def handle_websocket_message(self, message):
+        """Handle incoming WebSocket messages and update status or damage accordingly."""
+        logger.info(f"Received WebSocket message: {message}")
+        if message.get("type") == "DAMAGED":
+            damage_value = message.get("value", 0)
+            self.accumulate_damage(damage_value)
+        elif message.get("type") == "ALIVE":
+            self.reset_damage()
+        elif message.get("type") == "DEATH":
+            self.trigger_death_penalty()
+        elif message.get("type") == "STATUS_UPDATE":
+            status = message.get("status", "unknown")
+            self.handle_websocket_status_update(status)
 
-            def parse_stats(data):
-                if isinstance(data, dict):
-                    if data.get("Type") == "STATS":
-                        stats_data_dict[data.get("Name")] = data.get("Value")
-                    if data.get("Type") == "DAMAGED": # 如果存在 DAMAGED 数据，更新图表
-                        stats_data_dict["DAMAGED"] = data.get("Value")
-                    if data.get("Type") == "ALIVE": # 如果存在 DAMAGED 数据，更新图表
-                        stats_data_dict["ALIVE"] = data.get("Value")
-
-                    if "Args" in data and isinstance(data["Args"], list):
-                        for item in data["Args"]:
-                            parse_stats(item)
-                elif isinstance(data, list):
-                    for item in data:
-                        parse_stats(item)
-
-            parse_stats(json_data)
-
-            if stats_data_dict:
-                for key, value in stats_data_dict.items():
-                    existing_row = None
-                    for row in range(self.ws_status_table.rowCount()):
-                        if self.ws_status_table.item(row, 0) and self.ws_status_table.item(row, 0).text() == key:
-                            existing_row = row
-                            break
-
-                    # Update or insert new data into the table
-                    if existing_row is not None:
-                        self.ws_status_table.setItem(existing_row, 1, QTableWidgetItem(str(value)))
-                    else:
-                        row_count = self.ws_status_table.rowCount()
-                        self.ws_status_table.insertRow(row_count)
-                        self.ws_status_table.setItem(row_count, 0, QTableWidgetItem(key))
-                        self.ws_status_table.setItem(row_count, 1, QTableWidgetItem(str(value)))
-
-                    # Update the timestamp for when this key was last updated
-                    self.last_update_times[key] = current_time
-
-        except json.JSONDecodeError:
-            if self.show_ws_messages_checkbox.isChecked():  # Only display messages if the checkbox is checked
-                self.ws_message_display.append(message)
-                self.ws_message_display.ensureCursorVisible()
-
-    def update_time_since_last_update(self):
-        """Update the 'Last Updated' column with the time since the last update and apply gradient color to the value cells."""
-        current_time = time.time()
-        for row in range(self.ws_status_table.rowCount()):
-            key = self.ws_status_table.item(row, 0).text()
-            if key in self.last_update_times:
-                # Calculate the time since the last update
-                time_since_update = current_time - self.last_update_times[key]
-                time_text = self.format_time_since(time_since_update)
-                self.ws_status_table.setItem(row, 2, QTableWidgetItem(time_text))
-
-                # Calculate color gradient (bright green to off-white)
-                if time_since_update < 60:
-                    # Define the start color (bright green) and end color (off-white)
-                    start_color = QColor(144, 238, 144)  # Light green (comfortable shade)
-                    end_color = QColor(220, 220, 220)  # Slightly off-white
-
-                    # Interpolate between green and off-white based on time
-                    ratio = min(time_since_update / 60, 1)  # Normalize to range [0, 1]
-                    red = int(start_color.red() + ratio * (end_color.red() - start_color.red()))
-                    green = int(start_color.green() + ratio * (end_color.green() - start_color.green()))
-                    blue = int(start_color.blue() + ratio * (end_color.blue() - start_color.blue()))
-
-                    color = QColor(red, green, blue)
-                else:
-                    color = QColor(220, 220, 220)  # After 60 seconds, use off-white
-
-                # Apply the gradient color to the value column (second column)
-                self.ws_status_table.item(row, 1).setForeground(color)
-
-    def format_time_since(self, seconds):
-        """Helper function to format time in seconds into a human-readable form."""
-        if seconds < 60:
-            return f"{int(seconds)} 秒前"
-        elif seconds < 3600:
-            return f"{int(seconds // 60)} 分钟前"
+    def handle_websocket_status_update(self, status):
+        """Update WebSocket status label based on connection status."""
+        logger.info(f"WebSocket status updated: {status}")
+        # Log the exact value of the status for better debugging
+        if status.lower() == "connected":
+            self.websocket_status_label.setText("WebSocket Status: 已连接")
+            self.websocket_status_label.setStyleSheet("color: green;")
+        elif status.lower() == "disconnected":
+            self.websocket_status_label.setText("WebSocket Status: 未连接")
+            self.websocket_status_label.setStyleSheet("color: red;")
         else:
-            return f"{int(seconds // 3600)} 小时前"
-    def display_ws_error(self, error_message):
-        """显示 WebSocket 错误信息."""
-        self.ws_message_display.append(f"WS Error: {error_message}")
-        self.ws_message_display.ensureCursorVisible()
+            logger.warning(f"Unexpected WebSocket status: {status}")
+            self.websocket_status_label.setText(f"WebSocket Status: 错误 - {status}")
+            self.websocket_status_label.setStyleSheet("color: orange;")
 
-    def toggle_ws_message_display(self, state):
-        """Toggle the visibility of the WebSocket message display."""
-        if state == Qt.Checked:
-            self.ws_message_display.show()
-        else:
-            # Clear the message display when hiding it to optimize the display
-            self.ws_message_display.clear()
-            self.ws_message_display.hide()
+    def handle_websocket_error(self, error_message):
+        """Handle WebSocket errors by displaying an error message."""
+        logger.error(f"WebSocket error: {error_message}")
+        self.websocket_status_label.setText(f"WebSocket Status: 错误 - {error_message}")
+        self.websocket_status_label.setStyleSheet("color: orange;")
 
+    def accumulate_damage(self, value):
+        """Accumulate damage based on incoming value."""
+        current_value = self.damage_progress_bar.value()
+        new_value = min(100, current_value + value)  # Cap damage at 100%
+        self.damage_progress_bar.setValue(new_value)
+        logger.info(f"Accumulated damage by {value}%. Current damage: {new_value}%")
+
+    def reset_damage(self):
+        """Reset the damage accumulation."""
+        logger.info("Resetting damage accumulation.")
+        self.damage_progress_bar.setValue(0)
+
+    def trigger_death_penalty(self):
+        """Trigger death penalty by setting damage to 100% and applying penalty."""
+        self.damage_progress_bar.setValue(100)
+        penalty_strength = self.death_penalty_strength_slider.value()
+        penalty_time = self.death_penalty_time_spinbox.value()
+        logger.warning(f"Death penalty triggered: Strength={penalty_strength}, Time={penalty_time}s")
+        # Here you can add logic to handle penalty effects, e.g., disable controls for penalty_time seconds
+        print(f"Death penalty triggered: Strength={penalty_strength}, Time={penalty_time}s")
 
 def generate_qrcode(data: str):
     """生成二维码并转换为PySide6可显示的QPixmap"""
