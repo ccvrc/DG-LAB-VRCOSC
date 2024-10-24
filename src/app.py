@@ -57,7 +57,7 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("DG-Lab WebSocket Controller for VRChat")
-        self.setGeometry(300, 300, 650, 800)
+        self.setGeometry(300, 300, 650, 900)
 
         # 设置窗口图标
         self.setWindowIcon(QIcon(resource_path('docs/images/fish-cake.ico')))
@@ -206,29 +206,66 @@ class MainWindow(QMainWindow):
         self.enable_damage_checkbox.stateChanged.connect(self.toggle_damage_system)
         self.damage_layout.addRow("Enable Damage System:", self.enable_damage_checkbox)
 
+        # 增加用于显示 DisplayName 的标签
+        self.display_name_label = QLabel("User Display Name: 未知")  # 默认显示为 "未知"
+        self.damage_layout.addRow(self.display_name_label)  # 将标签添加到界面中
+
         # Damage Progress Bar
         self.damage_progress_bar = QProgressBar()
         self.damage_progress_bar.setRange(0, 100)
         self.damage_progress_bar.setValue(0)  # Initial damage is 0%
         self.damage_layout.addRow("累计伤害:", self.damage_progress_bar)
 
-        # Damage Reduction Strength Slider
+        # 统一滑动条的宽度
+        slider_max_width = 450
+
+        # 创建横向布局，用于伤害减免滑动条和标签
+        self.damage_reduction_layout = QHBoxLayout()
+        self.damage_reduction_label = QLabel("每秒伤害减免强度: 2 / 10")  # 默认显示
         self.damage_reduction_slider = QSlider(Qt.Horizontal)
         self.damage_reduction_slider.setRange(0, 10)
         self.damage_reduction_slider.setValue(2)  # Default reduction strength per second
-        self.damage_layout.addRow("每秒伤害减免强度:", self.damage_reduction_slider)
+        self.damage_reduction_slider.setMaximumWidth(slider_max_width)  # 设置滑动条的最大宽度
+        self.damage_reduction_slider.valueChanged.connect(
+            lambda value: self.damage_reduction_label.setText(f"每秒伤害减免强度: {value} / 10"))
+        self.damage_reduction_slider.valueChanged.connect(
+            lambda: self.show_tooltip(self.damage_reduction_slider))  # 实时显示提示
+        self.damage_reduction_layout.addWidget(self.damage_reduction_label)
+        self.damage_reduction_layout.addWidget(self.damage_reduction_slider)
+        self.damage_reduction_layout.setAlignment(Qt.AlignRight)  # 使整个布局靠右对齐
+        self.damage_layout.addRow(self.damage_reduction_layout)
 
-        # Damage Strength Slider
+        # 创建横向布局，用于伤害强度滑动条和标签
+        self.damage_strength_layout = QHBoxLayout()
+        self.damage_strength_label = QLabel("伤害对应强度上限: 50 / 200")  # 默认显示
         self.damage_strength_slider = QSlider(Qt.Horizontal)
-        self.damage_strength_slider.setRange(0, 100)
+        self.damage_strength_slider.setRange(0, 200)
         self.damage_strength_slider.setValue(50)  # Default strength multiplier
-        self.damage_layout.addRow("伤害对应强度上限:", self.damage_strength_slider)
+        self.damage_strength_slider.setMaximumWidth(slider_max_width)  # 设置滑动条的最大宽度
+        self.damage_strength_slider.valueChanged.connect(
+            lambda value: self.damage_strength_label.setText(f"伤害对应强度上限: {value} / 100"))
+        self.damage_strength_slider.valueChanged.connect(
+            lambda: self.show_tooltip(self.damage_strength_slider))  # 实时显示提示
+        self.damage_strength_layout.addWidget(self.damage_strength_label)
+        self.damage_strength_layout.addWidget(self.damage_strength_slider)
+        self.damage_strength_layout.setAlignment(Qt.AlignRight)  # 使整个布局靠右对齐
+        self.damage_layout.addRow(self.damage_strength_layout)
 
-        # Death Penalty Strength and Time
+        # 创建横向布局，用于死亡惩罚强度滑动条和标签
+        self.death_penalty_strength_layout = QHBoxLayout()
+        self.death_penalty_strength_label = QLabel("死亡惩罚强度: 30 / 100")  # 默认显示
         self.death_penalty_strength_slider = QSlider(Qt.Horizontal)
         self.death_penalty_strength_slider.setRange(0, 100)
-        self.death_penalty_strength_slider.setValue(100)  # Default death penalty strength is 100%
-        self.damage_layout.addRow("死亡惩罚强度:", self.death_penalty_strength_slider)
+        self.death_penalty_strength_slider.setValue(30)  # Default death penalty strength is 100%
+        self.death_penalty_strength_slider.setMaximumWidth(slider_max_width)  # 设置滑动条的最大宽度
+        self.death_penalty_strength_slider.valueChanged.connect(
+            lambda value: self.death_penalty_strength_label.setText(f"死亡惩罚强度: {value} / 100"))
+        self.death_penalty_strength_slider.valueChanged.connect(
+            lambda: self.show_tooltip(self.death_penalty_strength_slider))  # 实时显示提示
+        self.death_penalty_strength_layout.addWidget(self.death_penalty_strength_label)
+        self.death_penalty_strength_layout.addWidget(self.death_penalty_strength_slider)
+        self.death_penalty_strength_layout.setAlignment(Qt.AlignRight)  # 使整个布局靠右对齐
+        self.damage_layout.addRow(self.death_penalty_strength_layout)
 
         self.death_penalty_time_spinbox = QSpinBox()
         self.death_penalty_time_spinbox.setRange(0, 60)
@@ -664,21 +701,37 @@ class MainWindow(QMainWindow):
         current_value = self.damage_progress_bar.value()
         new_value = max(0, current_value - reduction_strength)  # Ensure damage does not go below 0%
         self.damage_progress_bar.setValue(new_value)
-        logger.info(f"Damage reduced by {reduction_strength}%. Current damage: {new_value}%")
+        # logger.info(f"Damage reduced by {reduction_strength}%. Current damage: {new_value}%")
 
     def handle_websocket_message(self, message):
         """Handle incoming WebSocket messages and update status or damage accordingly."""
         logger.info(f"Received WebSocket message: {message}")
-        if message.get("type") == "DAMAGED":
-            damage_value = message.get("value", 0)
+
+        # 如果消息是字符串类型，尝试解析为 JSON
+        if isinstance(message, str):
+            try:
+                message = json.loads(message)
+            except json.JSONDecodeError:
+                logger.error("Received message is not valid JSON format.")
+                return
+
+        # 处理不同类型的消息
+        if message.get("Type") == "DAMAGED":
+            damage_value = message.get("Value", 0)  # 确保获取大小写正确的 "Value"
             self.accumulate_damage(damage_value)
-        elif message.get("type") == "ALIVE":
+        elif message.get("Type") == "SAVED":
             self.reset_damage()
-        elif message.get("type") == "DEATH":
-            self.trigger_death_penalty()
-        elif message.get("type") == "STATUS_UPDATE":
-            status = message.get("status", "unknown")
-            self.handle_websocket_status_update(status)
+            logger.info("存档更新，重置强度")
+        elif message.get("Type") == "ALIVE":
+            is_alive = message.get("Value", 0)
+            if not is_alive:
+                self.trigger_death_penalty()
+                logger.info("已死亡，触发死亡惩罚")
+        elif "DisplayName" in message:
+            display_name = message.get("DisplayName")
+            # 通过信号更新主窗口中的显示标签
+            self.display_name_label.setText(f"User Display Name: {display_name}")
+
 
     def handle_websocket_status_update(self, status):
         """Update WebSocket status label based on connection status."""

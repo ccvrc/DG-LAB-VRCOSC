@@ -49,7 +49,8 @@ class WebSocketClient(QObject):
             #     self.status_update_signal.emit(f"{json.dumps(json_data, indent=4)}")
         except json.JSONDecodeError:
             # 如果消息不是 JSON 格式，显示原始消息
-            self.status_update_signal.emit(message)
+            logger.warning("ws message is not json format")
+            self.message_received.emit(message)
             self.status_update_signal.emit("error")
 
     async def close(self):
