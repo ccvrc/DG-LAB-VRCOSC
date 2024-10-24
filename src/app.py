@@ -1,3 +1,4 @@
+import math
 import sys
 import asyncio
 import io
@@ -199,6 +200,7 @@ class MainWindow(QMainWindow):
         # TON
         # Damage System UI
         self.damage_group = QGroupBox("Terrors of Nowhere")
+        self.damage_group.setEnabled(False)
         self.damage_layout = QFormLayout()
 
         self.damage_info_layout = QHBoxLayout()
@@ -248,7 +250,7 @@ class MainWindow(QMainWindow):
         self.damage_strength_label = QLabel("伤害对应强度上限: 50 / 200")  # 默认显示
         self.damage_strength_slider = QSlider(Qt.Horizontal)
         self.damage_strength_slider.setRange(0, 200)
-        self.damage_strength_slider.setValue(50)  # Default strength multiplier
+        self.damage_strength_slider.setValue(60)  # Default strength multiplier
         self.damage_strength_slider.setMaximumWidth(slider_max_width)  # 设置滑动条的最大宽度
         self.damage_strength_slider.valueChanged.connect(
             lambda value: self.damage_strength_label.setText(f"伤害对应强度上限: {value} / 100"))
@@ -275,9 +277,10 @@ class MainWindow(QMainWindow):
         self.death_penalty_strength_layout.setAlignment(Qt.AlignRight)  # 使整个布局靠右对齐
         self.damage_layout.addRow(self.death_penalty_strength_layout)
 
+        # 死亡惩罚持续时间
         self.death_penalty_time_spinbox = QSpinBox()
         self.death_penalty_time_spinbox.setRange(0, 60)
-        self.death_penalty_time_spinbox.setValue(10)  # Default penalty time is 10 seconds
+        self.death_penalty_time_spinbox.setValue(5)  # Default penalty time is 10 seconds
         self.damage_layout.addRow("死亡惩罚持续时间 (s):", self.death_penalty_time_spinbox)
 
 
@@ -343,6 +346,7 @@ class MainWindow(QMainWindow):
 
         # 设置 controller 初始为 None
         self.controller = None
+        self.app_status_online = False
 
         # 启动定时器，每秒刷新一次调试信息
         self.timer = QTimer(self)
@@ -423,6 +427,7 @@ class MainWindow(QMainWindow):
                     f"B 通道强度: {self.controller.last_strength.b} 强度上限: {self.controller.last_strength.b_limit}  波形: {PULSE_NAME[self.controller.pulse_mode_b]}")
 
     def update_connection_status(self, is_online):
+        self.app_status_online = is_online
         """根据设备连接状态更新标签的文本和颜色"""
         if is_online:
             self.connection_status_label.setText("已连接")
@@ -436,6 +441,7 @@ class MainWindow(QMainWindow):
             """)
             # 启用 DGLabController 设置
             self.controller_group.setEnabled(True)  # 启用控制器设置
+            self.damage_group.setEnabled(True)
         else:
             self.connection_status_label.setText("未连接")
             self.connection_status_label.setStyleSheet("""
@@ -448,6 +454,7 @@ class MainWindow(QMainWindow):
             """)
             # 禁用 DGLabController 设置
             self.controller_group.setEnabled(False)  # 禁用控制器设置
+            self.damage_group.setEnabled(False)
         self.connection_status_label.adjustSize()  # 根据内容调整标签大小
 
     def disable_a_channel_updates(self):
@@ -706,8 +713,12 @@ class MainWindow(QMainWindow):
         reduction_strength = self.damage_reduction_slider.value()
         current_value = self.damage_progress_bar.value()
         new_value = max(0, current_value - reduction_strength)  # Ensure damage does not go below 0%
+        new_strength = math.floor(0.01 * new_value * self.damage_strength_slider.value())
         self.damage_progress_bar.setValue(new_value)
-        # logger.info(f"Damage reduced by {reduction_strength}%. Current damage: {new_value}%")
+        if current_value > 0:
+            logger.info(f"Damage reduced by {reduction_strength}%. Current damage: {new_value}%")
+        if self.app_status_online and self.controller.last_strength.a is not new_value and not self.controller.fire_mode_active:
+            asyncio.create_task(self.controller.client.set_strength(Channel.A, StrengthOperationType.SET_TO, new_strength))
 
     def handle_websocket_message(self, message):
         """Handle incoming WebSocket messages and update status or damage accordingly."""
@@ -731,7 +742,7 @@ class MainWindow(QMainWindow):
         elif message.get("Type") == "ALIVE":
             is_alive = message.get("Value", 0)
             if not is_alive:
-                self.trigger_death_penalty()
+                asyncio.create_task(self.trigger_death_penalty())
                 logger.info("已死亡，触发死亡惩罚")
         elif message.get("Type") == "STATS":
             if message.get("DisplayName"):
@@ -775,15 +786,25 @@ class MainWindow(QMainWindow):
         """Reset the damage accumulation."""
         logger.info("Resetting damage accumulation.")
         self.damage_progress_bar.setValue(0)
+        if self.app_status_online:
+            asyncio.create_task(self.controller.client.set_strength(Channel.A, StrengthOperationType.SET_TO, 0))
+            asyncio.create_task(self.controller.strength_fire_mode(False, Channel.A, self.death_penalty_strength_slider.value(), self.controller.last_strength)) #可能遗漏
 
-    def trigger_death_penalty(self):
+    async def trigger_death_penalty(self):
         """Trigger death penalty by setting damage to 100% and applying penalty."""
-        self.damage_progress_bar.setValue(100)
-        penalty_strength = self.death_penalty_strength_slider.value()
-        penalty_time = self.death_penalty_time_spinbox.value()
+        penalty_strength = self.death_penalty_strength_slider.value()  # 获取惩罚强度
+        penalty_time = self.death_penalty_time_spinbox.value()  # 获取惩罚持续时间
         logger.warning(f"Death penalty triggered: Strength={penalty_strength}, Time={penalty_time}s")
-        # Here you can add logic to handle penalty effects, e.g., disable controls for penalty_time seconds
-        print(f"Death penalty triggered: Strength={penalty_strength}, Time={penalty_time}s")
+        self.damage_progress_bar.setValue(100)  # 将伤害设置为 100%
+        # asyncio.create_task(self.controller.client.set_strength(Channel.A, StrengthOperationType.SET_TO, self.damage_strength_slider.value()))
+        last_strength_mod = self.controller.last_strength
+        last_strength_mod.a = self.damage_strength_slider.value() # 开火值基于伤害强度上限更新
+        logger.warning(f"Death penalty triggered: a {last_strength_mod.a} fire {penalty_strength}")
+        # 开始惩罚
+        if self.app_status_online:
+            asyncio.create_task(self.controller.strength_fire_mode(True, Channel.A, penalty_strength, last_strength_mod))
+            await asyncio.sleep(penalty_time)  # 等待指定的惩罚持续时间
+            asyncio.create_task(self.controller.strength_fire_mode(False, Channel.A, penalty_strength, last_strength_mod))
 
 def generate_qrcode(data: str):
     """生成二维码并转换为PySide6可显示的QPixmap"""
