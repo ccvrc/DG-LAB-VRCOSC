@@ -21,45 +21,10 @@ from pulse_data import PULSE_NAME
 from logger_config import setup_logging
 from ton_websocket_handler import WebSocketClient
 
-from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
-from matplotlib.figure import Figure
-
 setup_logging()
 # 配置日志记录器
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-
-# MyMplCanvas 类定义
-class MyMplCanvas(FigureCanvas):
-    def __init__(self, parent=None):
-        fig = Figure(figsize=(5, 4), dpi=100)
-        self.axes = fig.add_subplot(111)
-        super(MyMplCanvas, self).__init__(fig)
-        self.setParent(parent)
-        self.time_data = []
-        self.damaged_data = []
-        self.plot()
-
-    def plot(self):
-        """绘制图表"""
-        self.axes.clear()
-        self.axes.plot(self.time_data, self.damaged_data, marker='o', color='blue')
-        self.axes.set_title('DAMAGED Data Trend')
-        self.axes.set_xlabel('Timestamp')
-        self.axes.set_ylabel('DAMAGED Value')
-        self.draw()
-
-    def update_data(self, new_time, new_value):
-        """更新数据并重新绘制"""
-        self.time_data.append(new_time)
-        self.damaged_data.append(new_value)
-        self.plot()
-
-    def clear_data(self):
-        """清空数据并重新绘制空白图表"""
-        self.time_data.clear()
-        self.damaged_data.clear()
-        self.plot()
 
 class QTextEditHandler(logging.Handler):
     """Custom log handler to output log messages to QTextEdit."""
@@ -292,15 +257,6 @@ class MainWindow(QMainWindow):
         self.websocket_layout.addWidget(self.show_ws_messages_checkbox)
         self.websocket_layout.addWidget(self.ws_message_display)
         self.websocket_groupbox.setLayout(self.websocket_layout)
-
-        # 创建并添加 matplotlib 画布
-        self.canvas = MyMplCanvas(self)
-        self.websocket_layout.addWidget(self.canvas)
-
-        # 添加清空按钮
-        self.clear_button = QPushButton("Clear Data")
-        self.clear_button.clicked.connect(self.canvas.clear_data)
-        self.websocket_layout.addWidget(self.clear_button)
 
         # 将 GroupBox 添加到主布局
         self.layout.addWidget(self.websocket_groupbox)
@@ -700,7 +656,6 @@ class MainWindow(QMainWindow):
                         stats_data_dict[data.get("Name")] = data.get("Value")
                     if data.get("Type") == "DAMAGED": # 如果存在 DAMAGED 数据，更新图表
                         stats_data_dict["DAMAGED"] = data.get("Value")
-                        self.canvas.update_data(current_time, data.get("Value"))
                     if data.get("Type") == "ALIVE": # 如果存在 DAMAGED 数据，更新图表
                         stats_data_dict["ALIVE"] = data.get("Value")
 
