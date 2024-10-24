@@ -196,9 +196,62 @@ class MainWindow(QMainWindow):
         self.strength_step_spinbox.setValue(30)
         self.controller_form.addRow("开火强度步长:", self.strength_step_spinbox)
 
+        # TON
+        # Damage System UI
+        self.damage_group = QGroupBox("Terrors of Nowhere")
+        self.damage_layout = QFormLayout()
+
+        # Enable Damage System Checkbox
+        self.enable_damage_checkbox = QCheckBox("ToN Damage System")
+        self.enable_damage_checkbox.stateChanged.connect(self.toggle_damage_system)
+        self.damage_layout.addRow("Enable Damage System:", self.enable_damage_checkbox)
+
+        # Damage Progress Bar
+        self.damage_progress_bar = QProgressBar()
+        self.damage_progress_bar.setRange(0, 100)
+        self.damage_progress_bar.setValue(0)  # Initial damage is 0%
+        self.damage_layout.addRow("累计伤害:", self.damage_progress_bar)
+
+        # Damage Reduction Strength Slider
+        self.damage_reduction_slider = QSlider(Qt.Horizontal)
+        self.damage_reduction_slider.setRange(0, 10)
+        self.damage_reduction_slider.setValue(2)  # Default reduction strength per second
+        self.damage_layout.addRow("每秒伤害减免强度:", self.damage_reduction_slider)
+
+        # Damage Strength Slider
+        self.damage_strength_slider = QSlider(Qt.Horizontal)
+        self.damage_strength_slider.setRange(0, 100)
+        self.damage_strength_slider.setValue(50)  # Default strength multiplier
+        self.damage_layout.addRow("伤害对应强度上限:", self.damage_strength_slider)
+
+        # Death Penalty Strength and Time
+        self.death_penalty_strength_slider = QSlider(Qt.Horizontal)
+        self.death_penalty_strength_slider.setRange(0, 100)
+        self.death_penalty_strength_slider.setValue(100)  # Default death penalty strength is 100%
+        self.damage_layout.addRow("死亡惩罚强度:", self.death_penalty_strength_slider)
+
+        self.death_penalty_time_spinbox = QSpinBox()
+        self.death_penalty_time_spinbox.setRange(0, 60)
+        self.death_penalty_time_spinbox.setValue(10)  # Default penalty time is 10 seconds
+        self.damage_layout.addRow("死亡惩罚持续时间 (s):", self.death_penalty_time_spinbox)
+
+        # WebSocket Status Label
+        self.websocket_status_label = QLabel("WebSocket Status: Disconnected")
+        self.damage_layout.addRow("WebSocket Status:", self.websocket_status_label)
+
+        self.damage_group.setLayout(self.damage_layout)
+        self.layout.addWidget(self.damage_group)
+
+        # Main Timer for Damage Reduction
+        self.damage_timer = QTimer(self)
+        self.damage_timer.timeout.connect(self.reduce_damage)
+
+        # WebSocket Client (Initialized as None)
+        self.websocket_client = None
+
         # 日志
         # 日志显示框 - 使用 QGroupBox 包装
-        self.log_groupbox = QGroupBox("日志显示")
+        self.log_groupbox = QGroupBox("简约日志")
         self.log_groupbox.setCheckable(True)
         self.log_groupbox.setChecked(True)
         self.log_groupbox.toggled.connect(self.toggle_log_display)
@@ -217,59 +270,6 @@ class MainWindow(QMainWindow):
 
         # 启动日志记录系统
         self.app_setup_logging()
-
-        # TON
-        # Damage System UI
-        self.damage_group = QGroupBox("Damage System")
-        self.damage_layout = QFormLayout()
-
-        # Enable Damage System Checkbox
-        self.enable_damage_checkbox = QCheckBox("Enable Damage System")
-        self.enable_damage_checkbox.stateChanged.connect(self.toggle_damage_system)
-        self.damage_layout.addRow("Enable Damage System:", self.enable_damage_checkbox)
-
-        # Damage Progress Bar
-        self.damage_progress_bar = QProgressBar()
-        self.damage_progress_bar.setRange(0, 100)
-        self.damage_progress_bar.setValue(0)  # Initial damage is 0%
-        self.damage_layout.addRow("Damage Accumulation:", self.damage_progress_bar)
-
-        # Damage Reduction Strength Slider
-        self.damage_reduction_slider = QSlider(Qt.Horizontal)
-        self.damage_reduction_slider.setRange(0, 10)
-        self.damage_reduction_slider.setValue(2)  # Default reduction strength per second
-        self.damage_layout.addRow("Damage Reduction Strength per Second:", self.damage_reduction_slider)
-
-        # Damage Strength Slider
-        self.damage_strength_slider = QSlider(Qt.Horizontal)
-        self.damage_strength_slider.setRange(0, 100)
-        self.damage_strength_slider.setValue(50)  # Default strength multiplier
-        self.damage_layout.addRow("Damage Strength:", self.damage_strength_slider)
-
-        # Death Penalty Strength and Time
-        self.death_penalty_strength_slider = QSlider(Qt.Horizontal)
-        self.death_penalty_strength_slider.setRange(0, 100)
-        self.death_penalty_strength_slider.setValue(100)  # Default death penalty strength is 100%
-        self.damage_layout.addRow("Death Penalty Strength:", self.death_penalty_strength_slider)
-
-        self.death_penalty_time_spinbox = QSpinBox()
-        self.death_penalty_time_spinbox.setRange(0, 60)
-        self.death_penalty_time_spinbox.setValue(10)  # Default penalty time is 10 seconds
-        self.damage_layout.addRow("Death Penalty Time (s):", self.death_penalty_time_spinbox)
-
-        # WebSocket Status Label
-        self.websocket_status_label = QLabel("WebSocket Status: Disconnected")
-        self.damage_layout.addRow("WebSocket Status:", self.websocket_status_label)
-
-        self.damage_group.setLayout(self.damage_layout)
-        self.layout.addWidget(self.damage_group)
-
-        # Main Timer for Damage Reduction
-        self.damage_timer = QTimer(self)
-        self.damage_timer.timeout.connect(self.reduce_damage)
-
-        # WebSocket Client (Initialized as None)
-        self.websocket_client = None
 
         # 增加可折叠的调试界面
         self.debug_group = QGroupBox("调试信息")
