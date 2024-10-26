@@ -20,7 +20,7 @@
 **补充说明：**
 
 - 面板控制功能需要在 Booth 购买 [声音面板](https://booth.pm/zh-cn/items/5950846) 后将资源导入工程，再导入本项目提供的修改包，将修改包内提供的 prefab 安装到您的 avatar 中。此处的修改包发布已获取 [ VRサウンドパッド ] 原作者授权。
-- 如果需要缩短 ToN 游戏的响应时间，可以调整 ToNSaveManager 设置中的 **常规-设置更新速率**，将更新速率设置为 100ms（默认为 1000ms，根据实际情况调整）。
+- 如果需要缩短对 ToN 游戏状态的响应时间，可以调整 ToNSaveManager 设置中的 **常规-设置更新速率**，将更新速率设置为 100ms（默认为 1000ms，根据实际情况调整）。
 
 ## 快速开始
 
@@ -28,11 +28,16 @@
 2. 点击主界面的 `启动` 来生成二维码，然后使用 DG-LAB APP 连接 DG-LAB 3.0 主机，点击 APP 中的 `SOCKET控制` 然后扫描此处二维码连接设备。
 3. 如果遇到问题，可以通过日志排查。建议检查网卡和端口是否设置正确，修改后再次尝试启动。
 
-> 模型修改文档（编写中|WIP)
+> 你需要修改你使用的模型，才能让此程序与游戏中的 avatar 联动，模型修改文档编写中(WIP)。
+> ToN 游戏支持不需要修改模型，只需按上面的说明启用 ToNSaveManager 的 WebSocket API 接口即可。
 
-## 应用界面
+## 界面说明
 
+程序界面：
 ![DG-LAB-VRCOSC-MainUI-CN.png](docs%2Fassets%2FDG-LAB-VRCOSC-MainUI-CN.png)
+
+SoundPad 控制面板界面：
+![DG-LAB-VRCOSC-SoundPad-CN.png](docs%2Fassets%2FDG-LAB-VRCOSC-SoundPad-CN.png)
 
 ## About
 
