@@ -288,6 +288,9 @@ class DGLabController:
         if value >= 0:
             self.current_select_channel = Channel.A if value <= 1 else Channel.B
             logger.info(f"set activate channel to: {self.current_select_channel}")
+            if self.ui_callback:
+                channel_name = "A" if self.current_select_channel == Channel.A else "B"
+                self.ui_callback.update_current_channel_display(channel_name)
 
     async def set_panel_control(self, value):
         """

@@ -176,11 +176,23 @@ class MainWindow(QMainWindow):
         self.controller_group.setLayout(self.controller_form)
         self.layout.addWidget(self.controller_group)
 
+        # 创建水平布局用于放置 dynamic_bone_mode 和 current_select_channel 显示
+        dynamic_bone_layout = QHBoxLayout()
+
         # 动骨模式选择
         self.dynamic_bone_mode_a_checkbox = QCheckBox("A通道交互模式")
         self.dynamic_bone_mode_b_checkbox = QCheckBox("B通道交互模式")
-        self.controller_form.addRow(self.dynamic_bone_mode_a_checkbox)
-        self.controller_form.addRow(self.dynamic_bone_mode_b_checkbox)
+
+        # 添加复选框到水平布局
+        dynamic_bone_layout.addWidget(self.dynamic_bone_mode_a_checkbox)
+        dynamic_bone_layout.addWidget(self.dynamic_bone_mode_b_checkbox)
+
+        # 在同行右侧增加 current_select_channel 显示标签
+        self.current_channel_label = QLabel("面板当前控制通道: 未设置")
+        dynamic_bone_layout.addWidget(self.current_channel_label)
+
+        # 将水平布局添加到主布局
+        self.controller_form.addRow(dynamic_bone_layout)
 
         # 波形模式选择
         self.pulse_mode_a_combobox = QComboBox()
@@ -805,6 +817,10 @@ class MainWindow(QMainWindow):
             asyncio.create_task(self.controller.strength_fire_mode(True, Channel.A, penalty_strength, last_strength_mod))
             await asyncio.sleep(penalty_time)  # 等待指定的惩罚持续时间
             asyncio.create_task(self.controller.strength_fire_mode(False, Channel.A, penalty_strength, last_strength_mod))
+
+    def update_current_channel_display(self, channel_name):
+        """更新当前选择通道显示"""
+        self.current_channel_label.setText(f"面板当前控制通道: {channel_name}")
 
 def generate_qrcode(data: str):
     """生成二维码并转换为PySide6可显示的QPixmap"""
