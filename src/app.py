@@ -265,7 +265,7 @@ class MainWindow(QMainWindow):
         self.damage_strength_slider.setValue(60)  # Default strength multiplier
         self.damage_strength_slider.setMaximumWidth(slider_max_width)  # 设置滑动条的最大宽度
         self.damage_strength_slider.valueChanged.connect(
-            lambda value: self.damage_strength_label.setText(f"伤害对应强度上限: {value} / 100"))
+            lambda value: self.damage_strength_label.setText(f"伤害对应强度上限: {value} / 200"))
         self.damage_strength_slider.valueChanged.connect(
             lambda: self.show_tooltip(self.damage_strength_slider))  # 实时显示提示
         self.damage_strength_layout.addWidget(self.damage_strength_label)
