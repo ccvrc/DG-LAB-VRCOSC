@@ -22,6 +22,12 @@
 - 面板控制功能需要在 Booth 购买 [声音面板](https://booth.pm/zh-cn/items/5950846) 后将资源导入工程，再导入本项目提供的修改包，将修改包内提供的 prefab 安装到您的 avatar 中。此处的修改包发布已获取 [ VRサウンドパッド ] 原作者授权。
 - 如果需要缩短对 ToN 游戏状态的响应时间，可以调整 ToNSaveManager 设置中的 **常规-设置更新速率**，将更新速率设置为 100ms（默认为 1000ms，根据实际情况调整）。
 
+## 注意事项
+
+ 1. 本程序及开发者不对使用该本程序产生的**任何后果**负责，使用程序则视为同意本条款。
+ 2. 请遵循 DG-LAB APP 中的说明，以安全的方式使用设备，使用此程序前请根据个人情况设置合理的强度上限。
+ 3. 本程序大部分代码使用 ChatGPT 生成，同时未经过充分的测试，目前版本可能存在连点开火后强度不降低的 BUG。
+
 ## 快速开始
 
 1. 下载 [release](https://github.com/ccvrc/DG-LAB-VRCOSC/releases) 中最新版本的 `DG-LAB-VRCOSC.zip`，解压后运行
@@ -39,9 +45,12 @@
 SoundPad 控制面板界面：
 ![DG-LAB-VRCOSC-SoundPad-CN.png](docs%2Fassets%2FDG-LAB-VRCOSC-SoundPad-CN.png)
 
+VRChat 游戏内轮盘菜单：
+![DG-LAB-VRCOSC-VRChatMenu-CN.png](docs%2Fassets%2FDG-LAB-VRCOSC-VRChatMenu-CN.png)
+
 ## About
 
-这个程序大部分代码使用 ChatGPT 生成，一开始只是为了做下面图片中的事情（画的好棒），后来想更完善些就加上了 UI。
+这个程序一开始只是为了做下面图片中的事情（画的好棒），后来想更完善些就加上了 UI 和 ToN 游戏的支持。
 
 <div style="display: flex; align-items: center;">
     <img src="docs/images/dg-lab-start.png" alt="dg-lab-start" style="height: 450px; margin-right: 10px;">
