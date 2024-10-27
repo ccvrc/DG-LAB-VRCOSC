@@ -104,8 +104,10 @@ class DGLabController:
         """
         if channel == Channel.A:
             self.pulse_mode_a = pulse_index
+            self.ui_callback.pulse_mode_a_combobox.setCurrentIndex(pulse_index)
         else:
             self.pulse_mode_b = pulse_index
+            self.ui_callback.pulse_mode_b_combobox.setCurrentIndex(pulse_index)
 
         await self.client.clear_pulses(channel)  # 清空当前的生效的波形队列
 
