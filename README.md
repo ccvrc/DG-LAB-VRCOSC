@@ -30,6 +30,8 @@
 
 ## 快速开始
 
+视频使用教程: https://www.bilibili.com/video/BV1k81VYfETR
+
 1. 下载 [release](https://github.com/ccvrc/DG-LAB-VRCOSC/releases) 中最新版本的 `DG-LAB-VRCOSC.zip`，解压后运行
 2. 点击主界面的 `启动` 来生成二维码，然后使用 DG-LAB APP 连接 DG-LAB 3.0 主机，点击 APP 中的 `SOCKET控制` 然后扫描此处二维码连接设备。
 3. 如果遇到问题，可以通过日志排查。建议检查网卡和端口是否设置正确，修改后再次尝试启动。
