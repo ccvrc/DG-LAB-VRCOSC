@@ -416,7 +416,7 @@ class DGLabController:
             self.send_message_to_vrchat_chatbox(
                 f"MAX A: {self.last_strength.a_limit} B: {self.last_strength.b_limit}\n"
                 f"Mode A: {mode_name_a} B: {mode_name_b} \n"
-                f"Pulse A: {PULSE_NAME[self.pulse_mode_a]} B: {self.pulse_mode_b} \n"
+                f"Pulse A: {PULSE_NAME[self.pulse_mode_a]} B: {PULSE_NAME[self.pulse_mode_b]} \n"
                 f"Fire Step: {self.fire_mode_strength_step}\n"
                 f"Current: {channel_strength} \n"
             )
