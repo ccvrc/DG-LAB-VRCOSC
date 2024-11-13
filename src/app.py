@@ -17,7 +17,6 @@ from gui.log_viewer_tab import LogViewerTab
 
 setup_logging()
 # Configure the logger
-logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
 def resource_path(relative_path):

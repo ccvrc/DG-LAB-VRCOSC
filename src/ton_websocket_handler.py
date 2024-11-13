@@ -5,7 +5,6 @@ import json
 import logging
 from PySide6.QtCore import Signal, QObject
 
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 class WebSocketClient(QObject):

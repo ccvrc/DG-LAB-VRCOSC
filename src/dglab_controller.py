@@ -8,7 +8,6 @@ from pydglab_ws import StrengthData, FeedbackButton, Channel, StrengthOperationT
 from pulse_data import PULSE_DATA, PULSE_NAME
 
 import logging
-from logger_config import setup_logging
 
 logger = logging.getLogger(__name__)
 
