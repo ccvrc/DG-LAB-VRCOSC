@@ -83,11 +83,6 @@ class MainWindow(QMainWindow):
         """限制 QTextEdit 中的最大行数，保留颜色和格式，并保持显示最新日志"""
         self.log_viewer_tab.limit_log_lines(max_lines)
 
-    def update_connection_status(self, is_online):
-        """Update connection status across tabs."""
-        self.app_status_online = is_online
-        self.network_config_tab.update_connection_status(is_online)
-
     def update_current_channel_display(self, channel_name):
         """Update current selected channel display."""
         self.controller_settings_tab.update_current_channel_display(channel_name)

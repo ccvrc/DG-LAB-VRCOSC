@@ -15,6 +15,8 @@ class ControllerSettingsTab(QWidget):
         super().__init__()
         self.main_window = main_window
 
+        self.dg_controller = None
+
         self.layout = QFormLayout(self)
         self.setLayout(self.layout)
 
@@ -135,14 +137,14 @@ class ControllerSettingsTab(QWidget):
     def bind_controller_settings(self):
         """将GUI设置与DGLabController变量绑定"""
         if self.main_window.controller:
-            controller = self.main_window.controller
-            controller.fire_mode_strength_step = self.strength_step_spinbox.value()
-            controller.enable_panel_control = self.enable_panel_control_checkbox.isChecked()
-            controller.is_dynamic_bone_mode_a = self.dynamic_bone_mode_a_checkbox.isChecked()
-            controller.is_dynamic_bone_mode_b = self.dynamic_bone_mode_b_checkbox.isChecked()
-            controller.pulse_mode_a = self.pulse_mode_a_combobox.currentIndex()
-            controller.pulse_mode_b = self.pulse_mode_b_combobox.currentIndex()
-            controller.enable_chatbox_status = self.enable_chatbox_status_checkbox.isChecked()
+            self.dg_controller = self.main_window.controller
+            self.dg_controller.fire_mode_strength_step = self.strength_step_spinbox.value()
+            self.dg_controller.enable_panel_control = self.enable_panel_control_checkbox.isChecked()
+            self.dg_controller.is_dynamic_bone_mode_a = self.dynamic_bone_mode_a_checkbox.isChecked()
+            self.dg_controller.is_dynamic_bone_mode_b = self.dynamic_bone_mode_b_checkbox.isChecked()
+            self.dg_controller.pulse_mode_a = self.pulse_mode_a_combobox.currentIndex()
+            self.dg_controller.pulse_mode_b = self.pulse_mode_b_combobox.currentIndex()
+            self.dg_controller.enable_chatbox_status = self.enable_chatbox_status_checkbox.isChecked()
             logger.info("DGLabController 参数已绑定")
         else:
             logger.warning("Controller is not initialized yet.")
@@ -152,14 +154,14 @@ class ControllerSettingsTab(QWidget):
         if self.main_window.controller:
             controller = self.main_window.controller
             params = (
-                f"Device online: app_status_online= {controller.app_status_online}\n "
-                f"Enable Panel Control: {controller.enable_panel_control}\n"
-                f"Dynamic Bone Mode A: {controller.is_dynamic_bone_mode_a}\n"
-                f"Dynamic Bone Mode B: {controller.is_dynamic_bone_mode_b}\n"
-                f"Pulse Mode A: {controller.pulse_mode_a}\n"
-                f"Pulse Mode B: {controller.pulse_mode_b}\n"
-                f"Fire Mode Strength Step: {controller.fire_mode_strength_step}\n"
-                f"Enable ChatBox Status: {controller.enable_chatbox_status}\n"
+                f"Device online: app_status_online= {self.dg_controller.app_status_online}\n "
+                f"Enable Panel Control: {self.dg_controller.enable_panel_control}\n"
+                f"Dynamic Bone Mode A: {self.dg_controller.is_dynamic_bone_mode_a}\n"
+                f"Dynamic Bone Mode B: {self.dg_controller.is_dynamic_bone_mode_b}\n"
+                f"Pulse Mode A: {self.dg_controller.pulse_mode_a}\n"
+                f"Pulse Mode B: {self.dg_controller.pulse_mode_b}\n"
+                f"Fire Mode Strength Step: {self.dg_controller.fire_mode_strength_step}\n"
+                f"Enable ChatBox Status: {self.dg_controller.enable_chatbox_status}\n"
             )
             self.param_label.setText(params)
         else:
@@ -169,57 +171,57 @@ class ControllerSettingsTab(QWidget):
     def update_strength_step(self, value):
         if self.main_window.controller:
             controller = self.main_window.controller
-            controller.fire_mode_strength_step = value
+            self.dg_controller.fire_mode_strength_step = value
             logger.info(f"Updated strength step to {value}")
-            controller.send_value_to_vrchat("/avatar/parameters/SoundPad/Volume", 0.01*value)
+            self.dg_controller.send_value_to_vrchat("/avatar/parameters/SoundPad/Volume", 0.01*value)
 
     def update_panel_control(self, state):
         if self.main_window.controller:
             controller = self.main_window.controller
-            controller.enable_panel_control = bool(state)
-            logger.info(f"Panel control enabled: {controller.enable_panel_control}")
-            controller.send_value_to_vrchat("/avatar/parameters/SoundPad/PanelControl", bool(state))
+            self.dg_controller.enable_panel_control = bool(state)
+            logger.info(f"Panel control enabled: {self.dg_controller.enable_panel_control}")
+            self.dg_controller.send_value_to_vrchat("/avatar/parameters/SoundPad/PanelControl", bool(state))
 
     def update_dynamic_bone_mode_a(self, state):
         if self.main_window.controller:
             controller = self.main_window.controller
-            controller.is_dynamic_bone_mode_a = bool(state)
-            logger.info(f"Dynamic bone mode A: {controller.is_dynamic_bone_mode_a}")
+            self.dg_controller.is_dynamic_bone_mode_a = bool(state)
+            logger.info(f"Dynamic bone mode A: {self.dg_controller.is_dynamic_bone_mode_a}")
 
     def update_dynamic_bone_mode_b(self, state):
         if self.main_window.controller:
             controller = self.main_window.controller
-            controller.is_dynamic_bone_mode_b = bool(state)
-            logger.info(f"Dynamic bone mode B: {controller.is_dynamic_bone_mode_b}")
+            self.dg_controller.is_dynamic_bone_mode_b = bool(state)
+            logger.info(f"Dynamic bone mode B: {self.dg_controller.is_dynamic_bone_mode_b}")
 
     def update_pulse_mode_a(self, index):
         if self.main_window.controller:
-            asyncio.create_task(self.main_window.controller.set_pulse_data(None, Channel.A, index))
+            asyncio.create_task(self.dg_controller.set_pulse_data(None, Channel.A, index))
             logger.info(f"Pulse mode A updated to {PULSE_NAME[index]}")
 
     def update_pulse_mode_b(self, index):
         if self.main_window.controller:
-            asyncio.create_task(self.main_window.controller.set_pulse_data(None, Channel.B, index))
+            asyncio.create_task(self.dg_controller.set_pulse_data(None, Channel.B, index))
             logger.info(f"Pulse mode B updated to {PULSE_NAME[index]}")
 
     def update_chatbox_status(self, state):
         if self.main_window.controller:
             controller = self.main_window.controller
-            controller.enable_chatbox_status = bool(state)
-            logger.info(f"ChatBox status enabled: {controller.enable_chatbox_status}")
+            self.dg_controller.enable_chatbox_status = bool(state)
+            logger.info(f"ChatBox status enabled: {self.dg_controller.enable_chatbox_status}")
 
     def set_a_channel_strength(self, value):
         """根据滑动条的值设定 A 通道强度"""
         if self.main_window.controller:
-            asyncio.create_task(self.main_window.controller.client.set_strength(Channel.A, StrengthOperationType.SET_TO, value))
-            self.main_window.controller.last_strength.a = value  # 同步更新 last_strength 的 A 通道值
+            asyncio.create_task(self.dg_controller.client.set_strength(Channel.A, StrengthOperationType.SET_TO, value))
+            self.dg_controller.last_strength.a = value  # 同步更新 last_strength 的 A 通道值
             self.a_channel_slider.setToolTip(f"SET A 通道强度: {value}")
 
     def set_b_channel_strength(self, value):
         """根据滑动条的值设定 B 通道强度"""
         if self.main_window.controller:
-            asyncio.create_task(self.main_window.controller.client.set_strength(Channel.B, StrengthOperationType.SET_TO, value))
-            self.main_window.controller.last_strength.b = value  # 同步更新 last_strength 的 B 通道值
+            asyncio.create_task(self.dg_controller.client.set_strength(Channel.B, StrengthOperationType.SET_TO, value))
+            self.dg_controller.last_strength.b = value  # 同步更新 last_strength 的 B 通道值
             self.b_channel_slider.setToolTip(f"SET B 通道强度: {value}")
 
     def disable_a_channel_updates(self):
@@ -264,3 +266,24 @@ class ControllerSettingsTab(QWidget):
     def update_current_channel_display(self, channel_name):
         """更新当前选择通道显示"""
         self.current_channel_label.setText(f"面板当前控制通道: {channel_name}")
+
+    def update_channel_strength_labels(self, strength_data):
+        logger.info(f"通道状态已更新 - A通道强度: {strength_data.a}, B通道强度: {strength_data.b}")
+        if self.main_window.controller and self.main_window.controller.last_strength:
+            # 仅当允许外部更新时更新 A 通道滑动条
+            if self.allow_a_channel_update:
+                self.a_channel_slider.blockSignals(True)
+                self.a_channel_slider.setRange(0, self.main_window.controller.last_strength.a_limit)  # 根据限制更新范围
+                self.a_channel_slider.setValue(self.main_window.controller.last_strength.a)
+                self.a_channel_slider.blockSignals(False)
+                self.a_channel_label.setText(
+                    f"A 通道强度: {self.main_window.controller.last_strength.a} 强度上限: {self.main_window.controller.last_strength.a_limit}  波形: {PULSE_NAME[self.main_window.controller.pulse_mode_a]}")
+
+            # 仅当允许外部更新时更新 B 通道滑动条
+            if self.allow_b_channel_update:
+                self.b_channel_slider.blockSignals(True)
+                self.b_channel_slider.setRange(0, self.main_window.controller.last_strength.b_limit)  # 根据限制更新范围
+                self.b_channel_slider.setValue(self.main_window.controller.last_strength.b)
+                self.b_channel_slider.blockSignals(False)
+                self.b_channel_label.setText(
+                    f"B 通道强度: {self.main_window.controller.last_strength.b} 强度上限: {self.main_window.controller.last_strength.b_limit}  波形: {PULSE_NAME[self.main_window.controller.pulse_mode_b]}")

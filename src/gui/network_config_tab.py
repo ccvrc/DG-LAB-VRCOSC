@@ -187,11 +187,12 @@ class NetworkConfigTab(QWidget):
                 # Start the data processing loop
                 async for data in client.data_generator():
                     if isinstance(data, StrengthData):
+                        logger.info(f"接收到数据包 - A通道: {data.a}, B通道: {data.b}")
                         controller.last_strength = data
                         controller.data_updated_event.set()  # 数据更新，触发开火操作的后续事件
-                        logger.info(f"接收到数据包 - A通道: {data.a}, B通道: {data.b}")
                         controller.app_status_online = True
-                        self.main_window.update_connection_status(controller.app_status_online)
+                        self.main_window.app_status_online = True
+                        self.update_connection_status(controller.app_status_online)
                         # Update UI components related to strength data
                         self.main_window.controller_settings_tab.update_channel_strength_labels(data)
                     elif isinstance(data, FeedbackButton):
@@ -199,11 +200,14 @@ class NetworkConfigTab(QWidget):
                     elif data == RetCode.CLIENT_DISCONNECTED:
                         logger.info("App 已断开连接，你可以尝试重新扫码进行连接绑定")
                         controller.app_status_online = False
+                        self.main_window.app_status_online = False
                         self.update_connection_status(controller.app_status_online)
                         await client.rebind()
                         logger.info("重新绑定成功")
                         controller.app_status_online = True
                         self.update_connection_status(controller.app_status_online)
+                    else:
+                        logger.info(f"获取到状态码：{RetCode}")
 
                 osc_transport.close()
         except OSError as e:

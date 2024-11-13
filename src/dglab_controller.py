@@ -9,7 +9,7 @@ from pulse_data import PULSE_DATA, PULSE_NAME
 
 import logging
 from logger_config import setup_logging
-setup_logging()
+
 logger = logging.getLogger(__name__)
 
 
@@ -24,7 +24,7 @@ class DGLabController:
         """
         self.client = client
         self.osc_client = osc_client
-        self.ui_callback = ui_callback
+        self.main_window = ui_callback
         self.last_strength = None  # 记录上次的强度值, 从 app更新, 包含 a b a_limit b_limit
         self.app_status_online = False  # App 端在线情况
         # 功能控制参数
@@ -104,10 +104,10 @@ class DGLabController:
         """
         if channel == Channel.A:
             self.pulse_mode_a = pulse_index
-            self.ui_callback.pulse_mode_a_combobox.setCurrentIndex(pulse_index)
+            self.main_window.controller_settings_tab.pulse_mode_a_combobox.setCurrentIndex(pulse_index)
         else:
             self.pulse_mode_b = pulse_index
-            self.ui_callback.pulse_mode_b_combobox.setCurrentIndex(pulse_index)
+            self.main_window.controller_settings_tab.pulse_mode_b_combobox.setCurrentIndex(pulse_index)
 
         await self.client.clear_pulses(channel)  # 清空当前的生效的波形队列
 
@@ -141,9 +141,9 @@ class DGLabController:
             self.send_message_to_vrchat_chatbox("")
         self.chatbox_toggle_timer = None
         # 更新UI
-        self.ui_callback.enable_chatbox_status_checkbox.blockSignals(True)  # 防止触发 valueChanged 事件
-        self.ui_callback.enable_chatbox_status_checkbox.setChecked(self.enable_chatbox_status)
-        self.ui_callback.enable_chatbox_status_checkbox.blockSignals(False)
+        self.main_window.controller_settings_tab.enable_chatbox_status_checkbox.blockSignals(True)  # 防止触发 valueChanged 事件
+        self.main_window.controller_settings_tab.enable_chatbox_status_checkbox.setChecked(self.enable_chatbox_status)
+        self.main_window.controller_settings_tab.enable_chatbox_status_checkbox.blockSignals(False)
 
     async def toggle_chatbox(self, value):
         """
@@ -167,17 +167,17 @@ class DGLabController:
             mode_name = "可交互模式" if self.is_dynamic_bone_mode_a else "面板设置模式"
             logger.info("通道 A 切换为" + mode_name)
             # 更新UI
-            self.ui_callback.dynamic_bone_mode_a_checkbox.blockSignals(True)  # 防止触发 valueChanged 事件
-            self.ui_callback.dynamic_bone_mode_a_checkbox.setChecked(self.is_dynamic_bone_mode_a)
-            self.ui_callback.dynamic_bone_mode_a_checkbox.blockSignals(False)
+            self.main_window.controller_settings_tab.dynamic_bone_mode_a_checkbox.blockSignals(True)  # 防止触发 valueChanged 事件
+            self.main_window.controller_settings_tab.dynamic_bone_mode_a_checkbox.setChecked(self.is_dynamic_bone_mode_a)
+            self.main_window.controller_settings_tab.dynamic_bone_mode_a_checkbox.blockSignals(False)
         elif channel == Channel.B:
             self.is_dynamic_bone_mode_b = not self.is_dynamic_bone_mode_b
             mode_name = "可交互模式" if self.is_dynamic_bone_mode_b else "面板设置模式"
             logger.info("通道 B 切换为" + mode_name)
             # 更新UI
-            self.ui_callback.dynamic_bone_mode_b_checkbox.blockSignals(True)  # 防止触发 valueChanged 事件
-            self.ui_callback.dynamic_bone_mode_b_checkbox.setChecked(self.is_dynamic_bone_mode_b)
-            self.ui_callback.dynamic_bone_mode_b_checkbox.blockSignals(False)
+            self.main_window.controller_settings_tab.dynamic_bone_mode_b_checkbox.blockSignals(True)  # 防止触发 valueChanged 事件
+            self.main_window.controller_settings_tab.dynamic_bone_mode_b_checkbox.setChecked(self.is_dynamic_bone_mode_b)
+            self.main_window.controller_settings_tab.dynamic_bone_mode_b_checkbox.blockSignals(False)
 
     async def set_mode(self, value, channel):
         """
@@ -276,9 +276,9 @@ class DGLabController:
             self.fire_mode_strength_step = math.ceil(self.map_value(value, 0, 100))  # 向上取整
             logger.info(f"current strength step: {self.fire_mode_strength_step}")
             # 更新 UI 组件 (QSpinBox) 以反映新的值
-            self.ui_callback.strength_step_spinbox.blockSignals(True)  # 防止触发 valueChanged 事件
-            self.ui_callback.strength_step_spinbox.setValue(self.fire_mode_strength_step)
-            self.ui_callback.strength_step_spinbox.blockSignals(False)
+            self.main_window.controller_settings_tab.strength_step_spinbox.blockSignals(True)  # 防止触发 valueChanged 事件
+            self.main_window.controller_settings_tab.strength_step_spinbox.setValue(self.fire_mode_strength_step)
+            self.main_window.controller_settings_tab.strength_step_spinbox.blockSignals(False)
 
     async def set_channel(self, value):
         """
@@ -288,9 +288,9 @@ class DGLabController:
         if value >= 0:
             self.current_select_channel = Channel.A if value <= 1 else Channel.B
             logger.info(f"set activate channel to: {self.current_select_channel}")
-            if self.ui_callback:
+            if self.main_window.controller_settings_tab:
                 channel_name = "A" if self.current_select_channel == Channel.A else "B"
-                self.ui_callback.update_current_channel_display(channel_name)
+                self.main_window.controller_settings_tab.update_current_channel_display(channel_name)
 
     async def set_panel_control(self, value):
         """
@@ -303,9 +303,9 @@ class DGLabController:
         mode_name = "开启面板控制" if self.enable_panel_control else "已禁用面板控制"
         logger.info(f": {mode_name}")
         # 更新 UI 组件 (QSpinBox) 以反映新的值
-        self.ui_callback.enable_panel_control_checkbox.blockSignals(True)  # 防止触发 valueChanged 事件
-        self.ui_callback.enable_panel_control_checkbox.setChecked(self.enable_panel_control)
-        self.ui_callback.enable_panel_control_checkbox.blockSignals(False)
+        self.main_window.controller_settings_tab.enable_panel_control_checkbox.blockSignals(True)  # 防止触发 valueChanged 事件
+        self.main_window.controller_settings_tab.enable_panel_control_checkbox.setChecked(self.enable_panel_control)
+        self.main_window.controller_settings_tab.enable_panel_control_checkbox.blockSignals(False)
 
 
     async def handle_osc_message_pad(self, address, *args):
