@@ -14,6 +14,7 @@ from gui.network_config_tab import NetworkConfigTab
 from gui.controller_settings_tab import ControllerSettingsTab
 from gui.ton_damage_system_tab import TonDamageSystemTab
 from gui.log_viewer_tab import LogViewerTab
+from gui.osc_parameters import OSCParametersTab
 
 setup_logging()
 # Configure the logger
@@ -52,11 +53,14 @@ class MainWindow(QMainWindow):
         self.controller_settings_tab = ControllerSettingsTab(self)
         self.ton_damage_system_tab = TonDamageSystemTab(self)
         self.log_viewer_tab = LogViewerTab(self)
+        self.osc_parameters_tab = OSCParametersTab(self)
+
 
         # Add tabs to the tab widget
         self.tab_widget.addTab(self.network_config_tab, "网络配置")
         self.tab_widget.addTab(self.controller_settings_tab, "控制器设置")
-        self.tab_widget.addTab(self.ton_damage_system_tab, "伤害系统")
+        self.tab_widget.addTab(self.osc_parameters_tab, "OSC参数配置")
+        self.tab_widget.addTab(self.ton_damage_system_tab, "ToN游戏联动")
         self.tab_widget.addTab(self.log_viewer_tab, "日志查看")
 
         # Set initial controller to None
@@ -85,6 +89,9 @@ class MainWindow(QMainWindow):
     def update_current_channel_display(self, channel_name):
         """Update current selected channel display."""
         self.controller_settings_tab.update_current_channel_display(channel_name)
+
+    def get_osc_addresses(self):
+        return self.osc_parameters_tab.get_addresses()
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)

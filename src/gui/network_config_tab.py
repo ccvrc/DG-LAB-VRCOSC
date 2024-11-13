@@ -10,6 +10,7 @@ from dglab_controller import DGLabController
 from qasync import asyncio
 from pythonosc import osc_server, dispatcher, udp_client
 
+import functools # Use the built-in functools module
 import sys
 import os
 import qrcode
@@ -48,6 +49,11 @@ class NetworkConfigTab(QWidget):
         self.osc_port_spinbox.setRange(1024, 65535)
         self.osc_port_spinbox.setValue(self.main_window.settings['osc_port'])  # Set the default or loaded value
         self.form_layout.addRow("OSC接收端口:", self.osc_port_spinbox)
+
+        # 创建 dispatcher 和地址处理器字典
+        self.dispatcher = dispatcher.Dispatcher()
+        self.osc_address_handlers = {}  # 自定义 OSC 地址的处理器
+        self.panel_control_handlers = {}  # 面板控制 OSC 地址的处理器
 
         # 添加客户端连接状态标签
         self.connection_status_label = QLabel("未连接, 请在点击启动后扫描二维码连接")
@@ -131,6 +137,8 @@ class NetworkConfigTab(QWidget):
             loop = asyncio.get_running_loop()
             loop.create_task(self.run_server(selected_ip, selected_port, osc_port))
             logger.info('WebSocket 服务器已启动')
+            # After starting the server, connect the addresses_updated signal
+            self.main_window.osc_parameters_tab.addresses_updated.connect(self.update_osc_mappings)
             # 启动成功后，将按钮设为灰色并禁用
             self.start_button.setText("已启动")
             self.start_button.setStyleSheet("background-color: grey; color: white;")
@@ -153,36 +161,31 @@ class NetworkConfigTab(QWidget):
                 client = server.new_local_client()
                 logger.info("WebSocket 客户端已初始化")
 
-                # 生成二维码
+                # Generate QR code
                 url = client.get_qrcode(f"ws://{ip}:{port}")
                 qrcode_image = self.generate_qrcode(url)
                 self.update_qrcode(qrcode_image)
                 logger.info(f"二维码已生成，WebSocket URL: ws://{ip}:{port}")
 
                 osc_client = udp_client.SimpleUDPClient("127.0.0.1", 9000)
-                # 初始化控制器
+                # Initialize controller
                 controller = DGLabController(client, osc_client, self.main_window)
                 self.main_window.controller = controller
                 logger.info("DGLabController 已初始化")
-                # 在 controller 初始化后调用绑定函数
+                # After controller initialization, bind settings
                 self.main_window.controller_settings_tab.bind_controller_settings()
 
-                # 设置OSC服务器
-                disp = dispatcher.Dispatcher()
-                # 面板控制对应的 OSC 地址
-                disp.map("/avatar/parameters/SoundPad/Button/*", self.handle_osc_message_task_pad, controller)
-                disp.map("/avatar/parameters/SoundPad/Volume", self.handle_osc_message_task_pad, controller)
-                disp.map("/avatar/parameters/SoundPad/Page", self.handle_osc_message_task_pad, controller)
-                disp.map("/avatar/parameters/SoundPad/PanelControl", self.handle_osc_message_task_pad, controller)
-                # PB/Contact 交互对应的 OSC 地址
-                disp.map("/avatar/parameters/DG-LAB/*", self.handle_osc_message_task_pb, controller)
-                disp.map("/avatar/parameters/Tail_Stretch", self.handle_osc_message_task_pb, controller)
-
+                # 设置 OSC 服务器
                 osc_server_instance = osc_server.AsyncIOOSCUDPServer(
-                    ("0.0.0.0", osc_port), disp, asyncio.get_event_loop()
+                    ("0.0.0.0", osc_port), self.dispatcher, asyncio.get_event_loop()
                 )
                 osc_transport, osc_protocol = await osc_server_instance.create_serve_endpoint()
                 logger.info(f"OSC Server Listening on port {osc_port}")
+
+                # 连接 addresses_updated 信号到 update_osc_mappings 方法
+                self.main_window.osc_parameters_tab.addresses_updated.connect(self.update_osc_mappings)
+                # 初始化 OSC 映射，包括面板控制和自定义地址
+                self.update_osc_mappings(controller)
 
                 # Start the data processing loop
                 async for data in client.data_generator():
@@ -279,3 +282,48 @@ class NetworkConfigTab(QWidget):
             self.main_window.controller_settings_tab.controller_group.setEnabled(False)  # 禁用控制器设置
             self.main_window.ton_damage_system_tab.damage_group.setEnabled(False)
         self.connection_status_label.adjustSize()  # 根据内容调整标签大小
+
+    def update_osc_mappings(self, controller=None):
+        if controller is None:
+            controller = self.main_window.controller
+        asyncio.run_coroutine_threadsafe(self._update_osc_mappings(controller), asyncio.get_event_loop())
+
+    async def _update_osc_mappings(self, controller):
+        # 首先，移除之前的自定义 OSC 地址映射
+        for address, handler in self.osc_address_handlers.items():
+            self.dispatcher.unmap(address, handler)
+        self.osc_address_handlers.clear()
+
+        # 添加新的自定义 OSC 地址映射
+        osc_addresses = self.main_window.get_osc_addresses()
+        for addr in osc_addresses:
+            address = addr['address']
+            channels = addr['channels']
+            handler = functools.partial(self.handle_osc_message_task_pb_with_channels, controller=controller, channels=channels)
+            self.dispatcher.map(address, handler)
+            self.osc_address_handlers[address] = handler
+        logger.info("OSC dispatcher mappings updated with custom addresses.")
+
+        # 确保面板控制的 OSC 地址映射被添加（如果尚未添加）
+        if not self.panel_control_handlers:
+            self.add_panel_control_mappings(controller)
+
+    def add_panel_control_mappings(self, controller):
+        # 添加面板控制功能的 OSC 地址映射
+        panel_addresses = [
+            "/avatar/parameters/SoundPad/Button/*",
+            "/avatar/parameters/SoundPad/Volume",
+            "/avatar/parameters/SoundPad/Page",
+            "/avatar/parameters/SoundPad/PanelControl"
+        ]
+        for address in panel_addresses:
+            handler = functools.partial(self.handle_osc_message_task_pad, controller=controller)
+            self.dispatcher.map(address, handler)
+            self.panel_control_handlers[address] = handler
+        logger.info("OSC dispatcher mappings updated with panel control addresses.")
+
+    def handle_osc_message_task_pad(self, address, *args, controller):
+        asyncio.create_task(controller.handle_osc_message_pad(address, *args))
+
+    def handle_osc_message_task_pb_with_channels(self, address, *args, controller, channels):
+        asyncio.create_task(controller.handle_osc_message_pb(address, *args, channels=channels))

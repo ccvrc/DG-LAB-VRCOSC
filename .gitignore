@@ -53,6 +53,8 @@ coverage.xml
 cover/
 qrcode.png
 settings.yml
+osc_addresses.yml
+
 # Translations
 *.mo
 *.pot

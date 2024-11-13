@@ -365,26 +365,25 @@ class DGLabController:
         elif address == "/avatar/parameters/SoundPad/Page": # INT
             await self.set_channel(args[0])
 
-    async def handle_osc_message_pb(self, address, *args):
+    async def handle_osc_message_pb(self, address, *args, channels):
         """
         处理 OSC 消息
         1. Bool: Bool 类型变量触发时，VRC 会先后发送 True 与 False, 回调中仅处理 True
         2. Float: -1.0 to 1.0， 但对于 Contact 与  Physbones 来说范围为 0.0-1.0
         """
         # Parameters Debug
-        logger.debug(f"Received OSC message on {address} with arguments {args}")
+        logger.debug(f"Received OSC message on {address} with arguments {args} and channels {channels}")
 
         if not self.enable_panel_control:
             return
 
-        # Float 参数映射为强度数值
-        # Note: 好像没有下限设置，那就默认为上限的 40% 吧
-        if address == "/avatar/parameters/DG-LAB/UpperLeg_R":
-            await self.set_float_output(args[0], Channel.A)
-        elif address == "/avatar/parameters/DG-LAB/UpperLeg_L":
-            await self.set_float_output(args[0], Channel.A)
-        elif address == "/avatar/parameters/Tail_Stretch":
-            await self.set_float_output(args[0], Channel.B)
+        # Float parameter mapping to strength value
+        value = args[0]
+        # For each channel, set the output
+        if channels.get('A', False):
+            await self.set_float_output(value, Channel.A)
+        if channels.get('B', False):
+            await self.set_float_output(value, Channel.B)
 
     def map_value(self, value, min_value, max_value):
         """
