@@ -44,6 +44,10 @@ class MainWindow(QMainWindow):
             'osc_port': 9001
         }
 
+        # Set initial controller to None
+        self.controller = None
+        self.app_status_online = False
+
         # Create the tab widget
         self.tab_widget = QTabWidget()
         self.setCentralWidget(self.tab_widget)
@@ -62,10 +66,6 @@ class MainWindow(QMainWindow):
         self.tab_widget.addTab(self.osc_parameters_tab, "OSC参数配置")
         self.tab_widget.addTab(self.ton_damage_system_tab, "ToN游戏联动")
         self.tab_widget.addTab(self.log_viewer_tab, "日志查看")
-
-        # Set initial controller to None
-        self.controller = None
-        self.app_status_online = False
 
         # Setup logging to the log viewer
         self.app_setup_logging()

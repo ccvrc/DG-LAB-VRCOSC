@@ -97,28 +97,6 @@ class ControllerSettingsTab(QWidget):
         self.controller_group.setLayout(self.controller_form)
         self.layout.addRow(self.controller_group)
 
-        # 增加可折叠的调试界面
-        self.debug_group = QGroupBox("调试信息")
-        self.debug_group.setCheckable(True)
-        self.debug_group.setChecked(False)  # 默认折叠状态
-        self.debug_group.toggled.connect(self.toggle_debug_info)  # 连接信号槽
-
-        self.debug_layout = QHBoxLayout()
-        self.debug_label = QLabel("DGLabController 参数:")
-        self.debug_layout.addWidget(self.debug_label)
-
-        # 显示控制器的参数
-        self.param_label = QLabel("正在加载控制器参数...")
-        self.debug_layout.addWidget(self.param_label)
-
-        self.debug_group.setLayout(self.debug_layout)
-        self.layout.addRow(self.debug_group)
-
-        # 启动定时器，每秒刷新一次调试信息
-        self.timer = QTimer(self)
-        self.timer.timeout.connect(self.update_debug_info)
-        self.timer.start(1000)  # 每秒刷新一次
-
         # Connect UI to controller update methods
         self.strength_step_spinbox.valueChanged.connect(self.update_strength_step)
         self.enable_panel_control_checkbox.stateChanged.connect(self.update_panel_control)
@@ -127,12 +105,6 @@ class ControllerSettingsTab(QWidget):
         self.pulse_mode_a_combobox.currentIndexChanged.connect(self.update_pulse_mode_a)
         self.pulse_mode_b_combobox.currentIndexChanged.connect(self.update_pulse_mode_b)
         self.enable_chatbox_status_checkbox.stateChanged.connect(self.update_chatbox_status)
-
-    def toggle_debug_info(self, checked):
-        """当调试组被启用/禁用时折叠或展开内容"""
-        # 控制调试信息组中所有子组件的可见性，而不是整个调试组
-        for child in self.debug_group.findChildren(QWidget):
-            child.setVisible(checked)
 
     def bind_controller_settings(self):
         """将GUI设置与DGLabController变量绑定"""
@@ -148,24 +120,6 @@ class ControllerSettingsTab(QWidget):
             logger.info("DGLabController 参数已绑定")
         else:
             logger.warning("Controller is not initialized yet.")
-
-    def update_debug_info(self):
-        """更新调试信息"""
-        if self.main_window.controller:
-            controller = self.main_window.controller
-            params = (
-                f"Device online: app_status_online= {self.dg_controller.app_status_online}\n "
-                f"Enable Panel Control: {self.dg_controller.enable_panel_control}\n"
-                f"Dynamic Bone Mode A: {self.dg_controller.is_dynamic_bone_mode_a}\n"
-                f"Dynamic Bone Mode B: {self.dg_controller.is_dynamic_bone_mode_b}\n"
-                f"Pulse Mode A: {self.dg_controller.pulse_mode_a}\n"
-                f"Pulse Mode B: {self.dg_controller.pulse_mode_b}\n"
-                f"Fire Mode Strength Step: {self.dg_controller.fire_mode_strength_step}\n"
-                f"Enable ChatBox Status: {self.dg_controller.enable_chatbox_status}\n"
-            )
-            self.param_label.setText(params)
-        else:
-            self.param_label.setText("控制器未初始化.")
 
     # Controller update methods
     def update_strength_step(self, value):
