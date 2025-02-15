@@ -31,7 +31,7 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("DG-Lab WebSocket Controller for VRChat")
-        self.setGeometry(300, 300, 650, 600)
+        self.setGeometry(300, 300, 800, 470)
 
         # 设置窗口图标
         self.setWindowIcon(QIcon(resource_path('docs/images/fish-cake.ico')))

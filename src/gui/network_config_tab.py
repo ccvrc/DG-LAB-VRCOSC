@@ -1,7 +1,8 @@
 from PySide6.QtWidgets import (QWidget, QGroupBox, QFormLayout, QComboBox, QSpinBox,
-                               QLabel, QPushButton, QHBoxLayout)
+                               QLabel, QPushButton, QHBoxLayout, QSizePolicy)
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QPixmap
+from PySide6.QtCore import QTimer
 import logging
 import asyncio
 import functools
@@ -25,11 +26,13 @@ class NetworkConfigTab(QWidget):
     def __init__(self, main_window):
         super().__init__()
         self.main_window = main_window
+        self.original_qrcode_pixmap = None  # 保存原始二维码图像
 
+        # 主布局使用QHBoxLayout
         self.layout = QHBoxLayout(self)
         self.setLayout(self.layout)
 
-        # 创建网络配置组
+        # 创建网络配置组（左侧固定部分）
         self.network_config_group = QGroupBox("网络配置")
         self.form_layout = QFormLayout()
 
@@ -78,13 +81,22 @@ class NetworkConfigTab(QWidget):
         self.form_layout.addRow(self.start_button)
 
         self.network_config_group.setLayout(self.form_layout)
+        
+        # 将网络配置组添加到布局，设置stretch=0
+        self.layout.addWidget(self.network_config_group, 0)  # stretch=0保持固定宽度
 
-        # 将网络配置组添加到布局
-        self.layout.addWidget(self.network_config_group)
-
-        # 二维码显示
+        # 二维码显示（右侧伸缩部分）
         self.qrcode_label = QLabel(self)
-        self.layout.addWidget(self.qrcode_label)
+        self.qrcode_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.qrcode_label.setAlignment(Qt.AlignCenter)  # 居中显示
+        self.layout.addWidget(self.qrcode_label, 1)  # stretch=1占据剩余空间
+
+        # 二维码标签的尺寸策略强化
+        self.qrcode_label.setSizePolicy(
+            QSizePolicy.Expanding,  # 水平策略：尽可能扩展
+            QSizePolicy.Expanding  # 垂直策略
+        )
+        self.qrcode_label.setMinimumSize(100, 100)  # 设置最小可显示尺寸
 
         # Apply loaded settings to the UI components
         self.apply_settings_to_ui()
@@ -258,7 +270,7 @@ class NetworkConfigTab(QWidget):
 
     def generate_qrcode(self, data: str):
         """生成二维码并转换为PySide6可显示的QPixmap"""
-        qr = qrcode.QRCode(version=1, error_correction=qrcode.constants.ERROR_CORRECT_L, box_size=6, border=2)
+        qr = qrcode.QRCode(version=1, error_correction=qrcode.constants.ERROR_CORRECT_L, box_size=16, border=2)
         qr.add_data(data)
         qr.make(fit=True)
         img = qr.make_image(fill='black', back_color='white')
@@ -273,10 +285,28 @@ class NetworkConfigTab(QWidget):
         return qimage
 
     def update_qrcode(self, qrcode_pixmap):
-        """更新二维码并调整QLabel的大小"""
-        self.qrcode_label.setPixmap(qrcode_pixmap)
-        self.qrcode_label.setFixedSize(qrcode_pixmap.size())  # 根据二维码尺寸调整QLabel大小
+        """更新二维码并保存原始图像"""
+        self.original_qrcode_pixmap = qrcode_pixmap
+        self.scale_qrcode()
         logger.info("二维码已更新")
+
+    def scale_qrcode(self):
+        """根据当前标签尺寸缩放二维码"""
+        if self.original_qrcode_pixmap and not self.original_qrcode_pixmap.isNull():
+            scaled_pixmap = self.original_qrcode_pixmap.scaled(
+                self.qrcode_label.size(),
+                Qt.KeepAspectRatio,
+                Qt.SmoothTransformation
+            )
+            self.qrcode_label.setPixmap(scaled_pixmap)
+
+
+    def resizeEvent(self, event):
+        """优化窗口缩放处理"""
+        # 先执行父类的resize事件处理
+        super().resizeEvent(event)
+        # 延迟执行二维码缩放以保证尺寸计算准确
+        QTimer.singleShot(0, self.scale_qrcode)
 
     def update_connection_status(self, is_online):
         self.main_window.app_status_online = is_online
