@@ -40,7 +40,7 @@ class MainWindow(QMainWindow):
             set_language(self.settings['language'])
             
         self.setWindowTitle(_("main.title"))
-        self.setGeometry(300, 300, 700, 600)
+        self.setGeometry(300, 300, 900, 470)
 
         # 设置窗口图标
         self.setWindowIcon(QIcon(resource_path('docs/images/fish-cake.ico')))
