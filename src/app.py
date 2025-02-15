@@ -36,13 +36,18 @@ class MainWindow(QMainWindow):
         # 设置窗口图标
         self.setWindowIcon(QIcon(resource_path('docs/images/fish-cake.ico')))
 
-        # Load settings from file or use defaults
-        self.settings = load_settings() or {
+        default_settings = {
             'interface': '',
             'ip': '',
             'port': 5678,
             'osc_port': 9001
         }
+
+        self.settings = load_settings() or {}
+        for key, value in default_settings.items():
+            self.settings.setdefault(key, value)
+        # Load settings from file or use defaults
+
 
         # Set initial controller to None
         self.controller = None
@@ -76,8 +81,9 @@ class MainWindow(QMainWindow):
         logger.setLevel(logging.INFO)
 
         # 创建 QTextEditHandler 并添加到日志系统中
-        self.log_handler = self.log_viewer_tab.log_handler
-        logger.addHandler(self.log_handler)
+        if not any(isinstance(handler, type(self.log_viewer_tab.log_handler)) for handler in logger.handlers):
+            self.log_handler = self.log_viewer_tab.log_handler
+            logger.addHandler(self.log_handler)
 
         # 限制日志框中的最大行数
         self.log_viewer_tab.log_text_edit.textChanged.connect(lambda: self.limit_log_lines(max_lines=100))
