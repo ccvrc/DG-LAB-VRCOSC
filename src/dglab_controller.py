@@ -3,6 +3,7 @@ dglab_controller.py
 """
 import asyncio
 import math
+import time
 
 from pydglab_ws import StrengthData, FeedbackButton, Channel, StrengthOperationType, RetCode, DGLabWSServer
 from pulse_data import PULSE_DATA, PULSE_NAME
@@ -47,6 +48,14 @@ class DGLabController:
         # 按键延迟触发计时
         self.chatbox_toggle_timer = None
         self.set_mode_timer = None
+        # OSC消息频率限制时间戳
+        self.last_executed_time_pad = {}    # 相同地址OSC消息 面板
+        self.last_executed_time_pad_bt = 0.0  # 不同地址OSC消息 面板
+        self.last_executed_time_pb = {}     # 相同地址OSC消息  触发器
+        self.last_executed_time_pb_bt = 0.0 # 不同地址OSC消息  触发器
+        # OSC消息频率限制阈值
+        self.time_threshold = 0.05   # 相同地址OSC消息频率限制阈值 单位秒
+        self.time_threshold_bt = 0.1 # 不同地址OSC消息频率限制阈值 单位秒
         #TODO: 增加状态消息OSC发送, 比使用 ChatBox 反馈更快
         # 回报速率设置为 1HZ，Updates every 0.1 to 1 seconds as needed based on parameter changes (1 to 10 updates per second), but you shouldn't rely on it for fast sync.
 
@@ -101,18 +110,19 @@ class DGLabController:
         """
             立即切换为当前指定波形，清空原有波形
         """
-        if channel == Channel.A:
-            self.pulse_mode_a = pulse_index
-            self.main_window.controller_settings_tab.pulse_mode_a_combobox.setCurrentIndex(pulse_index)
-        else:
-            self.pulse_mode_b = pulse_index
-            self.main_window.controller_settings_tab.pulse_mode_b_combobox.setCurrentIndex(pulse_index)
+        if value == True:
+            if channel == Channel.A:
+                self.pulse_mode_a = pulse_index
+                self.main_window.controller_settings_tab.pulse_mode_a_combobox.setCurrentIndex(pulse_index)
+            else:
+                self.pulse_mode_b = pulse_index
+                self.main_window.controller_settings_tab.pulse_mode_b_combobox.setCurrentIndex(pulse_index)
 
-        await self.client.clear_pulses(channel)  # 清空当前的生效的波形队列
+            await self.client.clear_pulses(channel)  # 清空当前的生效的波形队列
 
-        logger.info(f"开始发送波形 {PULSE_NAME[pulse_index]}")
-        specific_pulse_data = PULSE_DATA[PULSE_NAME[pulse_index]]
-        await self.client.add_pulses(channel, *(specific_pulse_data * 3))  # 发送三份新选中的波形
+            logger.info(f"开始发送波形 {PULSE_NAME[pulse_index]}")
+            specific_pulse_data = PULSE_DATA[PULSE_NAME[pulse_index]]
+            await self.client.add_pulses(channel, *(specific_pulse_data * 3))  # 发送三份新选中的波形
 
     async def set_float_output(self, value, channel):
         """
@@ -271,8 +281,10 @@ class DGLabController:
         """
           开火模式步进值设定
         """
-        if value > 0.0:
-            self.fire_mode_strength_step = math.ceil(self.map_value(value, 0, 100))  # 向上取整
+        if value > -0.2:
+            if value < 0:
+                value = 0
+            self.fire_mode_strength_step = math.ceil(self.map_value(round(value, 2), 0, 100))  # 向上取整
             logger.info(f"current strength step: {self.fire_mode_strength_step}")
             # 更新 UI 组件 (QSpinBox) 以反映新的值
             self.main_window.controller_settings_tab.strength_step_spinbox.blockSignals(True)  # 防止触发 valueChanged 事件
@@ -312,7 +324,27 @@ class DGLabController:
         处理 OSC 消息
         1. Bool: Bool 类型变量触发时，VRC 会先后发送 True 与 False, 回调中仅处理 True
         2. Float: -1.0 to 1.0， 但对于 Contact 与  Physbones 来说范围为 0.0-1.0
+        3. 如果两次OSC消息间隔小于设置时间阈值，则丢弃此次请求。
         """
+        current_time = time.time()
+        # 检查地址的上次执行时间
+        if address in self.last_executed_time_pad:
+            last_time = self.last_executed_time_pad[address]
+            if current_time - last_time < self.time_threshold:
+                if args[0] > 0:
+                    logger.info(f"丢弃频率过高的相同OSC消息，地址：{address} {args} {current_time - last_time}")
+                    return
+                    
+        # 检查时间间隔
+        elif current_time - self.last_executed_time_pad_bt < self.time_threshold_bt and address not in ["/avatar/parameters/SoundPad/Volume", "/avatar/parameters/SoundPad/Page"]:
+            logger.info(f"丢弃频率过高的不同OSC消息，地址：{address} {current_time - self.last_executed_time_pad_bt}")
+            return
+        
+        # 更新最后一次执行的时间戳
+        self.last_executed_time_pad_bt = current_time
+        # 更新当前地址的执行时间戳
+        self.last_executed_time_pad[address] = current_time
+        
         # Parameters Debug
         logger.info(f"Received OSC message on {address} with arguments {args}")
 
@@ -323,7 +355,7 @@ class DGLabController:
             logger.info(f"已禁用面板控制功能")
             return
 
-        #按键功能
+        # 按键功能
         if address == "/avatar/parameters/SoundPad/Button/1":
             await self.set_mode(args[0], self.current_select_channel)
         elif address == "/avatar/parameters/SoundPad/Button/2":
@@ -336,7 +368,7 @@ class DGLabController:
             await self.strength_fire_mode(args[0], self.current_select_channel, self.fire_mode_strength_step, self.last_strength)
 
         # ChatBox 开关控制
-        elif address == "/avatar/parameters/SoundPad/Button/6":#
+        elif address == "/avatar/parameters/SoundPad/Button/6":
             await self.toggle_chatbox(args[0])
         # 波形控制
         elif address == "/avatar/parameters/SoundPad/Button/7":
@@ -370,9 +402,27 @@ class DGLabController:
         处理 OSC 消息
         1. Bool: Bool 类型变量触发时，VRC 会先后发送 True 与 False, 回调中仅处理 True
         2. Float: -1.0 to 1.0， 但对于 Contact 与  Physbones 来说范围为 0.0-1.0
+        3. 如果两次OSC消息间隔小于设置时间阈值，则丢弃此次请求。
         """
+        # current_time = time.time()
+        # # 检查地址的上次执行时间
+        # if address in self.last_executed_time_pb:
+        #     last_time = self.last_executed_time_pb[address]
+        #     if current_time - last_time < self.time_threshold:  
+        #         logger.info(f"丢弃频率过高的OSC消息，地址：{address}")
+        #         return
+        
+        # # 检查时间间隔
+        # if current_time - self.last_executed_time_pb_bt < self.time_threshold_bt:  
+        #     logger.info(f"丢弃频率过高的OSC消息，地址：{address}")
+        #     return
+        
+        # # 更新最后一次执行的时间戳
+        # self.last_executed_time_pb_bt = current_time
+        # # 更新当前地址的执行时间戳
+        # self.last_executed_time_pb[address] = current_time
         # Parameters Debug
-        logger.debug(f"Received OSC message on {address} with arguments {args} and channels {channels}")
+        logger.info(f"Received OSC message on {address} with arguments {args} and channels {channels}")
 
         if not self.enable_panel_control:
             return

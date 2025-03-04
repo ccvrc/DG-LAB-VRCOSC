@@ -1,21 +1,24 @@
 from PySide6.QtWidgets import (QWidget, QGroupBox, QFormLayout, QComboBox, QSpinBox,
-                               QLabel, QPushButton, QHBoxLayout)
+                               QLabel, QPushButton, QHBoxLayout, QSizePolicy)
 from PySide6.QtCore import Qt
+from PySide6.QtGui import QPixmap
+from PySide6.QtCore import QTimer
 import logging
 import asyncio
-
-from config import get_active_ip_addresses, save_settings
-from pydglab_ws import DGLabWSServer, RetCode, StrengthData, FeedbackButton
-from dglab_controller import DGLabController
-from qasync import asyncio
-from pythonosc import osc_server, dispatcher, udp_client
-
-import functools # Use the built-in functools module
+import functools
 import sys
 import os
 import qrcode
 import io
-from PySide6.QtGui import QPixmap
+import time
+
+project_root = os.path.dirname(os.path.dirname(__file__))
+sys.path.append(project_root)
+
+from config import get_active_ip_addresses, save_settings
+from dglab_controller import DGLabController
+from pydglab_ws import DGLabWSServer, RetCode, StrengthData, FeedbackButton
+from pythonosc import osc_server, dispatcher, udp_client
 
 logger = logging.getLogger(__name__)
 
@@ -23,11 +26,13 @@ class NetworkConfigTab(QWidget):
     def __init__(self, main_window):
         super().__init__()
         self.main_window = main_window
+        self.original_qrcode_pixmap = None  # 保存原始二维码图像
 
+        # 主布局使用QHBoxLayout
         self.layout = QHBoxLayout(self)
         self.setLayout(self.layout)
 
-        # 创建网络配置组
+        # 创建网络配置组（左侧固定部分）
         self.network_config_group = QGroupBox("网络配置")
         self.form_layout = QFormLayout()
 
@@ -62,7 +67,7 @@ class NetworkConfigTab(QWidget):
             QLabel {
                 background-color: red;
                 color: white;
-                border-radius: 5px;  # 圆角
+                border-radius: 5px;
                 padding: 5px;
             }
         """)
@@ -76,13 +81,22 @@ class NetworkConfigTab(QWidget):
         self.form_layout.addRow(self.start_button)
 
         self.network_config_group.setLayout(self.form_layout)
+        
+        # 将网络配置组添加到布局，设置stretch=0
+        self.layout.addWidget(self.network_config_group, 0)  # stretch=0保持固定宽度
 
-        # 将网络配置组添加到布局
-        self.layout.addWidget(self.network_config_group)
-
-        # 二维码显示
+        # 二维码显示（右侧伸缩部分）
         self.qrcode_label = QLabel(self)
-        self.layout.addWidget(self.qrcode_label)
+        self.qrcode_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.qrcode_label.setAlignment(Qt.AlignCenter)  # 居中显示
+        self.layout.addWidget(self.qrcode_label, 1)  # stretch=1占据剩余空间
+
+        # 二维码标签的尺寸策略强化
+        self.qrcode_label.setSizePolicy(
+            QSizePolicy.Expanding,  # 水平策略：尽可能扩展
+            QSizePolicy.Expanding  # 垂直策略
+        )
+        self.qrcode_label.setMinimumSize(100, 100)  # 设置最小可显示尺寸
 
         # Apply loaded settings to the UI components
         self.apply_settings_to_ui()
@@ -97,7 +111,7 @@ class NetworkConfigTab(QWidget):
         # Find the correct index for the loaded interface and IP
         for i in range(self.ip_combobox.count()):
             interface_ip = self.ip_combobox.itemText(i).split(": ")
-            if len(interface_ip) == 2:
+            if len(interface_ip) == 2 and all(interface_ip):
                 interface, ip = interface_ip
                 if interface == self.main_window.settings['interface'] and ip == self.main_window.settings['ip']:
                     self.ip_combobox.setCurrentIndex(i)
@@ -121,10 +135,17 @@ class NetworkConfigTab(QWidget):
 
     def start_server_button_clicked(self):
         """启动按钮被点击后的处理逻辑"""
-        self.start_button.setText("已启动")  # 修改按钮文本
-        self.start_button.setStyleSheet("background-color: grey; color: white;")  # 将按钮置灰
-        self.start_button.setEnabled(False)  # 禁用按钮
-        self.start_server()  # 调用现有的启动服务器逻辑
+        try:
+            self.start_button.setText("已启动")  # 修改按钮文本
+            self.start_button.setStyleSheet("background-color: grey; color: white;")  # 将按钮置灰
+            self.start_button.setEnabled(False)  # 禁用按钮
+            self.start_server()  # 调用现有的启动服务器逻辑
+        except Exception as e:
+            error_message = f"启动服务器失败: {str(e)}"
+            logger.error(error_message, exc_info=True)
+            self.start_button.setText("启动失败，请重试")
+            self.start_button.setStyleSheet("background-color: red; color: white;")
+            self.start_button.setEnabled(True)
 
     def start_server(self):
         """启动 WebSocket 服务器"""
@@ -146,9 +167,9 @@ class NetworkConfigTab(QWidget):
         except OSError as e:
             error_message = f"启动服务器失败: {str(e)}"
             # Log the error with error level
-            logger.error(error_message)
+            logger.error(error_message, exc_info=True)
             # Update the UI to reflect the error
-            self.start_button.setText("启动失败,请重试")
+            self.start_button.setText("启动失败，请重试")
             self.start_button.setStyleSheet("background-color: red; color: white;")
             self.start_button.setEnabled(True)
             # 记录异常日志
@@ -156,6 +177,7 @@ class NetworkConfigTab(QWidget):
 
     async def run_server(self, ip: str, port: int, osc_port: int):
         """运行服务器并启动OSC服务器"""
+        osc_transport = None
         try:
             async with DGLabWSServer(ip, port, 60) as server:
                 client = server.new_local_client()
@@ -183,7 +205,10 @@ class NetworkConfigTab(QWidget):
                 logger.info(f"OSC Server Listening on port {osc_port}")
 
                 # 连接 addresses_updated 信号到 update_osc_mappings 方法
-                self.main_window.osc_parameters_tab.addresses_updated.connect(self.update_osc_mappings)
+                if not hasattr(self.main_window.osc_parameters_tab, 'addresses_updated_connected'):
+                    self.main_window.osc_parameters_tab.addresses_updated.connect(self.update_osc_mappings)
+                    self.main_window.osc_parameters_tab.addresses_updated_connected = True
+
                 # 初始化 OSC 映射，包括面板控制和自定义地址
                 self.update_osc_mappings(controller)
 
@@ -212,27 +237,40 @@ class NetworkConfigTab(QWidget):
                     else:
                         logger.info(f"获取到状态码：{RetCode}")
 
-                osc_transport.close()
-        except OSError as e:
-            # Handle specific errors and log them
+        except Exception as e:
             error_message = f"WebSocket 服务器启动失败: {str(e)}"
-            logger.error(error_message)
+            logger.error(error_message, exc_info=True)
 
             # 启动过程中发生异常，恢复按钮状态为可点击的红色
             self.start_button.setText("启动失败，请重试")
             self.start_button.setStyleSheet("background-color: red; color: white;")
             self.start_button.setEnabled(True)
             self.main_window.log_viewer_tab.log_text_edit.append(f"ERROR: {error_message}")
+        finally:
+            if osc_transport:
+                osc_transport.close()
 
-    def handle_osc_message_task_pad(self, address, *args):
-        asyncio.create_task(self.main_window.controller.handle_osc_message_pad(address, *args))
+    def handle_osc_message_task_pad(self, address, *args, controller=None):
+        """处理带通道参数的OSC消息（新增方法）"""
+        if controller is None:
+            controller = self.main_window.controller
+        asyncio.run_coroutine_threadsafe(
+            controller.handle_osc_message_pad(address, *args),
+            asyncio.get_event_loop()
+        )
 
-    def handle_osc_message_task_pb(self, address, *args):
-        asyncio.create_task(self.main_window.controller.handle_osc_message_pb(address, *args))
+    def handle_osc_message_task_pb(self, address, *args, controller=None, channels=None):
+        """处理带通道参数的OSC消息（新增方法）"""
+        if controller is None:
+            controller = self.main_window.controller
+        asyncio.run_coroutine_threadsafe(
+            controller.handle_osc_message_pb(address, *args, channels=channels),
+            asyncio.get_event_loop()
+        )
 
     def generate_qrcode(self, data: str):
         """生成二维码并转换为PySide6可显示的QPixmap"""
-        qr = qrcode.QRCode(version=1, error_correction=qrcode.constants.ERROR_CORRECT_L, box_size=6, border=2)
+        qr = qrcode.QRCode(version=1, error_correction=qrcode.constants.ERROR_CORRECT_L, box_size=16, border=2)
         qr.add_data(data)
         qr.make(fit=True)
         img = qr.make_image(fill='black', back_color='white')
@@ -247,10 +285,28 @@ class NetworkConfigTab(QWidget):
         return qimage
 
     def update_qrcode(self, qrcode_pixmap):
-        """更新二维码并调整QLabel的大小"""
-        self.qrcode_label.setPixmap(qrcode_pixmap)
-        self.qrcode_label.setFixedSize(qrcode_pixmap.size())  # 根据二维码尺寸调整QLabel大小
+        """更新二维码并保存原始图像"""
+        self.original_qrcode_pixmap = qrcode_pixmap
+        self.scale_qrcode()
         logger.info("二维码已更新")
+
+    def scale_qrcode(self):
+        """根据当前标签尺寸缩放二维码"""
+        if self.original_qrcode_pixmap and not self.original_qrcode_pixmap.isNull():
+            scaled_pixmap = self.original_qrcode_pixmap.scaled(
+                self.qrcode_label.size(),
+                Qt.KeepAspectRatio,
+                Qt.SmoothTransformation
+            )
+            self.qrcode_label.setPixmap(scaled_pixmap)
+
+
+    def resizeEvent(self, event):
+        """优化窗口缩放处理"""
+        # 先执行父类的resize事件处理
+        super().resizeEvent(event)
+        # 延迟执行二维码缩放以保证尺寸计算准确
+        QTimer.singleShot(0, self.scale_qrcode)
 
     def update_connection_status(self, is_online):
         self.main_window.app_status_online = is_online
@@ -320,10 +376,7 @@ class NetworkConfigTab(QWidget):
             handler = functools.partial(self.handle_osc_message_task_pad, controller=controller)
             self.dispatcher.map(address, handler)
             self.panel_control_handlers[address] = handler
-        logger.info("OSC dispatcher mappings updated with panel control addresses.")
 
-    def handle_osc_message_task_pad(self, address, *args, controller):
-        asyncio.create_task(controller.handle_osc_message_pad(address, *args))
 
     def handle_osc_message_task_pb_with_channels(self, address, *args, controller, channels):
         asyncio.create_task(controller.handle_osc_message_pb(address, *args, channels=channels))
