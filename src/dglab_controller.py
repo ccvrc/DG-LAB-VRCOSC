@@ -49,6 +49,8 @@ class DGLabController:
         self.set_mode_timer = None
         #TODO: 增加状态消息OSC发送, 比使用 ChatBox 反馈更快
         # 回报速率设置为 1HZ，Updates every 0.1 to 1 seconds as needed based on parameter changes (1 to 10 updates per second), but you shouldn't rely on it for fast sync.
+        self.pulse_update_lock = asyncio.Lock()  # 添加波形更新锁
+        self.pulse_last_update_time = {}  # 记录每个通道最后波形更新时间
 
     async def periodic_status_update(self):
         """
@@ -70,28 +72,47 @@ class DGLabController:
 
     async def periodic_send_pulse_data(self):
         # 顺序发送波形
-        # TODO： 修复重连后自动发送中断
         while True:
             try:
                 if self.last_strength:  # 当收到设备状态后再发送波形
-                    logger.info(f"更新波形 A {PULSE_NAME[self.pulse_mode_a]} B {PULSE_NAME[self.pulse_mode_b]}")
-
-                    # A 通道发送当前设定波形
-                    specific_pulse_data_a = PULSE_DATA[PULSE_NAME[self.pulse_mode_a]]
-                    await self.client.clear_pulses(Channel.A)
-
-                    if PULSE_NAME[self.pulse_mode_a] == '压缩' or PULSE_NAME[self.pulse_mode_a] == '节奏步伐':  # 单次发送长波形不能太多
-                        await self.client.add_pulses(Channel.A, *(specific_pulse_data_a * 3))  # 长波形三组
-                    else:
-                        await self.client.add_pulses(Channel.A, *(specific_pulse_data_a * 5))  # 短波形五组
-
-                    # B 通道发送当前设定波形
-                    specific_pulse_data_b = PULSE_DATA[PULSE_NAME[self.pulse_mode_b]]
-                    await self.client.clear_pulses(Channel.B)
-                    if PULSE_NAME[self.pulse_mode_b] == '压缩' or PULSE_NAME[self.pulse_mode_b] == '节奏步伐':  # 单次发送长波形不能太多
-                        await self.client.add_pulses(Channel.B, *(specific_pulse_data_b * 3))  # 长波形三组
-                    else:
-                        await self.client.add_pulses(Channel.B, *(specific_pulse_data_b * 5))  # 短波形五组
+                    current_time = asyncio.get_event_loop().time()
+                    
+                    # 使用锁防止并发访问
+                    async with self.pulse_update_lock:
+                        logger.info(f"更新波形 A {PULSE_NAME[self.pulse_mode_a]} B {PULSE_NAME[self.pulse_mode_b]}")
+                        
+                        # 检查A通道是否需要更新（距离上次更新时间超过2秒）
+                        if Channel.A not in self.pulse_last_update_time or \
+                           current_time - self.pulse_last_update_time.get(Channel.A, 0) > 2:
+                            
+                            # A 通道发送当前设定波形
+                            specific_pulse_data_a = PULSE_DATA[PULSE_NAME[self.pulse_mode_a]]
+                            await self.client.clear_pulses(Channel.A)
+                            
+                            if PULSE_NAME[self.pulse_mode_a] == '压缩' or PULSE_NAME[self.pulse_mode_a] == '节奏步伐':
+                                await self.client.add_pulses(Channel.A, *(specific_pulse_data_a * 3))
+                            else:
+                                await self.client.add_pulses(Channel.A, *(specific_pulse_data_a * 5))
+                            
+                            self.pulse_last_update_time[Channel.A] = current_time
+                        
+                        # 给设备一点时间处理
+                        await asyncio.sleep(0.1)
+                        
+                        # 检查B通道是否需要更新
+                        if Channel.B not in self.pulse_last_update_time or \
+                           current_time - self.pulse_last_update_time.get(Channel.B, 0) > 2:
+                            
+                            # B 通道发送当前设定波形
+                            specific_pulse_data_b = PULSE_DATA[PULSE_NAME[self.pulse_mode_b]]
+                            await self.client.clear_pulses(Channel.B)
+                            
+                            if PULSE_NAME[self.pulse_mode_b] == '压缩' or PULSE_NAME[self.pulse_mode_b] == '节奏步伐':
+                                await self.client.add_pulses(Channel.B, *(specific_pulse_data_b * 3))
+                            else:
+                                await self.client.add_pulses(Channel.B, *(specific_pulse_data_b * 5))
+                            
+                            self.pulse_last_update_time[Channel.B] = current_time
             except Exception as e:
                 logger.error(f"periodic_send_pulse_data 任务中发生错误: {e}")
                 await asyncio.sleep(5)  # 延迟后重试
@@ -101,18 +122,30 @@ class DGLabController:
         """
             立即切换为当前指定波形，清空原有波形
         """
+        # 更新GUI和内部状态
         if channel == Channel.A:
             self.pulse_mode_a = pulse_index
             self.main_window.controller_settings_tab.pulse_mode_a_combobox.setCurrentIndex(pulse_index)
         else:
             self.pulse_mode_b = pulse_index
             self.main_window.controller_settings_tab.pulse_mode_b_combobox.setCurrentIndex(pulse_index)
-
-        await self.client.clear_pulses(channel)  # 清空当前的生效的波形队列
-
-        logger.info(f"开始发送波形 {PULSE_NAME[pulse_index]}")
-        specific_pulse_data = PULSE_DATA[PULSE_NAME[pulse_index]]
-        await self.client.add_pulses(channel, *(specific_pulse_data * 3))  # 发送三份新选中的波形
+        
+        # 使用锁确保波形更新的原子性
+        async with self.pulse_update_lock:
+            try:
+                await self.client.clear_pulses(channel)  # 清空当前的生效的波形队列
+                
+                logger.info(f"开始发送波形 {PULSE_NAME[pulse_index]}")
+                specific_pulse_data = PULSE_DATA[PULSE_NAME[pulse_index]]
+                await self.client.add_pulses(channel, *(specific_pulse_data * 3))  # 发送三份新选中的波形
+                
+                # 记录最后更新时间
+                self.pulse_last_update_time[channel] = asyncio.get_event_loop().time()
+            except Exception as e:
+                logger.error(f"设置波形时发生错误: {e}")
+                # 在错误发生时强制下一次周期性更新尝试刷新
+                if channel in self.pulse_last_update_time:
+                    del self.pulse_last_update_time[channel]
 
     async def set_float_output(self, value, channel):
         """
