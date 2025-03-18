@@ -51,6 +51,9 @@ class DGLabController:
         # 回报速率设置为 1HZ，Updates every 0.1 to 1 seconds as needed based on parameter changes (1 to 10 updates per second), but you shouldn't rely on it for fast sync.
         self.pulse_update_lock = asyncio.Lock()  # 添加波形更新锁
         self.pulse_last_update_time = {}  # 记录每个通道最后波形更新时间
+        self.osc_command_queue = {}  # 按地址存储最新的OSC命令
+        self.osc_queue_lock = asyncio.Lock()  # OSC队列锁
+        self.osc_processing_task = asyncio.create_task(self.process_osc_commands())  # 启动OSC处理任务
 
     async def periodic_status_update(self):
         """
@@ -71,7 +74,7 @@ class DGLabController:
             await asyncio.sleep(3)  # 每 x 秒发送一次
 
     async def periodic_send_pulse_data(self):
-        # 顺序发送波形
+        """顺序发送波形，定期刷新设备波形数据"""
         while True:
             try:
                 if self.last_strength:  # 当收到设备状态后再发送波形
@@ -79,12 +82,11 @@ class DGLabController:
                     
                     # 使用锁防止并发访问
                     async with self.pulse_update_lock:
-                        logger.info(f"更新波形 A {PULSE_NAME[self.pulse_mode_a]} B {PULSE_NAME[self.pulse_mode_b]}")
-                        
-                        # 检查A通道是否需要更新（距离上次更新时间超过2秒）
+                        # 检查A通道是否需要更新（距离上次更新时间超过3秒）
                         if Channel.A not in self.pulse_last_update_time or \
-                           current_time - self.pulse_last_update_time.get(Channel.A, 0) > 2:
+                           current_time - self.pulse_last_update_time.get(Channel.A, 0) > 3:
                             
+                            logger.info(f"周期更新A通道波形: {PULSE_NAME[self.pulse_mode_a]}")
                             # A 通道发送当前设定波形
                             specific_pulse_data_a = PULSE_DATA[PULSE_NAME[self.pulse_mode_a]]
                             await self.client.clear_pulses(Channel.A)
@@ -99,10 +101,11 @@ class DGLabController:
                         # 给设备一点时间处理
                         await asyncio.sleep(0.1)
                         
-                        # 检查B通道是否需要更新
+                        # 检查B通道是否需要更新（距离上次更新时间超过3秒）
                         if Channel.B not in self.pulse_last_update_time or \
-                           current_time - self.pulse_last_update_time.get(Channel.B, 0) > 2:
+                           current_time - self.pulse_last_update_time.get(Channel.B, 0) > 3:
                             
+                            logger.info(f"周期更新B通道波形: {PULSE_NAME[self.pulse_mode_b]}")
                             # B 通道发送当前设定波形
                             specific_pulse_data_b = PULSE_DATA[PULSE_NAME[self.pulse_mode_b]]
                             await self.client.clear_pulses(Channel.B)
@@ -118,26 +121,171 @@ class DGLabController:
                 await asyncio.sleep(5)  # 延迟后重试
             await asyncio.sleep(3)  # 每 x 秒发送一次
 
+    async def process_osc_commands(self):
+        """处理OSC命令队列，合并相同地址的命令，保留最新值"""
+        while True:
+            try:
+                # 获取并清空队列
+                async with self.osc_queue_lock:
+                    current_commands = self.osc_command_queue.copy()
+                    self.osc_command_queue.clear()
+                
+                # 处理当前队列中的命令
+                for address, command_data in current_commands.items():
+                    try:
+                        args, channels = command_data['args'], command_data.get('channels', None)
+                        if channels:  # 这是物理骨骼控制命令
+                            await self.handle_osc_message_pb(address, *args, channels=channels)
+                        else:  # 这是面板控制命令
+                            await self._original_handle_osc_message_pad(address, *args)
+                    except Exception as e:
+                        logger.error(f"处理OSC命令时发生错误: {address} {args} - {e}")
+                
+                # 短暂休眠后再次处理队列
+                await asyncio.sleep(0.05)  # 20Hz 处理频率，可根据需要调整
+            except Exception as e:
+                logger.error(f"OSC命令处理循环发生错误: {e}")
+                await asyncio.sleep(1)  # 错误后延迟重试
+
+    async def handle_osc_message_pad(self, address, *args):
+        """
+        处理 OSC 消息 - 改为入队操作
+        1. Bool: Bool 类型变量触发时，VRC 会先后发送 True 与 False, 回调中仅处理 True
+        2. Float: -1.0 to 1.0， 但对于 Contact 与  Physbones 来说范围为 0.0-1.0
+        """
+        # 记录收到的OSC消息
+        logger.debug(f"收到OSC消息: {address} 参数: {args}")
+        
+        # 某些特定命令可以直接处理(不走队列)
+        if address == "/avatar/parameters/SoundPad/PanelControl":
+            await self.set_panel_control(args[0])
+            return
+        
+        # 将消息放入队列，仅保留每个地址的最新命令
+        async with self.osc_queue_lock:
+            self.osc_command_queue[address] = {
+                'args': args,
+                'channels': None  # 面板控制没有通道信息
+            }
+
+    async def handle_osc_message_pb(self, address, *args, channels=None):
+        """
+        处理物理骨骼 OSC 消息 - 改为入队操作
+        """
+        # 检查是否禁用面板控制功能
+        if not self.enable_panel_control:
+            logger.debug(f"已禁用面板控制功能，忽略命令: {address}")
+            return
+        
+        # 将消息放入队列，仅保留每个地址的最新命令
+        async with self.osc_queue_lock:
+            self.osc_command_queue[address] = {
+                'args': args,
+                'channels': channels  # 存储通道信息
+            }
+
+    async def handle_osc_message_internal_pad(self, address, *args):
+        """内部处理面板控制OSC命令"""
+        # 面板控制功能禁用检查
+        if not self.enable_panel_control and address.startswith("/avatar/parameters/SoundPad/"):
+            if address != "/avatar/parameters/SoundPad/PanelControl":
+                logger.debug(f"已禁用面板控制功能，忽略命令: {address}")
+                return
+        
+        # 波形切换处理
+        if address == "/avatar/parameters/SoundPad/Button/1":
+            await self.set_mode(args[0], self.current_select_channel)
+        elif address == "/avatar/parameters/SoundPad/Button/2":
+            await self.reset_strength(args[0], self.current_select_channel)
+        elif address == "/avatar/parameters/SoundPad/Button/3":
+            await self.set_pulse_data(args[0], self.current_select_channel, 0)  # 呼吸
+        elif address == "/avatar/parameters/SoundPad/Button/4":
+            await self.set_pulse_data(args[0], self.current_select_channel, 1)  # 潮汐
+        elif address == "/avatar/parameters/SoundPad/Button/5":
+            await self.set_pulse_data(args[0], self.current_select_channel, 2)  # 连击
+        elif address == "/avatar/parameters/SoundPad/Button/6":
+            await self.set_pulse_data(args[0], self.current_select_channel, 3)  # 快速按捏
+        elif address == "/avatar/parameters/SoundPad/Button/7":
+            await self.set_pulse_data(args[0], self.current_select_channel, 13)  # 信号灯
+        elif address == "/avatar/parameters/SoundPad/Button/8":
+            await self.set_pulse_data(args[0], self.current_select_channel, 14)  # 挑逗1
+        # 通道选择 
+        elif address == "/avatar/parameters/SoundPad/Page" and args[0] > 0:
+            await self.toggle_active_channel()
+        # 面板音量控制
+        elif address == "/avatar/parameters/SoundPad/Volume":
+            await self.set_strength_step(args[0])
+        # 其他命令处理...
+
+    async def handle_osc_message_internal_pb(self, address, *args, channels=None):
+        """内部处理物理骨骼OSC命令"""
+        try:
+            if not channels:
+                logger.warning(f"物理骨骼OSC命令缺少通道信息: {address}")
+                return
+            
+            value = args[0]  # OSC参数值
+            
+            # 处理A通道
+            if 'A' in channels and self.is_dynamic_bone_mode_a:
+                # 确保值在0到1之间
+                if 0 <= value <= 1:
+                    # 激活动态骨骼控制A通道
+                    if self.last_strength:  # 确保有上次的强度数据
+                        target_strength_a = int(self.map_value(value, 0, self.last_strength.a_limit))
+                        await self.client.set_strength(Channel.A, StrengthOperationType.SET_TO, target_strength_a)
+                        if self.last_strength:  # 更新本地状态
+                            self.last_strength.a = target_strength_a
+            
+            # 处理B通道
+            if 'B' in channels and self.is_dynamic_bone_mode_b:
+                # 确保值在0到1之间
+                if 0 <= value <= 1:
+                    # 激活动态骨骼控制B通道
+                    if self.last_strength:  # 确保有上次的强度数据
+                        target_strength_b = int(self.map_value(value, 0, self.last_strength.b_limit))
+                        await self.client.set_strength(Channel.B, StrengthOperationType.SET_TO, target_strength_b)
+                        if self.last_strength:  # 更新本地状态
+                            self.last_strength.b = target_strength_b
+        except Exception as e:
+            logger.error(f"处理物理骨骼OSC命令时发生错误: {e}")
+
     async def set_pulse_data(self, value, channel, pulse_index):
         """
-            立即切换为当前指定波形，清空原有波形
+        立即切换为当前指定波形，清空原有波形
         """
+        if value is not None and not value:  # 仅处理按下事件，忽略释放事件，但允许None值(来自UI)
+            return
+        
         # 更新GUI和内部状态
         if channel == Channel.A:
+            old_mode = self.pulse_mode_a
             self.pulse_mode_a = pulse_index
-            self.main_window.controller_settings_tab.pulse_mode_a_combobox.setCurrentIndex(pulse_index)
+            if self.main_window:
+                self.main_window.controller_settings_tab.pulse_mode_a_combobox.setCurrentIndex(pulse_index)
         else:
+            old_mode = self.pulse_mode_b
             self.pulse_mode_b = pulse_index
-            self.main_window.controller_settings_tab.pulse_mode_b_combobox.setCurrentIndex(pulse_index)
+            if self.main_window:
+                self.main_window.controller_settings_tab.pulse_mode_b_combobox.setCurrentIndex(pulse_index)
+        
+        # 如果模式未变，不进行波形更新
+        if value is not None and old_mode == pulse_index:  # 仅对外部触发的检查模式变化
+            logger.debug(f"波形模式未变化，跳过更新: {channel} {PULSE_NAME[pulse_index]}")
+            return
         
         # 使用锁确保波形更新的原子性
         async with self.pulse_update_lock:
             try:
                 await self.client.clear_pulses(channel)  # 清空当前的生效的波形队列
                 
-                logger.info(f"开始发送波形 {PULSE_NAME[pulse_index]}")
+                logger.info(f"开始发送波形 {channel} {PULSE_NAME[pulse_index]}")
                 specific_pulse_data = PULSE_DATA[PULSE_NAME[pulse_index]]
-                await self.client.add_pulses(channel, *(specific_pulse_data * 3))  # 发送三份新选中的波形
+                
+                if PULSE_NAME[pulse_index] == '压缩' or PULSE_NAME[pulse_index] == '节奏步伐':
+                    await self.client.add_pulses(channel, *(specific_pulse_data * 3))
+                else:
+                    await self.client.add_pulses(channel, *(specific_pulse_data * 5))
                 
                 # 记录最后更新时间
                 self.pulse_last_update_time[channel] = asyncio.get_event_loop().time()
@@ -339,10 +487,46 @@ class DGLabController:
         self.main_window.controller_settings_tab.enable_panel_control_checkbox.setChecked(self.enable_panel_control)
         self.main_window.controller_settings_tab.enable_panel_control_checkbox.blockSignals(False)
 
-
-    async def handle_osc_message_pad(self, address, *args):
+    def map_value(self, value, min_value, max_value):
         """
-        处理 OSC 消息
+        将 Contact/Physbones 值映射到强度范围
+        """
+        return min_value + value * (max_value - min_value)
+
+    def send_message_to_vrchat_chatbox(self, message: str):
+        '''
+        /chatbox/input s b n Input text into the chatbox.
+        '''
+        self.osc_client.send_message("/chatbox/input", [message, True, False])
+
+    def send_value_to_vrchat(self, path: str, value):
+        '''
+        /chatbox/input s b n Input text into the chatbox.
+        '''
+        self.osc_client.send_message(path, value)
+
+    async def send_strength_status(self):
+        """
+        通过 ChatBox 发送当前强度数值
+        """
+        if self.last_strength:
+            mode_name_a = "交互" if self.is_dynamic_bone_mode_a else "面板"
+            mode_name_b = "交互" if self.is_dynamic_bone_mode_b else "面板"
+            channel_strength = f"[A]: {self.last_strength.a} B: {self.last_strength.b}" if self.current_select_channel == Channel.A else f"A: {self.last_strength.a} [B]: {self.last_strength.b}"
+            self.send_message_to_vrchat_chatbox(
+                f"MAX A: {self.last_strength.a_limit} B: {self.last_strength.b_limit}\n"
+                f"Mode A: {mode_name_a} B: {mode_name_b} \n"
+                f"Pulse A: {PULSE_NAME[self.pulse_mode_a]} B: {PULSE_NAME[self.pulse_mode_b]} \n"
+                f"Fire Step: {self.fire_mode_strength_step}\n"
+                f"Current: {channel_strength} \n"
+            )
+        else:
+            self.send_message_to_vrchat_chatbox("未连接")
+
+    # 保存原始的OSC消息处理函数
+    async def _original_handle_osc_message_pad(self, address, *args):
+        """
+        处理 OSC 消息 - 保持原有功能不变
         1. Bool: Bool 类型变量触发时，VRC 会先后发送 True 与 False, 回调中仅处理 True
         2. Float: -1.0 to 1.0， 但对于 Contact 与  Physbones 来说范围为 0.0-1.0
         """
@@ -397,59 +581,3 @@ class DGLabController:
         # 通道调节
         elif address == "/avatar/parameters/SoundPad/Page": # INT
             await self.set_channel(args[0])
-
-    async def handle_osc_message_pb(self, address, *args, channels):
-        """
-        处理 OSC 消息
-        1. Bool: Bool 类型变量触发时，VRC 会先后发送 True 与 False, 回调中仅处理 True
-        2. Float: -1.0 to 1.0， 但对于 Contact 与  Physbones 来说范围为 0.0-1.0
-        """
-        # Parameters Debug
-        logger.debug(f"Received OSC message on {address} with arguments {args} and channels {channels}")
-
-        if not self.enable_panel_control:
-            return
-
-        # Float parameter mapping to strength value
-        value = args[0]
-        # For each channel, set the output
-        if channels.get('A', False):
-            await self.set_float_output(value, Channel.A)
-        if channels.get('B', False):
-            await self.set_float_output(value, Channel.B)
-
-    def map_value(self, value, min_value, max_value):
-        """
-        将 Contact/Physbones 值映射到强度范围
-        """
-        return min_value + value * (max_value - min_value)
-
-    def send_message_to_vrchat_chatbox(self, message: str):
-        '''
-        /chatbox/input s b n Input text into the chatbox.
-        '''
-        self.osc_client.send_message("/chatbox/input", [message, True, False])
-
-    def send_value_to_vrchat(self, path: str, value):
-        '''
-        /chatbox/input s b n Input text into the chatbox.
-        '''
-        self.osc_client.send_message(path, value)
-
-    async def send_strength_status(self):
-        """
-        通过 ChatBox 发送当前强度数值
-        """
-        if self.last_strength:
-            mode_name_a = "交互" if self.is_dynamic_bone_mode_a else "面板"
-            mode_name_b = "交互" if self.is_dynamic_bone_mode_b else "面板"
-            channel_strength = f"[A]: {self.last_strength.a} B: {self.last_strength.b}" if self.current_select_channel == Channel.A else f"A: {self.last_strength.a} [B]: {self.last_strength.b}"
-            self.send_message_to_vrchat_chatbox(
-                f"MAX A: {self.last_strength.a_limit} B: {self.last_strength.b_limit}\n"
-                f"Mode A: {mode_name_a} B: {mode_name_b} \n"
-                f"Pulse A: {PULSE_NAME[self.pulse_mode_a]} B: {PULSE_NAME[self.pulse_mode_b]} \n"
-                f"Fire Step: {self.fire_mode_strength_step}\n"
-                f"Current: {channel_strength} \n"
-            )
-        else:
-            self.send_message_to_vrchat_chatbox("未连接")
