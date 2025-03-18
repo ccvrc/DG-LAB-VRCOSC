@@ -106,6 +106,9 @@ class ControllerSettingsTab(QWidget):
         self.pulse_mode_b_combobox.currentIndexChanged.connect(self.update_pulse_mode_b)
         self.enable_chatbox_status_checkbox.stateChanged.connect(self.update_chatbox_status)
 
+        self.is_updating_a = False  # 添加标志防止循环调用
+        self.is_updating_b = False
+
     def bind_controller_settings(self):
         """将GUI设置与DGLabController变量绑定"""
         if self.main_window.controller:
@@ -149,14 +152,26 @@ class ControllerSettingsTab(QWidget):
             logger.info(f"Dynamic bone mode B: {self.dg_controller.is_dynamic_bone_mode_b}")
 
     def update_pulse_mode_a(self, index):
-        if self.main_window.controller:
-            asyncio.create_task(self.dg_controller.set_pulse_data(None, Channel.A, index))
-            logger.info(f"Pulse mode A updated to {PULSE_NAME[index]}")
+        if self.main_window.controller and not self.is_updating_a:
+            # 设置标志防止循环调用
+            self.is_updating_a = True
+            try:
+                asyncio.create_task(self.dg_controller.set_pulse_data(None, Channel.A, index))
+                logger.info(f"Pulse mode A updated to {PULSE_NAME[index]}")
+            finally:
+                # 确保标志被重置
+                self.is_updating_a = False
 
     def update_pulse_mode_b(self, index):
-        if self.main_window.controller:
-            asyncio.create_task(self.dg_controller.set_pulse_data(None, Channel.B, index))
-            logger.info(f"Pulse mode B updated to {PULSE_NAME[index]}")
+        if self.main_window.controller and not self.is_updating_b:
+            # 设置标志防止循环调用
+            self.is_updating_b = True
+            try:
+                asyncio.create_task(self.dg_controller.set_pulse_data(None, Channel.B, index))
+                logger.info(f"Pulse mode B updated to {PULSE_NAME[index]}")
+            finally:
+                # 确保标志被重置
+                self.is_updating_b = False
 
     def update_chatbox_status(self, state):
         if self.main_window.controller:
