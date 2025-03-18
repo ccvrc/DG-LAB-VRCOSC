@@ -262,26 +262,24 @@ class DGLabController:
             old_mode = self.pulse_mode_a
             self.pulse_mode_a = pulse_index
             
-            # 阻止UI更新引起的循环调用
-            if self.main_window and not self.main_window.controller_settings_tab.is_updating_a:
-                # 设置标志避免循环
-                self.main_window.controller_settings_tab.is_updating_a = True
+            # 使用 blockSignals 阻止UI更新引起的循环调用
+            if self.main_window:
+                self.main_window.controller_settings_tab.pulse_mode_a_combobox.blockSignals(True)
                 try:
                     self.main_window.controller_settings_tab.pulse_mode_a_combobox.setCurrentIndex(pulse_index)
                 finally:
-                    self.main_window.controller_settings_tab.is_updating_a = False
+                    self.main_window.controller_settings_tab.pulse_mode_a_combobox.blockSignals(False)
         else:
             old_mode = self.pulse_mode_b
             self.pulse_mode_b = pulse_index
             
-            # 阻止UI更新引起的循环调用
-            if self.main_window and not self.main_window.controller_settings_tab.is_updating_b:
-                # 设置标志避免循环
-                self.main_window.controller_settings_tab.is_updating_b = True
+            # 使用 blockSignals 阻止UI更新引起的循环调用
+            if self.main_window:
+                self.main_window.controller_settings_tab.pulse_mode_b_combobox.blockSignals(True)
                 try:
                     self.main_window.controller_settings_tab.pulse_mode_b_combobox.setCurrentIndex(pulse_index)
                 finally:
-                    self.main_window.controller_settings_tab.is_updating_b = False
+                    self.main_window.controller_settings_tab.pulse_mode_b_combobox.blockSignals(False)
         
         # 如果模式未变，不进行波形更新
         if value is not None and old_mode == pulse_index:  # 仅对外部触发的检查模式变化
