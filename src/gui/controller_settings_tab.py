@@ -152,11 +152,19 @@ class ControllerSettingsTab(QWidget):
         if self.main_window.controller:
             asyncio.create_task(self.dg_controller.set_pulse_data(None, Channel.A, index))
             logger.info(f"Pulse mode A updated to {PULSE_NAME[index]}")
+            # 立即更新标签中的波形名称
+            if self.main_window.controller.last_strength:
+                self.a_channel_label.setText(
+                    f"A 通道强度: {self.main_window.controller.last_strength.a} 强度上限: {self.main_window.controller.last_strength.a_limit}  波形: {PULSE_NAME[index]}")
 
     def update_pulse_mode_b(self, index):
         if self.main_window.controller:
             asyncio.create_task(self.dg_controller.set_pulse_data(None, Channel.B, index))
             logger.info(f"Pulse mode B updated to {PULSE_NAME[index]}")
+            # 立即更新标签中的波形名称
+            if self.main_window.controller.last_strength:
+                self.b_channel_label.setText(
+                    f"B 通道强度: {self.main_window.controller.last_strength.b} 强度上限: {self.main_window.controller.last_strength.b_limit}  波形: {PULSE_NAME[index]}")
 
     def update_chatbox_status(self, state):
         if self.main_window.controller:
