@@ -3,14 +3,34 @@ dglab_controller.py
 """
 import asyncio
 import math
+import time
+import uuid
+from enum import Enum
 
 from pydglab_ws import StrengthData, FeedbackButton, Channel, StrengthOperationType, RetCode, DGLabWSServer
 from pulse_data import PULSE_DATA, PULSE_NAME
 
 import logging
 
+from command_types import CommandType, ChannelCommand
+
 logger = logging.getLogger(__name__)
 
+
+class ChannelCommand:
+    def __init__(self, command_type, channel, operation, value, source_id=None, timestamp=None):
+        self.command_type = command_type  # 命令类型，决定优先级
+        self.channel = channel  # 目标通道
+        self.operation = operation  # 操作类型
+        self.value = value  # 操作值
+        self.source_id = source_id or str(uuid.uuid4())  # 来源标识
+        self.timestamp = timestamp or time.time()  # 时间戳
+    
+    def __lt__(self, other):
+        # 优先级比较函数，用于队列排序
+        if self.command_type.value != other.command_type.value:
+            return self.command_type.value < other.command_type.value
+        return self.timestamp < other.timestamp  # 同优先级按时间排序
 
 class DGLabController:
     def __init__(self, client, osc_client, ui_callback=None):
@@ -54,6 +74,38 @@ class DGLabController:
         self.osc_command_queue = {}  # 按地址存储最新的OSC命令
         self.osc_queue_lock = asyncio.Lock()  # OSC队列锁
         self.osc_processing_task = asyncio.create_task(self.process_osc_commands())  # 启动OSC处理任务
+        
+        # 命令队列相关
+        self.command_queue = asyncio.PriorityQueue()  # 优先级队列
+        self.command_processing_task = asyncio.create_task(self.process_commands())
+        self.command_sources = {}  # 记录各来源的最后命令时间
+        self.source_cooldowns = {  # 各来源的冷却时间（秒）
+            CommandType.GUI_COMMAND: 0,  # GUI无冷却
+            CommandType.PANEL_COMMAND: 0.1,  # 面板命令冷却
+            CommandType.INTERACTION_COMMAND: 0.05,  # 交互命令冷却
+            CommandType.TON_COMMAND: 0.2,  # 游戏联动冷却
+            CommandType.PERIODIC_UPDATE: 1.0,  # 周期更新冷却
+        }
+        
+        # 通道状态模型
+        self.channel_states = {
+            Channel.A: {
+                "current_strength": 0,
+                "target_strength": 0,
+                "mode": "panel" if not self.is_dynamic_bone_mode_a else "interaction",
+                "pulse_mode": self.pulse_mode_a,
+                "last_command_source": None,
+                "last_command_time": 0,
+            },
+            Channel.B: {
+                "current_strength": 0,
+                "target_strength": 0,
+                "mode": "panel" if not self.is_dynamic_bone_mode_b else "interaction",
+                "pulse_mode": self.pulse_mode_b,
+                "last_command_source": None, 
+                "last_command_time": 0,
+            }
+        }
 
     async def periodic_status_update(self):
         """
@@ -137,7 +189,7 @@ class DGLabController:
                         if channels:  # 这是物理骨骼控制命令
                             await self.handle_osc_message_pb(address, *args, channels=channels)
                         else:  # 这是面板控制命令
-                            await self._original_handle_osc_message_pad(address, *args)
+                            await self.handle_osc_message_pad(address, *args)
                     except Exception as e:
                         logger.error(f"处理OSC命令时发生错误: {address} {args} - {e}")
                 
@@ -149,106 +201,101 @@ class DGLabController:
 
     async def handle_osc_message_pad(self, address, *args):
         """
-        处理 OSC 消息 - 改为入队操作
-        1. Bool: Bool 类型变量触发时，VRC 会先后发送 True 与 False, 回调中仅处理 True
-        2. Float: -1.0 to 1.0， 但对于 Contact 与  Physbones 来说范围为 0.0-1.0
+        处理面板控制的 OSC 消息
         """
-        # 记录收到的OSC消息
-        logger.debug(f"收到OSC消息: {address} 参数: {args}")
-        
-        # 某些特定命令可以直接处理(不走队列)
-        if address == "/avatar/parameters/SoundPad/PanelControl":
-            await self.set_panel_control(args[0])
-            return
-        
-        # 将消息放入队列，仅保留每个地址的最新命令
-        async with self.osc_queue_lock:
-            self.osc_command_queue[address] = {
-                'args': args,
-                'channels': None  # 面板控制没有通道信息
-            }
-
-    async def handle_osc_message_pb(self, address, *args, channels=None):
-        """
-        处理物理骨骼 OSC 消息 - 改为入队操作
-        """
-        # 检查是否禁用面板控制功能
-        if not self.enable_panel_control:
-            logger.debug(f"已禁用面板控制功能，忽略命令: {address}")
-            return
-        
-        # 将消息放入队列，仅保留每个地址的最新命令
-        async with self.osc_queue_lock:
-            self.osc_command_queue[address] = {
-                'args': args,
-                'channels': channels  # 存储通道信息
-            }
-
-    async def handle_osc_message_internal_pad(self, address, *args):
-        """内部处理面板控制OSC命令"""
-        # 面板控制功能禁用检查
-        if not self.enable_panel_control and address.startswith("/avatar/parameters/SoundPad/"):
-            if address != "/avatar/parameters/SoundPad/PanelControl":
-                logger.debug(f"已禁用面板控制功能，忽略命令: {address}")
+        try:
+            if not args or len(args) == 0:
                 return
-        
-        # 波形切换处理
-        if address == "/avatar/parameters/SoundPad/Button/1":
-            await self.set_mode(args[0], self.current_select_channel)
-        elif address == "/avatar/parameters/SoundPad/Button/2":
-            await self.reset_strength(args[0], self.current_select_channel)
-        elif address == "/avatar/parameters/SoundPad/Button/3":
-            await self.set_pulse_data(args[0], self.current_select_channel, 0)  # 呼吸
-        elif address == "/avatar/parameters/SoundPad/Button/4":
-            await self.set_pulse_data(args[0], self.current_select_channel, 1)  # 潮汐
-        elif address == "/avatar/parameters/SoundPad/Button/5":
-            await self.set_pulse_data(args[0], self.current_select_channel, 2)  # 连击
-        elif address == "/avatar/parameters/SoundPad/Button/6":
-            await self.set_pulse_data(args[0], self.current_select_channel, 3)  # 快速按捏
-        elif address == "/avatar/parameters/SoundPad/Button/7":
-            await self.set_pulse_data(args[0], self.current_select_channel, 13)  # 信号灯
-        elif address == "/avatar/parameters/SoundPad/Button/8":
-            await self.set_pulse_data(args[0], self.current_select_channel, 14)  # 挑逗1
-        # 通道选择 
-        elif address == "/avatar/parameters/SoundPad/Page" and args[0] > 0:
-            await self.toggle_active_channel()
-        # 面板音量控制
-        elif address == "/avatar/parameters/SoundPad/Volume":
-            await self.set_strength_step(args[0])
-        # 其他命令处理...
+            
+            value = args[0]
+            # 全局控制参数
+            if address == "/avatar/parameters/SoundPad/CurrentChannel":
+                if value == 0:
+                    self.current_select_channel = Channel.A
+                    logger.info(f"切换当前选择通道为 A")
+                else:
+                    self.current_select_channel = Channel.B
+                    logger.info(f"切换当前选择通道为 B")
+                if self.main_window:
+                    self.main_window.update_current_channel_display("A" if value == 0 else "B")
+            elif address == "/avatar/parameters/SoundPad/Volume":
+                self.fire_mode_strength_step = int(value * 100)
+                logger.info(f"更新一键开火强度为 {self.fire_mode_strength_step}")
+            elif address == "/avatar/parameters/SoundPad/PanelControl":
+                await self.set_panel_control(value)
+            
+            # 如果面板控制被禁用，则不处理按键功能
+            if not self.enable_panel_control:
+                logger.info(f"已禁用面板控制功能")
+                return
+            
+            # 按键功能转换为命令
+            if address == "/avatar/parameters/SoundPad/Button/1":
+                await self.set_mode(value, self.current_select_channel)
+            elif address == "/avatar/parameters/SoundPad/Button/2":
+                if value:  # 只处理按下事件
+                    await self.add_command(CommandType.PANEL_COMMAND,
+                                         self.current_select_channel,
+                                         StrengthOperationType.SET_TO,
+                                         0,
+                                         "panel_reset")
+            elif address == "/avatar/parameters/SoundPad/Button/3":
+                if value:  # 只处理按下事件
+                    await self.add_command(CommandType.PANEL_COMMAND,
+                                         self.current_select_channel,
+                                         StrengthOperationType.DECREASE,
+                                         self.fire_mode_strength_step,
+                                         "panel_decrease")
+            elif address == "/avatar/parameters/SoundPad/Button/4":
+                if value:  # 只处理按下事件
+                    await self.add_command(CommandType.PANEL_COMMAND,
+                                         self.current_select_channel,
+                                         StrengthOperationType.INCREASE,
+                                         self.fire_mode_strength_step,
+                                         "panel_increase")
+            elif address == "/avatar/parameters/SoundPad/Button/5":
+                await self.strength_fire_mode(value, self.current_select_channel, self.fire_mode_strength_step, self.last_strength)
+            # ChatBox 开关控制
+            elif address == "/avatar/parameters/SoundPad/Button/6":
+                await self.toggle_chatbox(value)
+            # 波形控制 - 可根据需要添加到命令队列
+            elif address.startswith("/avatar/parameters/SoundPad/Button/"):
+                button_num = int(address.split("/")[-1])
+                if button_num >= 7 and button_num <= 22:  # 波形选择按钮
+                    pulse_index = button_num - 7
+                    if value:  # 按下事件
+                        await self.set_pulse_data(value, self.current_select_channel, pulse_index)
+        except Exception as e:
+            logger.error(f"处理面板 OSC 消息出错: {e}", exc_info=True)
 
-    async def handle_osc_message_internal_pb(self, address, *args, channels=None):
-        """内部处理物理骨骼OSC命令"""
+    async def handle_osc_message_pb(self, address, value, channels=None):
+        """
+        处理交互控制的 OSC 消息（物理骨等）
+        """
         try:
             if not channels:
-                logger.warning(f"物理骨骼OSC命令缺少通道信息: {address}")
                 return
             
-            value = args[0]  # OSC参数值
-            
-            # 处理A通道
-            if 'A' in channels and self.is_dynamic_bone_mode_a:
-                # 确保值在0到1之间
-                if 0 <= value <= 1:
-                    # 激活动态骨骼控制A通道
-                    if self.last_strength:  # 确保有上次的强度数据
-                        target_strength_a = int(self.map_value(value, 0, self.last_strength.a_limit))
-                        await self.client.set_strength(Channel.A, StrengthOperationType.SET_TO, target_strength_a)
-                        if self.last_strength:  # 更新本地状态
-                            self.last_strength.a = target_strength_a
-            
-            # 处理B通道
-            if 'B' in channels and self.is_dynamic_bone_mode_b:
-                # 确保值在0到1之间
-                if 0 <= value <= 1:
-                    # 激活动态骨骼控制B通道
-                    if self.last_strength:  # 确保有上次的强度数据
-                        target_strength_b = int(self.map_value(value, 0, self.last_strength.b_limit))
-                        await self.client.set_strength(Channel.B, StrengthOperationType.SET_TO, target_strength_b)
-                        if self.last_strength:  # 更新本地状态
-                            self.last_strength.b = target_strength_b
+            # 将物理骨或接触数据转换为命令
+            for channel_name in channels:
+                if channel_name == "A" and self.is_dynamic_bone_mode_a:
+                    # 计算映射值
+                    mapped_value = int(value * self.last_strength.a_limit if self.last_strength else 100)
+                    await self.add_command(CommandType.INTERACTION_COMMAND,
+                                         Channel.A,
+                                         StrengthOperationType.SET_TO,
+                                         mapped_value,
+                                         f"interaction_{address}")
+                elif channel_name == "B" and self.is_dynamic_bone_mode_b:
+                    # 计算映射值
+                    mapped_value = int(value * self.last_strength.b_limit if self.last_strength else 100)
+                    await self.add_command(CommandType.INTERACTION_COMMAND,
+                                         Channel.B,
+                                         StrengthOperationType.SET_TO,
+                                         mapped_value,
+                                         f"interaction_{address}")
         except Exception as e:
-            logger.error(f"处理物理骨骼OSC命令时发生错误: {e}")
+            logger.error(f"处理交互 OSC 消息出错: {e}", exc_info=True)
 
     async def set_pulse_data(self, value, channel, pulse_index):
         """
@@ -372,93 +419,88 @@ class DGLabController:
             self.main_window.controller_settings_tab.dynamic_bone_mode_b_checkbox.blockSignals(False)
 
     async def set_mode(self, value, channel):
-        """
-        切换工作模式, 延时一秒触发，更改按下时对应的通道
-        """
-        if value == 1: # 按下按键
-            if self.set_mode_timer is not None:
-                self.set_mode_timer.cancel()
-            self.set_mode_timer = asyncio.create_task(self.set_mode_timer_handle(channel))
-        elif value == 0: #松开按键
-            if self.set_mode_timer:
-                self.set_mode_timer.cancel()
-                self.set_mode_timer = None
-
+        """切换通道的控制模式"""
+        if not value:  # 只处理按下事件
+            return
+        
+        if channel == Channel.A:
+            self.is_dynamic_bone_mode_a = not self.is_dynamic_bone_mode_a
+            mode = "交互控制" if self.is_dynamic_bone_mode_a else "面板控制"
+            self.channel_states[Channel.A]["mode"] = "interaction" if self.is_dynamic_bone_mode_a else "panel"
+            logger.info(f"切换 A 通道为 {mode} 模式")
+            await self.send_value_to_vrchat("/avatar/parameters/SoundPad/ModeA", int(self.is_dynamic_bone_mode_a))
+        else:
+            self.is_dynamic_bone_mode_b = not self.is_dynamic_bone_mode_b
+            mode = "交互控制" if self.is_dynamic_bone_mode_b else "面板控制"
+            self.channel_states[Channel.B]["mode"] = "interaction" if self.is_dynamic_bone_mode_b else "panel"
+            logger.info(f"切换 B 通道为 {mode} 模式")
+            await self.send_value_to_vrchat("/avatar/parameters/SoundPad/ModeB", int(self.is_dynamic_bone_mode_b))
 
     async def reset_strength(self, value, channel):
-        """
-        强度重置为 0
-        """
-        if value:
-            await self.client.set_strength(channel, StrengthOperationType.SET_TO, 0)
+        """重置通道强度为 0"""
+        if not value:  # 只处理按下事件
+            return
+        
+        await self.add_command(CommandType.PANEL_COMMAND,
+                              channel,
+                              StrengthOperationType.SET_TO,
+                              0,
+                              "panel_reset")
 
     async def increase_strength(self, value, channel):
-        """
-        增大强度, 固定 5
-        """
-        if value:
-            await self.client.set_strength(channel, StrengthOperationType.INCREASE, 5)
+        """增加通道强度"""
+        if not value:  # 只处理按下事件
+            return
+        
+        await self.add_command(CommandType.PANEL_COMMAND,
+                              channel,
+                              StrengthOperationType.INCREASE,
+                              self.fire_mode_strength_step,
+                              "panel_increase")
 
     async def decrease_strength(self, value, channel):
-        """
-        减小强度, 固定 5
-        """
-        if value:
-            await self.client.set_strength(channel, StrengthOperationType.DECREASE, 5)
-
-    async def strength_fire_mode(self, value, channel, fire_strength, last_strength):
-        """
-        一键开火：
-            按下后设置为当前通道强度值 +fire_mode_strength_step
-            松开后恢复为通道进入前的强度
-        TODO: 修复连点开火按键导致输出持续上升的问题
-        """
-        logger.info(f"Trigger FireMode: {value}")
-
-        await asyncio.sleep(0.01)
-
-        # 如果是开始开火并且已经在进行中，直接跳过
-        if value and self.fire_mode_active:
-            print("已有开火操作在进行中，跳过本次开始请求")
+        """减少通道强度"""
+        if not value:  # 只处理按下事件
             return
-        # 如果是结束开火并且当前没有进行中的开火操作，跳过
-        if not value and not self.fire_mode_active:
-            print("没有进行中的开火操作，跳过本次结束请求")
-            return
+        
+        await self.add_command(CommandType.PANEL_COMMAND,
+                              channel,
+                              StrengthOperationType.DECREASE,
+                              self.fire_mode_strength_step,
+                              "panel_decrease")
 
-        async with self.fire_mode_lock:
-            if value:
-                # 开始 fire mode
-                self.fire_mode_active = True
-                logger.debug(f"FIRE START {last_strength}")
-                if last_strength:
-                    if channel == Channel.A:
-                        self.fire_mode_origin_strength_a = last_strength.a
-                        await self.client.set_strength(
-                            channel,
-                            StrengthOperationType.SET_TO,
-                            min(self.fire_mode_origin_strength_a + fire_strength, last_strength.a_limit)
-                        )
-                    elif channel == Channel.B:
-                        self.fire_mode_origin_strength_b = last_strength.b
-                        await self.client.set_strength(
-                            channel,
-                            StrengthOperationType.SET_TO,
-                            min(self.fire_mode_origin_strength_b + fire_strength, last_strength.b_limit)
-                        )
-                self.data_updated_event.clear()
-                await self.data_updated_event.wait()
-            else:
+    async def strength_fire_mode(self, value, channel, strength, last_strength_mod=None):
+        """通过命令队列处理一键开火命令"""
+        if not self.last_strength and not last_strength_mod:
+            logger.warning("没有获取到当前强度信息，无法执行一键开火")
+            return
+        
+        if value:  # 按下开火
+            async with self.fire_mode_lock:
+                # 记录当前强度
                 if channel == Channel.A:
-                    await self.client.set_strength(channel, StrengthOperationType.SET_TO, self.fire_mode_origin_strength_a)
-                elif channel == Channel.B:
-                    await self.client.set_strength(channel, StrengthOperationType.SET_TO, self.fire_mode_origin_strength_b)
-                # 等待数据更新
-                self.data_updated_event.clear()  # 清除事件状态
-                await self.data_updated_event.wait()  # 等待下次数据更新
-                # 结束 fire mode
-                logger.debug(f"FIRE END {last_strength}")
-                self.fire_mode_active = False
+                    self.fire_mode_origin_strength_a = self.channel_states[Channel.A]["current_strength"]
+                else:
+                    self.fire_mode_origin_strength_b = self.channel_states[Channel.B]["current_strength"]
+                
+                # 发送开火命令
+                await self.add_command(CommandType.PANEL_COMMAND,
+                                      channel,
+                                      StrengthOperationType.SET_TO,
+                                      strength,
+                                      "panel_fire_start")
+                self.fire_mode_active = True
+        else:  # 松开按钮，恢复原强度
+            async with self.fire_mode_lock:
+                if self.fire_mode_active:
+                    # 恢复原强度
+                    original_strength = self.fire_mode_origin_strength_a if channel == Channel.A else self.fire_mode_origin_strength_b
+                    await self.add_command(CommandType.PANEL_COMMAND,
+                                          channel,
+                                          StrengthOperationType.SET_TO,
+                                          original_strength,
+                                          "panel_fire_end")
+                    self.fire_mode_active = False
 
     async def set_strength_step(self, value):
         """
@@ -511,7 +553,7 @@ class DGLabController:
         '''
         self.osc_client.send_message("/chatbox/input", [message, True, False])
 
-    def send_value_to_vrchat(self, path: str, value):
+    async def send_value_to_vrchat(self, path: str, value):
         '''
         /chatbox/input s b n Input text into the chatbox.
         '''
@@ -535,61 +577,168 @@ class DGLabController:
         else:
             self.send_message_to_vrchat_chatbox("未连接")
 
-    # 保存原始的OSC消息处理函数
-    async def _original_handle_osc_message_pad(self, address, *args):
-        """
-        处理 OSC 消息 - 保持原有功能不变
-        1. Bool: Bool 类型变量触发时，VRC 会先后发送 True 与 False, 回调中仅处理 True
-        2. Float: -1.0 to 1.0， 但对于 Contact 与  Physbones 来说范围为 0.0-1.0
-        """
-        # Parameters Debug
-        logger.info(f"Received OSC message on {address} with arguments {args}")
+    async def add_command(self, command_type, channel, operation, value, source_id=None):
+        """添加命令到队列，带冷却检查"""
+        now = time.time()
+        source_key = f"{command_type.name}_{source_id or 'default'}"
+        
+        # 检查冷却时间
+        if source_key in self.command_sources:
+            last_time = self.command_sources[source_key]
+            cooldown = self.source_cooldowns[command_type]
+            if now - last_time < cooldown:
+                logger.debug(f"命令在冷却期内，已忽略: {command_type.name}, 来源: {source_id}")
+                return  # 在冷却期内，忽略命令
+        
+        # 记录时间并加入队列
+        self.command_sources[source_key] = now
+        await self.command_queue.put(ChannelCommand(command_type, channel, operation, value, source_id, now))
+        logger.debug(f"已添加命令: {command_type.name}, 通道: {channel}, 操作: {operation}, 值: {value}")
 
-        # 面板控制功能禁用
-        if address == "/avatar/parameters/SoundPad/PanelControl":
-            await self.set_panel_control(args[0])
-        if not self.enable_panel_control:
-            logger.info(f"已禁用面板控制功能")
-            return
+    async def process_commands(self):
+        """处理命令队列的主循环"""
+        while True:
+            try:
+                command = await self.command_queue.get()
+                
+                # 更新通道状态模型
+                channel_state = self.channel_states[command.channel]
+                channel_state["last_command_source"] = command.source_id
+                channel_state["last_command_time"] = command.timestamp
+                
+                # 根据命令类型和操作进行相应处理
+                if command.operation == StrengthOperationType.SET_TO:
+                    channel_state["target_strength"] = command.value
+                    await self.client.set_strength(command.channel, command.operation, command.value)
+                    logger.info(f"已设置通道 {command.channel.name} 强度为 {command.value}, 来源: {command.source_id}")
+                elif command.operation == StrengthOperationType.INCREASE:
+                    # 获取当前通道限制
+                    limit = self.last_strength.a_limit if command.channel == Channel.A else self.last_strength.b_limit
+                    # 计算新目标强度并应用
+                    new_strength = min(channel_state["current_strength"] + command.value, limit)
+                    channel_state["target_strength"] = new_strength
+                    await self.client.set_strength(command.channel, StrengthOperationType.SET_TO, new_strength)
+                    logger.info(f"已增加通道 {command.channel.name} 强度至 {new_strength}, 增量: {command.value}, 来源: {command.source_id}")
+                elif command.operation == StrengthOperationType.DECREASE:
+                    # 计算新目标强度并应用
+                    new_strength = max(channel_state["current_strength"] - command.value, 0)
+                    channel_state["target_strength"] = new_strength
+                    await self.client.set_strength(command.channel, StrengthOperationType.SET_TO, new_strength)
+                    logger.info(f"已减少通道 {command.channel.name} 强度至 {new_strength}, 减量: {command.value}, 来源: {command.source_id}")
+                
+                # 更新当前强度记录
+                channel_state["current_strength"] = channel_state["target_strength"]
+                
+                # 如果启用了ChatBox状态，则更新显示
+                if self.enable_chatbox_status:
+                    await self.send_strength_status()
+                
+                # 完成命令处理
+                self.command_queue.task_done()
+                
+            except Exception as e:
+                logger.error(f"处理命令时出错: {e}", exc_info=True)
+                await asyncio.sleep(0.1)  # 错误后短暂延迟
 
-        #按键功能
-        if address == "/avatar/parameters/SoundPad/Button/1":
-            await self.set_mode(args[0], self.current_select_channel)
-        elif address == "/avatar/parameters/SoundPad/Button/2":
-            await self.reset_strength(args[0], self.current_select_channel)
-        elif address == "/avatar/parameters/SoundPad/Button/3":
-            await self.decrease_strength(args[0], self.current_select_channel)
-        elif address == "/avatar/parameters/SoundPad/Button/4":
-            await self.increase_strength(args[0], self.current_select_channel)
-        elif address == "/avatar/parameters/SoundPad/Button/5":
-            await self.strength_fire_mode(args[0], self.current_select_channel, self.fire_mode_strength_step, self.last_strength)
+    async def handle_avatar_parameter(self, address, value):
+        """处理来自VRChat的OSC参数变化"""
+        if address.startswith("/avatar/parameters/SoundPad/"):
+            # 面板控制
+            param_name = address.split("/")[-1]
+            if param_name == "FireA" and value > 0.5:
+                await self.add_command(CommandType.PANEL_COMMAND, 
+                                     Channel.A, 
+                                     StrengthOperationType.SET_TO, 
+                                     self.fire_mode_strength_step,
+                                     "panel_fire_a")
+            # 更多面板控制解析...
+        elif address.startswith("/avatar/parameters/Contact_"):
+            # 交互控制
+            if self.is_dynamic_bone_mode_a and "Channel_A" in address:
+                await self.add_command(CommandType.INTERACTION_COMMAND,
+                                     Channel.A,
+                                     StrengthOperationType.SET_TO,
+                                     self.map_value(value, 0, self.last_strength.a_limit),
+                                     f"interaction_{address}")
+            # 更多交互控制解析...
 
-        # ChatBox 开关控制
-        elif address == "/avatar/parameters/SoundPad/Button/6":#
-            await self.toggle_chatbox(args[0])
-        # 波形控制
-        elif address == "/avatar/parameters/SoundPad/Button/7":
-            await self.set_pulse_data(args[0], self.current_select_channel, 2)
-        elif address == "/avatar/parameters/SoundPad/Button/8":
-            await self.set_pulse_data(args[0], self.current_select_channel, 14)
-        elif address == "/avatar/parameters/SoundPad/Button/9":
-            await self.set_pulse_data(args[0], self.current_select_channel, 4)
-        elif address == "/avatar/parameters/SoundPad/Button/10":
-            await self.set_pulse_data(args[0], self.current_select_channel, 5)
-        elif address == "/avatar/parameters/SoundPad/Button/11":
-            await self.set_pulse_data(args[0], self.current_select_channel, 6)
-        elif address == "/avatar/parameters/SoundPad/Button/12":
-            await self.set_pulse_data(args[0], self.current_select_channel, 7)
-        elif address == "/avatar/parameters/SoundPad/Button/13":
-            await self.set_pulse_data(args[0], self.current_select_channel, 8)
-        elif address == "/avatar/parameters/SoundPad/Button/14":
-            await self.set_pulse_data(args[0], self.current_select_channel, 9)
-        elif address == "/avatar/parameters/SoundPad/Button/15":
-            await self.set_pulse_data(args[0], self.current_select_channel, 1)
+    def update_strength_from_gui(self, channel, value):
+        """处理来自GUI的强度更新"""
+        asyncio.create_task(self.add_command(CommandType.GUI_COMMAND,
+                                           channel,
+                                           StrengthOperationType.SET_TO,
+                                           value,
+                                           "gui_strength_update"))
 
-        # 数值调节
-        elif address == "/avatar/parameters/SoundPad/Volume": # Float
-            await self.set_strength_step(args[0])
-        # 通道调节
-        elif address == "/avatar/parameters/SoundPad/Page": # INT
-            await self.set_channel(args[0])
+    async def handle_ton_damage(self, damage_value, damage_multiplier=1.0):
+        """处理来自 ToN 游戏的伤害数据"""
+        try:
+            if damage_value <= 0:
+                return
+            
+            # 计算增加的强度
+            strength_increase = int(damage_value * damage_multiplier)
+            logger.info(f"收到 ToN 伤害 {damage_value}，增加强度 {strength_increase}")
+            
+            # 对所有启用的通道应用伤害
+            channels_to_affect = []
+            if self.ton_damage_channel_a:
+                channels_to_affect.append(Channel.A)
+            if self.ton_damage_channel_b:
+                channels_to_affect.append(Channel.B)
+            
+            # 如果没有启用任何通道，默认使用 A 通道
+            if not channels_to_affect:
+                channels_to_affect = [Channel.A]
+            
+            # 发送命令增加强度
+            for channel in channels_to_affect:
+                await self.add_command(CommandType.TON_COMMAND,
+                                     channel,
+                                     StrengthOperationType.INCREASE,
+                                     strength_increase,
+                                     "ton_damage")
+        except Exception as e:
+            logger.error(f"处理 ToN 伤害数据出错: {e}", exc_info=True)
+
+    async def handle_ton_death(self, penalty_strength, penalty_time):
+        """处理 ToN 游戏死亡惩罚"""
+        try:
+            logger.warning(f"触发死亡惩罚: 强度={penalty_strength}, 时间={penalty_time}秒")
+            
+            # 获取启用的通道
+            channels_to_affect = []
+            if self.ton_death_channel_a:
+                channels_to_affect.append(Channel.A)
+            if self.ton_death_channel_b:
+                channels_to_affect.append(Channel.B)
+            
+            # 如果没有启用任何通道，默认使用 A 通道
+            if not channels_to_affect:
+                channels_to_affect = [Channel.A]
+            
+            # 记录原始强度
+            original_strengths = {}
+            for channel in channels_to_affect:
+                original_strengths[channel] = self.channel_states[channel]["current_strength"]
+            
+            # 设置惩罚强度
+            for channel in channels_to_affect:
+                await self.add_command(CommandType.TON_COMMAND,
+                                     channel,
+                                     StrengthOperationType.SET_TO,
+                                     penalty_strength,
+                                     "ton_death_penalty")
+            
+            # 等待惩罚时间结束
+            await asyncio.sleep(penalty_time)
+            
+            # 恢复原始强度
+            for channel in channels_to_affect:
+                await self.add_command(CommandType.TON_COMMAND,
+                                     channel,
+                                     StrengthOperationType.SET_TO,
+                                     original_strengths[channel],
+                                     "ton_death_penalty_end")
+        except Exception as e:
+            logger.error(f"处理 ToN 死亡惩罚出错: {e}", exc_info=True)

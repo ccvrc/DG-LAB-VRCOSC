@@ -256,3 +256,30 @@ class TonDamageSystemTab(QWidget):
                 asyncio.create_task(self.main_window.controller.strength_fire_mode(True, Channel.A, penalty_strength, last_strength_mod))
                 await asyncio.sleep(penalty_time)  # 等待指定的惩罚持续时间
                 asyncio.create_task(self.main_window.controller.strength_fire_mode(False, Channel.A, penalty_strength, last_strength_mod))
+
+    def update_damage(self, damage_value):
+        """Update the damage value and progress bar."""
+        if damage_value > 0 and self.enable_damage_checkbox.isChecked():
+            # 当前伤害进度
+            current_value = self.damage_progress_bar.value()
+            # 根据伤害倍率计算实际增加的伤害值
+            actual_damage = damage_value * self.damage_multiplier_slider.value()
+            # 计算新的伤害进度
+            new_value = min(current_value + actual_damage, 100)
+            # 更新伤害进度条
+            self.damage_progress_bar.setValue(int(new_value))
+            logger.info(f"收到伤害 {damage_value}，伤害倍率 {self.damage_multiplier_slider.value()}，实际伤害 {actual_damage}")
+            
+            # 如果控制器初始化且设备在线，发送伤害命令
+            if self.main_window.app_status_online and self.main_window.controller:
+                # 获取伤害强度上限
+                max_strength = self.damage_strength_slider.value()
+                # 计算实际应用的强度值
+                applied_strength = int((new_value / 100) * max_strength)
+                # 创建伤害处理任务
+                asyncio.create_task(
+                    self.main_window.controller.handle_ton_damage(
+                        actual_damage, 
+                        self.damage_multiplier_slider.value()
+                    )
+                )

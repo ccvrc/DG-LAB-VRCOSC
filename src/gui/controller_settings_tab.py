@@ -7,6 +7,7 @@ import logging
 
 from pydglab_ws import Channel, StrengthOperationType
 from pulse_data import PULSE_NAME
+from command_types import CommandType
 
 logger = logging.getLogger(__name__)
 
@@ -125,9 +126,13 @@ class ControllerSettingsTab(QWidget):
     def update_strength_step(self, value):
         if self.main_window.controller:
             controller = self.main_window.controller
-            self.dg_controller.fire_mode_strength_step = value
+            controller.fire_mode_strength_step = value
             logger.info(f"Updated strength step to {value}")
-            self.dg_controller.send_value_to_vrchat("/avatar/parameters/SoundPad/Volume", 0.01*value)
+            # 使用统一的命令处理
+            asyncio.run_coroutine_threadsafe(
+                controller.send_value_to_vrchat("/avatar/parameters/SoundPad/Volume", 0.01*value),
+                asyncio.get_event_loop()
+            )
 
     def update_panel_control(self, state):
         if self.main_window.controller:
@@ -149,22 +154,22 @@ class ControllerSettingsTab(QWidget):
             logger.info(f"Dynamic bone mode B: {self.dg_controller.is_dynamic_bone_mode_b}")
 
     def update_pulse_mode_a(self, index):
+        """更新 A 通道脉冲模式"""
         if self.main_window.controller:
-            asyncio.create_task(self.dg_controller.set_pulse_data(None, Channel.A, index))
-            logger.info(f"Pulse mode A updated to {PULSE_NAME[index]}")
-            # 立即更新标签中的波形名称
-            if self.main_window.controller.last_strength:
-                self.a_channel_label.setText(
-                    f"A 通道强度: {self.main_window.controller.last_strength.a} 强度上限: {self.main_window.controller.last_strength.a_limit}  波形: {PULSE_NAME[index]}")
+            controller = self.main_window.controller
+            controller.pulse_mode_a = index
+            controller.channel_states[Channel.A]["pulse_mode"] = index
+            logger.info(f"更新 A 通道脉冲模式为 {PULSE_NAME[index]}")
+            # 脉冲模式已更新，会在下一次周期任务中自动应用
 
     def update_pulse_mode_b(self, index):
+        """更新 B 通道脉冲模式"""
         if self.main_window.controller:
-            asyncio.create_task(self.dg_controller.set_pulse_data(None, Channel.B, index))
-            logger.info(f"Pulse mode B updated to {PULSE_NAME[index]}")
-            # 立即更新标签中的波形名称
-            if self.main_window.controller.last_strength:
-                self.b_channel_label.setText(
-                    f"B 通道强度: {self.main_window.controller.last_strength.b} 强度上限: {self.main_window.controller.last_strength.b_limit}  波形: {PULSE_NAME[index]}")
+            controller = self.main_window.controller
+            controller.pulse_mode_b = index
+            controller.channel_states[Channel.B]["pulse_mode"] = index
+            logger.info(f"更新 B 通道脉冲模式为 {PULSE_NAME[index]}")
+            # 脉冲模式已更新，会在下一次周期任务中自动应用
 
     def update_chatbox_status(self, state):
         if self.main_window.controller:
@@ -174,16 +179,28 @@ class ControllerSettingsTab(QWidget):
 
     def set_a_channel_strength(self, value):
         """根据滑动条的值设定 A 通道强度"""
-        if self.main_window.controller:
-            asyncio.create_task(self.dg_controller.client.set_strength(Channel.A, StrengthOperationType.SET_TO, value))
-            self.dg_controller.last_strength.a = value  # 同步更新 last_strength 的 A 通道值
+        if self.main_window.controller and self.allow_a_channel_update:
+            controller = self.main_window.controller
+            asyncio.create_task(controller.add_command(
+                CommandType.GUI_COMMAND,
+                Channel.A,
+                StrengthOperationType.SET_TO,
+                value,
+                "gui_slider_a"
+            ))
             self.a_channel_slider.setToolTip(f"SET A 通道强度: {value}")
 
     def set_b_channel_strength(self, value):
         """根据滑动条的值设定 B 通道强度"""
-        if self.main_window.controller:
-            asyncio.create_task(self.dg_controller.client.set_strength(Channel.B, StrengthOperationType.SET_TO, value))
-            self.dg_controller.last_strength.b = value  # 同步更新 last_strength 的 B 通道值
+        if self.main_window.controller and self.allow_b_channel_update:
+            controller = self.main_window.controller
+            asyncio.create_task(controller.add_command(
+                CommandType.GUI_COMMAND,
+                Channel.B,
+                StrengthOperationType.SET_TO,
+                value,
+                "gui_slider_b"
+            ))
             self.b_channel_slider.setToolTip(f"SET B 通道强度: {value}")
 
     def disable_a_channel_updates(self):

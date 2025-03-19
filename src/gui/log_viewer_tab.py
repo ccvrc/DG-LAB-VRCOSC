@@ -1,7 +1,10 @@
-from PySide6.QtWidgets import QWidget, QVBoxLayout, QTextEdit, QGroupBox, QLabel, QHBoxLayout, QFormLayout
-from PySide6.QtGui import QTextCursor
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtWidgets import QWidget, QVBoxLayout, QTextEdit, QGroupBox, QLabel, QHBoxLayout, QFormLayout, QPushButton, QCheckBox
+from PySide6.QtGui import QTextCursor, QColor, QTextCharFormat
+from PySide6.QtCore import Qt, QTimer, Signal
 import logging
+import time
+from pydglab_ws import Channel
+from pulse_data import PULSE_NAME
 
 logger = logging.getLogger(__name__)
 
@@ -131,17 +134,49 @@ class LogViewerTab(QWidget):
     def update_debug_info(self):
         """更新调试信息"""
         if self.main_window.controller is not None:
-            self.dg_controller = self.main_window.controller
-            params = (
-                f"Device online: app_status_online= {self.dg_controller.app_status_online}\n "
-                f"Enable Panel Control: {self.dg_controller.enable_panel_control}\n"
-                f"Dynamic Bone Mode A: {self.dg_controller.is_dynamic_bone_mode_a}\n"
-                f"Dynamic Bone Mode B: {self.dg_controller.is_dynamic_bone_mode_b}\n"
-                f"Pulse Mode A: {self.dg_controller.pulse_mode_a}\n"
-                f"Pulse Mode B: {self.dg_controller.pulse_mode_b}\n"
-                f"Fire Mode Strength Step: {self.dg_controller.fire_mode_strength_step}\n"
-                f"Enable ChatBox Status: {self.dg_controller.enable_chatbox_status}\n"
+            controller = self.main_window.controller
+            # A 通道状态
+            channel_a_state = controller.channel_states[Channel.A]
+            channel_a_info = (
+                f"== A 通道状态 ==\n"
+                f"当前强度: {channel_a_state['current_strength']}\n"
+                f"目标强度: {channel_a_state['target_strength']}\n"
+                f"控制模式: {channel_a_state['mode']}\n"
+                f"脉冲模式: {PULSE_NAME[channel_a_state['pulse_mode']]}\n"
+                f"最近命令来源: {channel_a_state['last_command_source']}\n"
+                f"最近命令时间: {time.strftime('%H:%M:%S', time.localtime(channel_a_state['last_command_time']))}\n"
             )
-            self.param_label.setText(params)
+            
+            # B 通道状态
+            channel_b_state = controller.channel_states[Channel.B]
+            channel_b_info = (
+                f"== B 通道状态 ==\n"
+                f"当前强度: {channel_b_state['current_strength']}\n"
+                f"目标强度: {channel_b_state['target_strength']}\n"
+                f"控制模式: {channel_b_state['mode']}\n"
+                f"脉冲模式: {PULSE_NAME[channel_b_state['pulse_mode']]}\n"
+                f"最近命令来源: {channel_b_state['last_command_source']}\n"
+                f"最近命令时间: {time.strftime('%H:%M:%S', time.localtime(channel_b_state['last_command_time']))}\n"
+            )
+            
+            # 控制器基本信息
+            controller_info = (
+                f"== 控制器状态 ==\n"
+                f"设备在线: {controller.app_status_online}\n"
+                f"面板控制: {controller.enable_panel_control}\n"
+                f"一键开火强度: {controller.fire_mode_strength_step}\n"
+                f"ChatBox 状态: {controller.enable_chatbox_status}\n"
+                f"当前选择通道: {'A' if controller.current_select_channel == Channel.A else 'B'}\n"
+            )
+            
+            # 命令队列状态
+            queue_info = (
+                f"== 命令队列状态 ==\n"
+                f"当前队列大小: {controller.command_queue.qsize()}\n"
+            )
+            
+            # 合并所有信息
+            combined_info = controller_info + "\n" + channel_a_info + "\n" + channel_b_info + "\n" + queue_info
+            self.param_label.setText(combined_info)
         else:
             self.param_label.setText("控制器未初始化.")
