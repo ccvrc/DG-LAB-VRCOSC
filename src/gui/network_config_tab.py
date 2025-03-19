@@ -224,8 +224,9 @@ class NetworkConfigTab(QWidget):
             self.start_button.setEnabled(True)
             self.main_window.log_viewer_tab.log_text_edit.append(f"ERROR: {error_message}")
 
-    def handle_osc_message_task_pad(self, address, *args):
-        asyncio.create_task(self.main_window.controller.handle_osc_message_pad(address, *args))
+    def handle_osc_message_task_pad(self, address, *args, controller):
+        """将OSC命令传递给控制器队列处理机制"""
+        asyncio.create_task(controller.handle_osc_message_pad(address, *args))
 
     def handle_osc_message_task_pb(self, address, *args):
         asyncio.create_task(self.main_window.controller.handle_osc_message_pb(address, *args))
@@ -323,7 +324,9 @@ class NetworkConfigTab(QWidget):
         logger.info("OSC dispatcher mappings updated with panel control addresses.")
 
     def handle_osc_message_task_pad(self, address, *args, controller):
+        """将OSC命令传递给控制器队列处理机制"""
         asyncio.create_task(controller.handle_osc_message_pad(address, *args))
 
     def handle_osc_message_task_pb_with_channels(self, address, *args, controller, channels):
+        """将OSC命令传递给控制器队列处理机制，带通道信息"""
         asyncio.create_task(controller.handle_osc_message_pb(address, *args, channels=channels))
