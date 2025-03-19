@@ -16,6 +16,10 @@ class ControllerSettingsTab(QWidget):
         self.main_window = main_window
 
         self.dg_controller = None
+        
+        # 控制滑动条外部更新的标志
+        self.allow_a_channel_update = True
+        self.allow_b_channel_update = True
 
         self.layout = QFormLayout(self)
         self.setLayout(self.layout)
@@ -46,10 +50,6 @@ class ControllerSettingsTab(QWidget):
         self.b_channel_slider.valueChanged.connect(lambda: self.show_tooltip(self.b_channel_slider))  # 实时显示提示
         self.controller_form.addRow(self.b_channel_label)
         self.controller_form.addRow(self.b_channel_slider)
-
-        # 控制滑动条外部更新的状态标志
-        self.allow_a_channel_update = True
-        self.allow_b_channel_update = True
 
         # 是否启用面板控制
         self.enable_panel_control_checkbox = QCheckBox("允许 avatar 控制设备") # PanelControl 关闭后忽略所有游戏内传入的控制
@@ -150,7 +150,10 @@ class ControllerSettingsTab(QWidget):
 
     def update_pulse_mode_a(self, index):
         if self.main_window.controller:
-            asyncio.create_task(self.dg_controller.set_pulse_data(None, Channel.A, index))
+            # 更新控制器的脉冲模式
+            self.main_window.controller.pulse_mode_a = index
+            # 立即发送波形数据，不使用事件总线
+            asyncio.create_task(self.main_window.controller.set_pulse_data(index, Channel.A))
             logger.info(f"Pulse mode A updated to {PULSE_NAME[index]}")
             # 立即更新标签中的波形名称
             if self.main_window.controller.last_strength:
@@ -159,7 +162,10 @@ class ControllerSettingsTab(QWidget):
 
     def update_pulse_mode_b(self, index):
         if self.main_window.controller:
-            asyncio.create_task(self.dg_controller.set_pulse_data(None, Channel.B, index))
+            # 更新控制器的脉冲模式
+            self.main_window.controller.pulse_mode_b = index
+            # 立即发送波形数据，不使用事件总线
+            asyncio.create_task(self.main_window.controller.set_pulse_data(index, Channel.B))
             logger.info(f"Pulse mode B updated to {PULSE_NAME[index]}")
             # 立即更新标签中的波形名称
             if self.main_window.controller.last_strength:
@@ -249,3 +255,15 @@ class ControllerSettingsTab(QWidget):
                 self.b_channel_slider.blockSignals(False)
                 self.b_channel_label.setText(
                     f"B 通道强度: {self.main_window.controller.last_strength.b} 强度上限: {self.main_window.controller.last_strength.b_limit}  波形: {PULSE_NAME[self.main_window.controller.pulse_mode_b]}")
+
+    def update_strength_a(self, value):
+        """从外部更新 A 通道强度滑动条，不触发设备更新"""
+        if self.allow_a_channel_update:
+            self.a_channel_slider.setValue(value)
+            logger.debug(f"已更新A通道强度滑动条: {value}")
+
+    def update_strength_b(self, value):
+        """从外部更新 B 通道强度滑动条，不触发设备更新"""
+        if self.allow_b_channel_update:
+            self.b_channel_slider.setValue(value)
+            logger.debug(f"已更新B通道强度滑动条: {value}")

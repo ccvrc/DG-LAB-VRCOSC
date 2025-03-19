@@ -132,15 +132,47 @@ class LogViewerTab(QWidget):
         """更新调试信息"""
         if self.main_window.controller is not None:
             self.dg_controller = self.main_window.controller
+            
+            # 使用getattr获取属性，提供默认值以防属性不存在
+            app_status_online = getattr(self.dg_controller, 'app_status_online', False)
+            enable_panel_control = getattr(self.dg_controller, 'enable_panel_control', True)
+            is_dynamic_bone_mode_a = getattr(self.dg_controller, 'is_dynamic_bone_mode_a', False)
+            is_dynamic_bone_mode_b = getattr(self.dg_controller, 'is_dynamic_bone_mode_b', False)
+            pulse_mode_a = getattr(self.dg_controller, 'pulse_mode_a', 0)
+            pulse_mode_b = getattr(self.dg_controller, 'pulse_mode_b', 0)
+            fire_mode_strength_step = getattr(self.dg_controller, 'fire_mode_strength_step', 30)
+            enable_chatbox_status = getattr(self.dg_controller, 'enable_chatbox_status', True)
+            
+            # 从事件总线获取状态（如果可用）
+            try:
+                from event_bus import get_event_bus
+                event_bus = get_event_bus()
+                
+                # 尝试从事件总线获取状态
+                if not hasattr(self.dg_controller, 'is_dynamic_bone_mode_a'):
+                    is_dynamic_bone_mode_a = event_bus.get_channel_state("A", "is_dynamic_bone_mode")
+                
+                if not hasattr(self.dg_controller, 'is_dynamic_bone_mode_b'):
+                    is_dynamic_bone_mode_b = event_bus.get_channel_state("B", "is_dynamic_bone_mode")
+                
+                if not hasattr(self.dg_controller, 'pulse_mode_a'):
+                    pulse_mode_a = event_bus.get_channel_state("A", "pulse_mode")
+                
+                if not hasattr(self.dg_controller, 'pulse_mode_b'):
+                    pulse_mode_b = event_bus.get_channel_state("B", "pulse_mode")
+            except:
+                # 如果导入失败或者获取失败，使用默认值
+                pass
+                
             params = (
-                f"Device online: app_status_online= {self.dg_controller.app_status_online}\n "
-                f"Enable Panel Control: {self.dg_controller.enable_panel_control}\n"
-                f"Dynamic Bone Mode A: {self.dg_controller.is_dynamic_bone_mode_a}\n"
-                f"Dynamic Bone Mode B: {self.dg_controller.is_dynamic_bone_mode_b}\n"
-                f"Pulse Mode A: {self.dg_controller.pulse_mode_a}\n"
-                f"Pulse Mode B: {self.dg_controller.pulse_mode_b}\n"
-                f"Fire Mode Strength Step: {self.dg_controller.fire_mode_strength_step}\n"
-                f"Enable ChatBox Status: {self.dg_controller.enable_chatbox_status}\n"
+                f"Device online: app_status_online= {app_status_online}\n "
+                f"Enable Panel Control: {enable_panel_control}\n"
+                f"Dynamic Bone Mode A: {is_dynamic_bone_mode_a}\n"
+                f"Dynamic Bone Mode B: {is_dynamic_bone_mode_b}\n"
+                f"Pulse Mode A: {pulse_mode_a}\n"
+                f"Pulse Mode B: {pulse_mode_b}\n"
+                f"Fire Mode Strength Step: {fire_mode_strength_step}\n"
+                f"Enable ChatBox Status: {enable_chatbox_status}\n"
             )
             self.param_label.setText(params)
         else:

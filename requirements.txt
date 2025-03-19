@@ -8,3 +8,4 @@ psutil
 PySide6
 qasync
 websockets
+pyee>=8.2.2

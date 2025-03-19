@@ -128,6 +128,38 @@ class NetworkConfigTab(QWidget):
 
     def start_server(self):
         """启动 WebSocket 服务器"""
+        # 如果已经通过适配器初始化了OSC服务器，则不再重复启动
+        if hasattr(self.main_window, 'osc_adapter') and self.main_window.osc_adapter:
+            logger.info("OSC服务器已经通过适配器启动，不再重复启动")
+            # 启动成功标记
+            self.start_button.setText("已启动")
+            self.start_button.setStyleSheet("background-color: grey; color: white;")
+            self.start_button.setEnabled(False)
+            
+            # 仅启动WebSocket服务器和初始化控制器
+            selected_ip = self.ip_combobox.currentText().split(": ")[-1]
+            selected_port = self.port_spinbox.value()
+            osc_port = self.osc_port_spinbox.value()
+            
+            try:
+                loop = asyncio.get_running_loop()
+                loop.create_task(self.run_websocket_only(selected_ip, selected_port))
+                logger.info('WebSocket 服务器已启动')
+                # 启动成功后，将按钮设为灰色并禁用
+                self.start_button.setText("已启动")
+                self.start_button.setStyleSheet("background-color: grey; color: white;")
+                self.start_button.setEnabled(False)
+            except OSError as e:
+                error_message = f"启动WebSocket服务器失败: {str(e)}"
+                # 记录错误
+                logger.error(error_message)
+                # 更新UI以反映错误
+                self.start_button.setText("启动失败,请重试")
+                self.start_button.setStyleSheet("background-color: red; color: white;")
+                self.start_button.setEnabled(True)
+            return
+            
+        # 原始启动逻辑
         selected_ip = self.ip_combobox.currentText().split(": ")[-1]
         selected_port = self.port_spinbox.value()
         osc_port = self.osc_port_spinbox.value()
@@ -153,6 +185,78 @@ class NetworkConfigTab(QWidget):
             self.start_button.setEnabled(True)
             # 记录异常日志
             logger.error(f"服务器启动过程中发生异常: {str(e)}")
+
+    async def run_websocket_only(self, ip: str, port: int):
+        """只运行WebSocket服务器，不启动OSC服务器"""
+        try:
+            async with DGLabWSServer(ip, port, 60) as server:
+                client = server.new_local_client()
+                logger.info("WebSocket 客户端已初始化")
+
+                # 生成二维码
+                url = client.get_qrcode(f"ws://{ip}:{port}")
+                qrcode_image = self.generate_qrcode(url)
+                self.update_qrcode(qrcode_image)
+                logger.info(f"二维码已生成，WebSocket URL: ws://{ip}:{port}")
+
+                osc_client = udp_client.SimpleUDPClient("127.0.0.1", 9000)
+                # 初始化控制器
+                controller = DGLabController(client, osc_client, self.main_window)
+                self.main_window.controller = controller
+                logger.info("DGLabController 已初始化")
+                # 控制器初始化后，绑定设置
+                self.main_window.controller_settings_tab.bind_controller_settings()
+
+                # 连接 addresses_updated 信号到 update_osc_mappings 方法
+                self.main_window.osc_parameters_tab.addresses_updated.connect(self.update_osc_mappings)
+                # 初始化 OSC 映射，包括面板控制和自定义地址
+                self.update_osc_mappings(controller)
+
+                # 启动数据处理循环
+                async for data in client.data_generator():
+                    if isinstance(data, StrengthData):
+                        logger.info(f"接收到数据包 - A通道: {data.a}, B通道: {data.b}")
+                        controller.last_strength = data
+                        if hasattr(controller, 'data_updated_event'):
+                            controller.data_updated_event.set()  # 数据更新，触发开火操作的后续事件
+                        
+                        # 更新连接状态为已连接
+                        controller.app_status_online = True
+                        self.main_window.app_status_online = True
+                        self.update_connection_status(True)
+                        
+                        # 首次连接时调用update_app_status，后续只更新UI
+                        if not hasattr(controller, '_connection_established'):
+                            controller._connection_established = True
+                            # 只在首次连接时调用完整的状态更新
+                            if hasattr(controller, 'update_app_status'):
+                                controller.update_app_status(True)
+                        
+                        # 更新与强度数据相关的UI组件
+                        self.main_window.controller_settings_tab.update_channel_strength_labels(data)
+                    elif isinstance(data, FeedbackButton):
+                        logger.info(f"App 触发了反馈按钮：{data.name}")
+                    elif data == RetCode.CLIENT_DISCONNECTED:
+                        logger.info("App 已断开连接，你可以尝试重新扫码进行连接绑定")
+                        controller.app_status_online = False
+                        self.main_window.app_status_online = False
+                        self.update_connection_status(controller.app_status_online)
+                        await client.rebind()
+                        logger.info("重新绑定成功")
+                        controller.app_status_online = True
+                        self.update_connection_status(controller.app_status_online)
+                    else:
+                        logger.info(f"获取到状态码：{RetCode}")
+        except OSError as e:
+            # 处理特定错误并记录
+            error_message = f"WebSocket 服务器启动失败: {str(e)}"
+            logger.error(error_message)
+
+            # 启动过程中发生异常，恢复按钮状态为可点击的红色
+            self.start_button.setText("启动失败，请重试")
+            self.start_button.setStyleSheet("background-color: red; color: white;")
+            self.start_button.setEnabled(True)
+            self.main_window.log_viewer_tab.log_text_edit.append(f"ERROR: {error_message}")
 
     async def run_server(self, ip: str, port: int, osc_port: int):
         """运行服务器并启动OSC服务器"""
@@ -192,11 +296,22 @@ class NetworkConfigTab(QWidget):
                     if isinstance(data, StrengthData):
                         logger.info(f"接收到数据包 - A通道: {data.a}, B通道: {data.b}")
                         controller.last_strength = data
-                        controller.data_updated_event.set()  # 数据更新，触发开火操作的后续事件
+                        if hasattr(controller, 'data_updated_event'):
+                            controller.data_updated_event.set()  # 数据更新，触发开火操作的后续事件
+                        
+                        # 更新连接状态为已连接
                         controller.app_status_online = True
                         self.main_window.app_status_online = True
-                        self.update_connection_status(controller.app_status_online)
-                        # Update UI components related to strength data
+                        self.update_connection_status(True)
+                        
+                        # 首次连接时调用update_app_status，后续只更新UI
+                        if not hasattr(controller, '_connection_established'):
+                            controller._connection_established = True
+                            # 只在首次连接时调用完整的状态更新
+                            if hasattr(controller, 'update_app_status'):
+                                controller.update_app_status(True)
+                        
+                        # 更新与强度数据相关的UI组件
                         self.main_window.controller_settings_tab.update_channel_strength_labels(data)
                     elif isinstance(data, FeedbackButton):
                         logger.info(f"App 触发了反馈按钮：{data.name}")
@@ -254,8 +369,12 @@ class NetworkConfigTab(QWidget):
         logger.info("二维码已更新")
 
     def update_connection_status(self, is_online):
-        self.main_window.app_status_online = is_online
         """根据设备连接状态更新标签的文本和颜色"""
+        self.main_window.app_status_online = is_online
+        
+        # 记录连接状态变化
+        logger.info(f"UI更新设备连接状态：{'已连接' if is_online else '未连接'}")
+        
         if is_online:
             self.connection_status_label.setText("已连接")
             self.connection_status_label.setStyleSheet("""
@@ -264,6 +383,7 @@ class NetworkConfigTab(QWidget):
                     color: white;
                     border-radius: 5px;
                     padding: 5px;
+                    font-weight: bold;
                 }
             """)
             # 启用 DGLabController 设置
@@ -277,11 +397,15 @@ class NetworkConfigTab(QWidget):
                     color: white;
                     border-radius: 5px;
                     padding: 5px;
+                    font-weight: bold;
                 }
             """)
             # 禁用 DGLabController 设置
             self.main_window.controller_settings_tab.controller_group.setEnabled(False)  # 禁用控制器设置
             self.main_window.ton_damage_system_tab.damage_group.setEnabled(False)
+        
+        # 强制刷新界面
+        self.connection_status_label.repaint()
         self.connection_status_label.adjustSize()  # 根据内容调整标签大小
 
     def update_osc_mappings(self, controller=None):
