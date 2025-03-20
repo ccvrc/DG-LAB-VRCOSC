@@ -86,6 +86,12 @@ class DGLabController:
             CommandType.TON_COMMAND: 0.2,  # 游戏联动冷却
         }
         
+        # 命令类型控制
+        self.enable_gui_commands = True  # 默认启用GUI命令
+        self.enable_panel_commands = True  # 默认启用面板命令
+        self.enable_interaction_commands = True  # 默认启用交互命令 
+        self.enable_ton_commands = True  # 默认启用游戏联动命令
+        
         # 通道状态模型
         self.channel_states = {
             Channel.A: {
@@ -622,6 +628,23 @@ class DGLabController:
         while True:
             try:
                 command = await self.command_queue.get()
+                
+                # 检查命令类型是否被启用
+                command_enabled = False
+                if command.command_type == CommandType.GUI_COMMAND and self.enable_gui_commands:
+                    command_enabled = True
+                elif command.command_type == CommandType.PANEL_COMMAND and self.enable_panel_commands:
+                    command_enabled = True
+                elif command.command_type == CommandType.INTERACTION_COMMAND and self.enable_interaction_commands:
+                    command_enabled = True
+                elif command.command_type == CommandType.TON_COMMAND and self.enable_ton_commands:
+                    command_enabled = True
+                
+                # 如果命令类型被禁用，则跳过处理
+                if not command_enabled:
+                    logger.debug(f"命令类型 {command.command_type.name} 已禁用，跳过处理")
+                    self.command_queue.task_done()
+                    continue
                 
                 # 更新通道状态模型
                 channel_state = self.channel_states[command.channel]

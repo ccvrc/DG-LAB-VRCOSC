@@ -98,6 +98,31 @@ class ControllerSettingsTab(QWidget):
         self.controller_group.setLayout(self.controller_form)
         self.layout.addRow(self.controller_group)
 
+        # 命令类型控制组
+        self.command_types_group = QGroupBox("命令来源控制")
+        self.command_types_group.setEnabled(False)  # 默认禁用
+        self.command_types_form = QFormLayout()
+
+        # 创建命令类型控制复选框
+        self.enable_gui_commands_checkbox = QCheckBox("启用程序界面控制")
+        self.enable_gui_commands_checkbox.setChecked(True)
+        self.command_types_form.addRow(self.enable_gui_commands_checkbox)
+
+        self.enable_panel_commands_checkbox = QCheckBox("启用Soudpad控制")
+        self.enable_panel_commands_checkbox.setChecked(True)
+        self.command_types_form.addRow(self.enable_panel_commands_checkbox)
+
+        self.enable_interaction_commands_checkbox = QCheckBox("启用交互方式控制")
+        self.enable_interaction_commands_checkbox.setChecked(True)
+        self.command_types_form.addRow(self.enable_interaction_commands_checkbox)
+
+        self.enable_ton_commands_checkbox = QCheckBox("启用游戏联动控制")
+        self.enable_ton_commands_checkbox.setChecked(True)
+        self.command_types_form.addRow(self.enable_ton_commands_checkbox)
+
+        self.command_types_group.setLayout(self.command_types_form)
+        self.layout.addRow(self.command_types_group)
+
         # Connect UI to controller update methods
         self.strength_step_spinbox.valueChanged.connect(self.update_strength_step)
         self.enable_panel_control_checkbox.stateChanged.connect(self.update_panel_control)
@@ -106,6 +131,12 @@ class ControllerSettingsTab(QWidget):
         self.pulse_mode_a_combobox.currentIndexChanged.connect(self.update_pulse_mode_a)
         self.pulse_mode_b_combobox.currentIndexChanged.connect(self.update_pulse_mode_b)
         self.enable_chatbox_status_checkbox.stateChanged.connect(self.update_chatbox_status)
+        
+        # 连接命令类型控制复选框
+        self.enable_gui_commands_checkbox.stateChanged.connect(self.update_gui_commands_state)
+        self.enable_panel_commands_checkbox.stateChanged.connect(self.update_panel_commands_state)
+        self.enable_interaction_commands_checkbox.stateChanged.connect(self.update_interaction_commands_state)
+        self.enable_ton_commands_checkbox.stateChanged.connect(self.update_ton_commands_state)
 
     def bind_controller_settings(self):
         """将GUI设置与DGLabController变量绑定"""
@@ -118,6 +149,13 @@ class ControllerSettingsTab(QWidget):
             self.dg_controller.pulse_mode_a = self.pulse_mode_a_combobox.currentIndex()
             self.dg_controller.pulse_mode_b = self.pulse_mode_b_combobox.currentIndex()
             self.dg_controller.enable_chatbox_status = self.enable_chatbox_status_checkbox.isChecked()
+            
+            # 绑定命令类型控制状态
+            self.dg_controller.enable_gui_commands = self.enable_gui_commands_checkbox.isChecked()
+            self.dg_controller.enable_panel_commands = self.enable_panel_commands_checkbox.isChecked()
+            self.dg_controller.enable_interaction_commands = self.enable_interaction_commands_checkbox.isChecked()
+            self.dg_controller.enable_ton_commands = self.enable_ton_commands_checkbox.isChecked()
+            
             logger.info("DGLabController 参数已绑定")
         else:
             logger.warning("Controller is not initialized yet.")
@@ -266,3 +304,32 @@ class ControllerSettingsTab(QWidget):
                 self.b_channel_slider.blockSignals(False)
                 self.b_channel_label.setText(
                     f"B 通道强度: {self.main_window.controller.last_strength.b} 强度上限: {self.main_window.controller.last_strength.b_limit}  波形: {PULSE_NAME[self.main_window.controller.pulse_mode_b]}")
+
+    # 命令类型控制方法
+    def update_gui_commands_state(self, state):
+        """更新GUI命令启用状态"""
+        if self.main_window.controller:
+            controller = self.main_window.controller
+            controller.enable_gui_commands = bool(state)
+            logger.info(f"GUI命令已{'启用' if state else '禁用'}")
+            
+    def update_panel_commands_state(self, state):
+        """更新面板命令启用状态"""
+        if self.main_window.controller:
+            controller = self.main_window.controller
+            controller.enable_panel_commands = bool(state)
+            logger.info(f"面板命令已{'启用' if state else '禁用'}")
+            
+    def update_interaction_commands_state(self, state):
+        """更新交互命令启用状态"""
+        if self.main_window.controller:
+            controller = self.main_window.controller
+            controller.enable_interaction_commands = bool(state)
+            logger.info(f"交互命令已{'启用' if state else '禁用'}")
+            
+    def update_ton_commands_state(self, state):
+        """更新游戏联动命令启用状态"""
+        if self.main_window.controller:
+            controller = self.main_window.controller
+            controller.enable_ton_commands = bool(state)
+            logger.info(f"游戏联动命令已{'启用' if state else '禁用'}")

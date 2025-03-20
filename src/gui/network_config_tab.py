@@ -268,6 +268,7 @@ class NetworkConfigTab(QWidget):
             """)
             # 启用 DGLabController 设置
             self.main_window.controller_settings_tab.controller_group.setEnabled(True)  # 启用控制器设置
+            self.main_window.controller_settings_tab.command_types_group.setEnabled(True)  # 启用命令类型控制
             self.main_window.ton_damage_system_tab.damage_group.setEnabled(True)
         else:
             self.connection_status_label.setText("未连接")
@@ -281,6 +282,7 @@ class NetworkConfigTab(QWidget):
             """)
             # 禁用 DGLabController 设置
             self.main_window.controller_settings_tab.controller_group.setEnabled(False)  # 禁用控制器设置
+            self.main_window.controller_settings_tab.command_types_group.setEnabled(False)  # 禁用命令类型控制
             self.main_window.ton_damage_system_tab.damage_group.setEnabled(False)
         self.connection_status_label.adjustSize()  # 根据内容调整标签大小
 
