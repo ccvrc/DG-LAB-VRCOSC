@@ -60,7 +60,7 @@ class DGLabController:
         self.fire_mode_origin_strength_a = 0  # 进入一键开火模式前的强度值
         self.fire_mode_origin_strength_b = 0
         self.enable_chatbox_status = 1  # ChatBox 发送状态 (双向，游戏内暂无直接开关变量)
-        self.previous_chatbox_status = 1  # ChatBox 状态记录, 关闭 ChatBox 后进行内容清除
+        self.previous_chatbox_status = 1
         # 定时任务
         self.send_status_task = asyncio.create_task(self.periodic_status_update())  # 启动ChatBox发送任务
         self.send_pulse_task = asyncio.create_task(self.periodic_send_pulse_data())  # 启动设定波形发送任务
@@ -84,7 +84,6 @@ class DGLabController:
             CommandType.PANEL_COMMAND: 0.1,  # 面板命令冷却
             CommandType.INTERACTION_COMMAND: 0.05,  # 交互命令冷却
             CommandType.TON_COMMAND: 0.2,  # 游戏联动冷却
-            CommandType.PERIODIC_UPDATE: 1.0,  # 周期更新冷却
         }
         
         # 通道状态模型
@@ -126,7 +125,10 @@ class DGLabController:
             await asyncio.sleep(3)  # 每 x 秒发送一次
 
     async def periodic_send_pulse_data(self):
-        """顺序发送波形，定期刷新设备波形数据"""
+        """
+        波形维护后台任务：当波形超过3秒未被更新且没有待处理的波形命令时发送更新
+        该任务不再通过命令队列执行，而是直接作为系统维护任务运行
+        """
         while True:
             try:
                 if self.last_strength:  # 当收到设备状态后再发送波形
@@ -135,10 +137,16 @@ class DGLabController:
                     # 使用锁防止并发访问
                     async with self.pulse_update_lock:
                         # 检查A通道是否需要更新（距离上次更新时间超过3秒）
-                        if Channel.A not in self.pulse_last_update_time or \
-                           current_time - self.pulse_last_update_time.get(Channel.A, 0) > 3:
+                        # 只有在没有待处理的波形命令时才发送更新
+                        channel_a_has_pending_command = any(
+                            cmd.channel == Channel.A and cmd.source_id.startswith("pulse_command_")
+                            for cmd in list(self.command_queue._queue)
+                        )
+                        
+                        if (Channel.A not in self.pulse_last_update_time or 
+                            current_time - self.pulse_last_update_time.get(Channel.A, 0) > 3) and not channel_a_has_pending_command:
                             
-                            logger.info(f"周期更新A通道波形: {PULSE_NAME[self.pulse_mode_a]}")
+                            logger.info(f"波形维护：更新A通道波形: {PULSE_NAME[self.pulse_mode_a]}")
                             # A 通道发送当前设定波形
                             specific_pulse_data_a = PULSE_DATA[PULSE_NAME[self.pulse_mode_a]]
                             await self.client.clear_pulses(Channel.A)
@@ -154,10 +162,16 @@ class DGLabController:
                         await asyncio.sleep(0.1)
                         
                         # 检查B通道是否需要更新（距离上次更新时间超过3秒）
-                        if Channel.B not in self.pulse_last_update_time or \
-                           current_time - self.pulse_last_update_time.get(Channel.B, 0) > 3:
+                        # 只有在没有待处理的波形命令时才发送更新
+                        channel_b_has_pending_command = any(
+                            cmd.channel == Channel.B and cmd.source_id.startswith("pulse_command_")
+                            for cmd in list(self.command_queue._queue)
+                        )
+                        
+                        if (Channel.B not in self.pulse_last_update_time or 
+                            current_time - self.pulse_last_update_time.get(Channel.B, 0) > 3) and not channel_b_has_pending_command:
                             
-                            logger.info(f"周期更新B通道波形: {PULSE_NAME[self.pulse_mode_b]}")
+                            logger.info(f"波形维护：更新B通道波形: {PULSE_NAME[self.pulse_mode_b]}")
                             # B 通道发送当前设定波形
                             specific_pulse_data_b = PULSE_DATA[PULSE_NAME[self.pulse_mode_b]]
                             await self.client.clear_pulses(Channel.B)
@@ -171,7 +185,7 @@ class DGLabController:
             except Exception as e:
                 logger.error(f"periodic_send_pulse_data 任务中发生错误: {e}")
                 await asyncio.sleep(5)  # 延迟后重试
-            await asyncio.sleep(3)  # 每 x 秒发送一次
+            await asyncio.sleep(3)  # 每 x 秒检查一次
 
     async def process_osc_commands(self):
         """处理OSC命令队列，合并相同地址的命令，保留最新值"""
@@ -264,6 +278,7 @@ class DGLabController:
                 if button_num >= 7 and button_num <= 22:  # 波形选择按钮
                     pulse_index = button_num - 7
                     if value:  # 按下事件
+                        # 使用特定前缀标识波形命令
                         await self.set_pulse_data(value, self.current_select_channel, pulse_index)
         except Exception as e:
             logger.error(f"处理面板 OSC 消息出错: {e}", exc_info=True)
@@ -300,6 +315,7 @@ class DGLabController:
     async def set_pulse_data(self, value, channel, pulse_index):
         """
         立即切换为当前指定波形，清空原有波形
+        通过命令队列进行波形更新
         """
         if value is not None and not value:  # 仅处理按下事件，忽略释放事件，但允许None值(来自UI)
             return
@@ -316,6 +332,9 @@ class DGLabController:
                     self.main_window.controller_settings_tab.pulse_mode_a_combobox.setCurrentIndex(pulse_index)
                 finally:
                     self.main_window.controller_settings_tab.pulse_mode_a_combobox.blockSignals(False)
+            
+            # 更新通道状态
+            self.channel_states[Channel.A]["pulse_mode"] = pulse_index
         else:
             old_mode = self.pulse_mode_b
             self.pulse_mode_b = pulse_index
@@ -327,6 +346,9 @@ class DGLabController:
                     self.main_window.controller_settings_tab.pulse_mode_b_combobox.setCurrentIndex(pulse_index)
                 finally:
                     self.main_window.controller_settings_tab.pulse_mode_b_combobox.blockSignals(False)
+            
+            # 更新通道状态
+            self.channel_states[Channel.B]["pulse_mode"] = pulse_index
         
         # 如果模式未变，不进行波形更新
         if value is not None and old_mode == pulse_index:  # 仅对外部触发的检查模式变化

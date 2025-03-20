@@ -12,7 +12,7 @@ command_types.py - 命令类型和命令队列处理
 5. 通道状态模型记录每个通道的当前状态，用于决策和状态显示
 
 这种设计确保了:
-- 优先级明确：GUI命令 > 面板命令 > 交互命令 > 游戏联动命令 > 周期性更新
+- 优先级明确：GUI命令 > 面板命令 > 交互命令 > 游戏联动命令
 - 流向清晰：所有命令通过统一接口进入系统，按优先级处理
 - 冲突解决：高优先级命令可覆盖低优先级命令的效果
 - 状态一致：所有输出通过统一的处理器执行，确保设备状态与内部模型一致
@@ -25,7 +25,6 @@ class CommandType(Enum):
     PANEL_COMMAND = 1    # 面板命令
     INTERACTION_COMMAND = 2  # 交互命令
     TON_COMMAND = 3      # 游戏联动命令
-    PERIODIC_UPDATE = 4  # 周期性更新，优先级最低
 
 class ChannelCommand:
     def __init__(self, command_type, channel, operation, value, source_id=None, timestamp=None):
