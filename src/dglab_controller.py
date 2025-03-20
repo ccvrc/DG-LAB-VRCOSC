@@ -126,8 +126,8 @@ class DGLabController:
 
     async def periodic_send_pulse_data(self):
         """
-        波形维护后台任务：当波形超过3秒未被更新且没有待处理的波形命令时发送更新
-        该任务不再通过命令队列执行，而是直接作为系统维护任务运行
+        波形维护后台任务：当波形超过3秒未被更新时发送更新
+        该任务直接作为系统维护任务运行，不通过命令队列
         """
         while True:
             try:
@@ -137,14 +137,8 @@ class DGLabController:
                     # 使用锁防止并发访问
                     async with self.pulse_update_lock:
                         # 检查A通道是否需要更新（距离上次更新时间超过3秒）
-                        # 只有在没有待处理的波形命令时才发送更新
-                        channel_a_has_pending_command = any(
-                            cmd.channel == Channel.A and cmd.source_id.startswith("pulse_command_")
-                            for cmd in list(self.command_queue._queue)
-                        )
-                        
-                        if (Channel.A not in self.pulse_last_update_time or 
-                            current_time - self.pulse_last_update_time.get(Channel.A, 0) > 3) and not channel_a_has_pending_command:
+                        if Channel.A not in self.pulse_last_update_time or \
+                           current_time - self.pulse_last_update_time.get(Channel.A, 0) > 3:
                             
                             logger.info(f"波形维护：更新A通道波形: {PULSE_NAME[self.pulse_mode_a]}")
                             # A 通道发送当前设定波形
@@ -162,14 +156,8 @@ class DGLabController:
                         await asyncio.sleep(0.1)
                         
                         # 检查B通道是否需要更新（距离上次更新时间超过3秒）
-                        # 只有在没有待处理的波形命令时才发送更新
-                        channel_b_has_pending_command = any(
-                            cmd.channel == Channel.B and cmd.source_id.startswith("pulse_command_")
-                            for cmd in list(self.command_queue._queue)
-                        )
-                        
-                        if (Channel.B not in self.pulse_last_update_time or 
-                            current_time - self.pulse_last_update_time.get(Channel.B, 0) > 3) and not channel_b_has_pending_command:
+                        if Channel.B not in self.pulse_last_update_time or \
+                           current_time - self.pulse_last_update_time.get(Channel.B, 0) > 3:
                             
                             logger.info(f"波形维护：更新B通道波形: {PULSE_NAME[self.pulse_mode_b]}")
                             # B 通道发送当前设定波形
@@ -315,7 +303,11 @@ class DGLabController:
     async def set_pulse_data(self, value, channel, pulse_index):
         """
         立即切换为当前指定波形，清空原有波形
-        通过命令队列进行波形更新
+        直接对设备发送波形数据，确保立即生效
+        
+        :param value: 触发值，用于按钮事件判断，None表示来自UI的调用
+        :param channel: 要设置波形的通道
+        :param pulse_index: 波形索引
         """
         if value is not None and not value:  # 仅处理按下事件，忽略释放事件，但允许None值(来自UI)
             return
@@ -358,9 +350,9 @@ class DGLabController:
         # 使用锁确保波形更新的原子性
         async with self.pulse_update_lock:
             try:
+                logger.info(f"发送波形 {channel} {PULSE_NAME[pulse_index]}")
                 await self.client.clear_pulses(channel)  # 清空当前的生效的波形队列
                 
-                logger.info(f"开始发送波形 {channel} {PULSE_NAME[pulse_index]}")
                 specific_pulse_data = PULSE_DATA[PULSE_NAME[pulse_index]]
                 
                 if PULSE_NAME[pulse_index] == '压缩' or PULSE_NAME[pulse_index] == '节奏步伐':
