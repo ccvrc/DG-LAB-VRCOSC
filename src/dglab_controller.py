@@ -362,11 +362,19 @@ class DGLabController:
             if channel == Channel.A and self.is_dynamic_bone_mode_a:
                 final_output_a = math.ceil(
                     self.map_value(value, self.last_strength.a_limit * 0.2, self.last_strength.a_limit))
-                await self.client.set_strength(channel, StrengthOperationType.SET_TO, final_output_a)
+                await self.add_command(CommandType.INTERACTION_COMMAND,
+                                     channel,
+                                     StrengthOperationType.SET_TO,
+                                     final_output_a,
+                                     "interaction_float_output")
             elif channel == Channel.B and self.is_dynamic_bone_mode_b:
                 final_output_b = math.ceil(
                     self.map_value(value, self.last_strength.b_limit * 0.2, self.last_strength.b_limit))
-                await self.client.set_strength(channel, StrengthOperationType.SET_TO, final_output_b)
+                await self.add_command(CommandType.INTERACTION_COMMAND,
+                                     channel,
+                                     StrengthOperationType.SET_TO,
+                                     final_output_b,
+                                     "interaction_float_output")
 
     async def chatbox_toggle_timer_handle(self):
         """1秒计时器 计时结束后切换 Chatbox 状态"""
