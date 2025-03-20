@@ -167,6 +167,13 @@ class LogViewerTab(QWidget):
                 f"一键开火强度: {controller.fire_mode_strength_step}\n"
                 f"ChatBox 状态: {controller.enable_chatbox_status}\n"
                 f"当前选择通道: {'A' if controller.current_select_channel == Channel.A else 'B'}\n"
+                f"\n== 命令类型状态 ==\n"
+                f"GUI命令: {'启用' if controller.enable_gui_commands else '禁用'}\n"
+                f"面板命令: {'启用' if controller.enable_panel_commands else '禁用'}\n"
+                f"交互命令: {'启用' if controller.enable_interaction_commands else '禁用'}\n"
+                f"  A通道交互: {'启用' if controller.is_dynamic_bone_mode_a else '禁用'}\n"
+                f"  B通道交互: {'启用' if controller.is_dynamic_bone_mode_b else '禁用'}\n"
+                f"游戏联动命令: {'启用' if controller.enable_ton_commands else '禁用'}\n"
             )
             
             # 命令队列状态

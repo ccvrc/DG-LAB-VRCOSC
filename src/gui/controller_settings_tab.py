@@ -62,24 +62,6 @@ class ControllerSettingsTab(QWidget):
         self.enable_chatbox_status_checkbox.setChecked(False)
         self.controller_form.addRow(self.enable_chatbox_status_checkbox)
 
-        # 创建水平布局用于放置 dynamic_bone_mode 和 current_select_channel 显示
-        dynamic_bone_layout = QHBoxLayout()
-
-        # 动骨模式选择
-        self.dynamic_bone_mode_a_checkbox = QCheckBox("A通道交互模式")
-        self.dynamic_bone_mode_b_checkbox = QCheckBox("B通道交互模式")
-
-        # 添加复选框到水平布局
-        dynamic_bone_layout.addWidget(self.dynamic_bone_mode_a_checkbox)
-        dynamic_bone_layout.addWidget(self.dynamic_bone_mode_b_checkbox)
-
-        # 在同行右侧增加 current_select_channel 显示标签
-        self.current_channel_label = QLabel("面板当前控制通道: 未设置")
-        dynamic_bone_layout.addWidget(self.current_channel_label)
-
-        # 将水平布局添加到主布局
-        self.controller_form.addRow(dynamic_bone_layout)
-
         # 波形模式选择
         self.pulse_mode_a_combobox = QComboBox()
         self.pulse_mode_b_combobox = QComboBox()
@@ -108,13 +90,33 @@ class ControllerSettingsTab(QWidget):
         self.enable_gui_commands_checkbox.setChecked(True)
         self.command_types_form.addRow(self.enable_gui_commands_checkbox)
 
-        self.enable_panel_commands_checkbox = QCheckBox("启用Soudpad控制")
+        # 创建水平布局，包含面板控制复选框和当前通道显示
+        panel_layout = QHBoxLayout()
+        
+        # 添加面板控制复选框
+        self.enable_panel_commands_checkbox = QCheckBox("启用Soundpad控制")
         self.enable_panel_commands_checkbox.setChecked(True)
-        self.command_types_form.addRow(self.enable_panel_commands_checkbox)
+        panel_layout.addWidget(self.enable_panel_commands_checkbox)
+        
+        # 添加当前选择通道显示标签
+        self.current_channel_label = QLabel("面板当前控制通道: 未设置")
+        panel_layout.addWidget(self.current_channel_label)
+        
+        # 将水平布局添加到主布局
+        self.command_types_form.addRow(panel_layout)
 
-        self.enable_interaction_commands_checkbox = QCheckBox("启用交互方式控制")
-        self.enable_interaction_commands_checkbox.setChecked(True)
-        self.command_types_form.addRow(self.enable_interaction_commands_checkbox)
+        # 将交互命令拆分为A/B通道独立控制
+        interaction_layout = QHBoxLayout()
+        
+        self.enable_interaction_commands_a_checkbox = QCheckBox("A通道交互控制")
+        self.enable_interaction_commands_a_checkbox.setChecked(True)
+        interaction_layout.addWidget(self.enable_interaction_commands_a_checkbox)
+        
+        self.enable_interaction_commands_b_checkbox = QCheckBox("B通道交互控制")
+        self.enable_interaction_commands_b_checkbox.setChecked(True)
+        interaction_layout.addWidget(self.enable_interaction_commands_b_checkbox)
+        
+        self.command_types_form.addRow("启用交互方式控制:", interaction_layout)
 
         self.enable_ton_commands_checkbox = QCheckBox("启用游戏联动控制")
         self.enable_ton_commands_checkbox.setChecked(True)
@@ -126,8 +128,6 @@ class ControllerSettingsTab(QWidget):
         # Connect UI to controller update methods
         self.strength_step_spinbox.valueChanged.connect(self.update_strength_step)
         self.enable_panel_control_checkbox.stateChanged.connect(self.update_panel_control)
-        self.dynamic_bone_mode_a_checkbox.stateChanged.connect(self.update_dynamic_bone_mode_a)
-        self.dynamic_bone_mode_b_checkbox.stateChanged.connect(self.update_dynamic_bone_mode_b)
         self.pulse_mode_a_combobox.currentIndexChanged.connect(self.update_pulse_mode_a)
         self.pulse_mode_b_combobox.currentIndexChanged.connect(self.update_pulse_mode_b)
         self.enable_chatbox_status_checkbox.stateChanged.connect(self.update_chatbox_status)
@@ -135,7 +135,8 @@ class ControllerSettingsTab(QWidget):
         # 连接命令类型控制复选框
         self.enable_gui_commands_checkbox.stateChanged.connect(self.update_gui_commands_state)
         self.enable_panel_commands_checkbox.stateChanged.connect(self.update_panel_commands_state)
-        self.enable_interaction_commands_checkbox.stateChanged.connect(self.update_interaction_commands_state)
+        self.enable_interaction_commands_a_checkbox.stateChanged.connect(self.update_interaction_commands_a_state)
+        self.enable_interaction_commands_b_checkbox.stateChanged.connect(self.update_interaction_commands_b_state)
         self.enable_ton_commands_checkbox.stateChanged.connect(self.update_ton_commands_state)
 
     def bind_controller_settings(self):
@@ -144,8 +145,8 @@ class ControllerSettingsTab(QWidget):
             self.dg_controller = self.main_window.controller
             self.dg_controller.fire_mode_strength_step = self.strength_step_spinbox.value()
             self.dg_controller.enable_panel_control = self.enable_panel_control_checkbox.isChecked()
-            self.dg_controller.is_dynamic_bone_mode_a = self.dynamic_bone_mode_a_checkbox.isChecked()
-            self.dg_controller.is_dynamic_bone_mode_b = self.dynamic_bone_mode_b_checkbox.isChecked()
+            self.dg_controller.is_dynamic_bone_mode_a = self.enable_interaction_commands_a_checkbox.isChecked()
+            self.dg_controller.is_dynamic_bone_mode_b = self.enable_interaction_commands_b_checkbox.isChecked()
             self.dg_controller.pulse_mode_a = self.pulse_mode_a_combobox.currentIndex()
             self.dg_controller.pulse_mode_b = self.pulse_mode_b_combobox.currentIndex()
             self.dg_controller.enable_chatbox_status = self.enable_chatbox_status_checkbox.isChecked()
@@ -153,7 +154,8 @@ class ControllerSettingsTab(QWidget):
             # 绑定命令类型控制状态
             self.dg_controller.enable_gui_commands = self.enable_gui_commands_checkbox.isChecked()
             self.dg_controller.enable_panel_commands = self.enable_panel_commands_checkbox.isChecked()
-            self.dg_controller.enable_interaction_commands = self.enable_interaction_commands_checkbox.isChecked()
+            self.dg_controller.enable_interaction_commands = (self.enable_interaction_commands_a_checkbox.isChecked() or 
+                                                            self.enable_interaction_commands_b_checkbox.isChecked())
             self.dg_controller.enable_ton_commands = self.enable_ton_commands_checkbox.isChecked()
             
             logger.info("DGLabController 参数已绑定")
@@ -178,18 +180,6 @@ class ControllerSettingsTab(QWidget):
             self.dg_controller.enable_panel_control = bool(state)
             logger.info(f"Panel control enabled: {self.dg_controller.enable_panel_control}")
             self.dg_controller.send_value_to_vrchat("/avatar/parameters/SoundPad/PanelControl", bool(state))
-
-    def update_dynamic_bone_mode_a(self, state):
-        if self.main_window.controller:
-            controller = self.main_window.controller
-            self.dg_controller.is_dynamic_bone_mode_a = bool(state)
-            logger.info(f"Dynamic bone mode A: {self.dg_controller.is_dynamic_bone_mode_a}")
-
-    def update_dynamic_bone_mode_b(self, state):
-        if self.main_window.controller:
-            controller = self.main_window.controller
-            self.dg_controller.is_dynamic_bone_mode_b = bool(state)
-            logger.info(f"Dynamic bone mode B: {self.dg_controller.is_dynamic_bone_mode_b}")
 
     def update_pulse_mode_a(self, index):
         """更新 A 通道脉冲模式"""
@@ -320,13 +310,24 @@ class ControllerSettingsTab(QWidget):
             controller.enable_panel_commands = bool(state)
             logger.info(f"面板命令已{'启用' if state else '禁用'}")
             
-    def update_interaction_commands_state(self, state):
-        """更新交互命令启用状态"""
+    def update_interaction_commands_a_state(self, state):
+        """更新A通道交互命令启用状态"""
         if self.main_window.controller:
             controller = self.main_window.controller
-            controller.enable_interaction_commands = bool(state)
-            logger.info(f"交互命令已{'启用' if state else '禁用'}")
-            
+            controller.is_dynamic_bone_mode_a = bool(state)  # 更新动骨模式状态
+            # 更新总体交互命令状态
+            controller.enable_interaction_commands = (bool(state) or self.enable_interaction_commands_b_checkbox.isChecked())
+            logger.info(f"A通道交互命令已{'启用' if state else '禁用'}")
+    
+    def update_interaction_commands_b_state(self, state):
+        """更新B通道交互命令启用状态"""
+        if self.main_window.controller:
+            controller = self.main_window.controller
+            controller.is_dynamic_bone_mode_b = bool(state)  # 更新动骨模式状态
+            # 更新总体交互命令状态
+            controller.enable_interaction_commands = (self.enable_interaction_commands_a_checkbox.isChecked() or bool(state))
+            logger.info(f"B通道交互命令已{'启用' if state else '禁用'}")
+    
     def update_ton_commands_state(self, state):
         """更新游戏联动命令启用状态"""
         if self.main_window.controller:
