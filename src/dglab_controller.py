@@ -67,7 +67,6 @@ class DGLabController:
         # 按键延迟触发计时
         self.chatbox_toggle_timer = None
         self.set_mode_timer = None
-        #TODO: 增加状态消息OSC发送, 比使用 ChatBox 反馈更快
         # 回报速率设置为 1HZ，Updates every 0.1 to 1 seconds as needed based on parameter changes (1 to 10 updates per second), but you shouldn't rely on it for fast sync.
         self.pulse_update_lock = asyncio.Lock()  # 添加波形更新锁
         self.pulse_last_update_time = {}  # 记录每个通道最后波形更新时间
@@ -115,7 +114,7 @@ class DGLabController:
     async def periodic_status_update(self):
         """
         周期性通过 ChatBox 发送当前的配置状态
-        TODO: ChatBox 消息发送的速率限制是多少？当前的设置还是会撞到限制..
+        TODO: ChatBox 消息发送的速率限制是多少？当前的设置还是可能会撞到限制..
         """
         while True:
             try:
@@ -416,7 +415,6 @@ class DGLabController:
     async def toggle_chatbox(self, value):
         """
         开关 ChatBox 内容发送
-        TODO: 修改为按键按下 3 秒后触发 enable_chatbox_status 的变更
         """
         if value == 1: # 按下按键
             if self.chatbox_toggle_timer is not None:
@@ -491,47 +489,6 @@ class DGLabController:
         if self.main_window:
             self.enable_interaction_commands = self.is_dynamic_bone_mode_a or self.is_dynamic_bone_mode_b
 
-    async def reset_strength(self, value, channel):
-        """
-        重置通道强度为 0
-        TODO: DELETE
-        """
-        if not value:  # 只处理按下事件
-            return
-        
-        await self.add_command(CommandType.PANEL_COMMAND,
-                              channel,
-                              StrengthOperationType.SET_TO,
-                              0,
-                              "panel_reset")
-
-    async def increase_strength(self, value, channel):
-        """
-        增加通道强度
-        TODO: DELETE
-        """
-        if not value:  # 只处理按下事件
-            return
-        
-        await self.add_command(CommandType.PANEL_COMMAND,
-                              channel,
-                              StrengthOperationType.INCREASE,
-                              self.fire_mode_strength_step,
-                              "panel_increase")
-
-    async def decrease_strength(self, value, channel):
-        """
-        减少通道强度
-        TODO: DELETE
-        """
-        if not value:  # 只处理按下事件
-            return
-        
-        await self.add_command(CommandType.PANEL_COMMAND,
-                              channel,
-                              StrengthOperationType.DECREASE,
-                              self.fire_mode_strength_step,
-                              "panel_decrease")
 
     async def strength_fire_mode(self, value, channel, strength, last_strength_mod=None):
         """通过命令队列处理一键开火命令"""
