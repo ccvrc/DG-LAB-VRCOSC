@@ -294,21 +294,25 @@ class DGLabController:
             # 修改交互数据处理逻辑
             for channel_name in channels:
                 if channel_name == "A" and self.enable_interaction_mode_a:
-                    # 计算映射值
-                    mapped_value = int(value * self.last_strength.a_limit if self.last_strength else 100)
-                    await self.add_command(CommandType.INTERACTION_COMMAND,
-                                         Channel.A,
-                                         StrengthOperationType.SET_TO,
-                                         mapped_value,
-                                         f"interaction_{address}")
+                    # 只在 last_strength 存在时才发送交互命令
+                    if self.last_strength:
+                        # 计算映射值
+                        mapped_value = int(value * self.last_strength.a_limit)
+                        await self.add_command(CommandType.INTERACTION_COMMAND,
+                                             Channel.A,
+                                             StrengthOperationType.SET_TO,
+                                             mapped_value,
+                                             f"interaction_{address}")
                 elif channel_name == "B" and self.enable_interaction_mode_b:
-                    # 计算映射值
-                    mapped_value = int(value * self.last_strength.b_limit if self.last_strength else 100)
-                    await self.add_command(CommandType.INTERACTION_COMMAND,
-                                         Channel.B,
-                                         StrengthOperationType.SET_TO,
-                                         mapped_value,
-                                         f"interaction_{address}")
+                    # 只在 last_strength 存在时才发送交互命令
+                    if self.last_strength:
+                        # 计算映射值
+                        mapped_value = int(value * self.last_strength.b_limit)
+                        await self.add_command(CommandType.INTERACTION_COMMAND,
+                                             Channel.B,
+                                             StrengthOperationType.SET_TO,
+                                             mapped_value,
+                                             f"interaction_{address}")
         except Exception as e:
             logger.error(f"处理交互 OSC 消息出错: {e}", exc_info=True)
 
