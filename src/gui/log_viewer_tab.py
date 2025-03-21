@@ -171,8 +171,8 @@ class LogViewerTab(QWidget):
                 f"GUI命令: {'启用' if controller.enable_gui_commands else '禁用'}\n"
                 f"面板命令: {'启用' if controller.enable_panel_commands else '禁用'}\n"
                 f"交互命令: {'启用' if controller.enable_interaction_commands else '禁用'}\n"
-                f"  A通道交互: {'启用' if controller.is_dynamic_bone_mode_a else '禁用'}\n"
-                f"  B通道交互: {'启用' if controller.is_dynamic_bone_mode_b else '禁用'}\n"
+                f"  A通道交互: {'启用' if controller.enable_interaction_mode_a else '禁用'}\n"
+                f"  B通道交互: {'启用' if controller.enable_interaction_mode_b else '禁用'}\n"
                 f"游戏联动命令: {'启用' if controller.enable_ton_commands else '禁用'}\n"
             )
             

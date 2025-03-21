@@ -145,8 +145,6 @@ class ControllerSettingsTab(QWidget):
             self.dg_controller = self.main_window.controller
             self.dg_controller.fire_mode_strength_step = self.strength_step_spinbox.value()
             self.dg_controller.enable_panel_control = self.enable_panel_control_checkbox.isChecked()
-            self.dg_controller.is_dynamic_bone_mode_a = self.enable_interaction_commands_a_checkbox.isChecked()
-            self.dg_controller.is_dynamic_bone_mode_b = self.enable_interaction_commands_b_checkbox.isChecked()
             self.dg_controller.pulse_mode_a = self.pulse_mode_a_combobox.currentIndex()
             self.dg_controller.pulse_mode_b = self.pulse_mode_b_combobox.currentIndex()
             self.dg_controller.enable_chatbox_status = self.enable_chatbox_status_checkbox.isChecked()
@@ -179,14 +177,16 @@ class ControllerSettingsTab(QWidget):
             controller = self.main_window.controller
             self.dg_controller.enable_panel_control = bool(state)
             logger.info(f"Panel control enabled: {self.dg_controller.enable_panel_control}")
-            self.dg_controller.send_value_to_vrchat("/avatar/parameters/SoundPad/PanelControl", bool(state))
+            asyncio.run_coroutine_threadsafe(
+                self.dg_controller.send_value_to_vrchat("/avatar/parameters/SoundPad/PanelControl", bool(state)),
+                asyncio.get_event_loop()
+            )
 
     def update_pulse_mode_a(self, index):
         """更新 A 通道脉冲模式"""
         if self.main_window.controller:
             controller = self.main_window.controller
             controller.pulse_mode_a = index
-            controller.channel_states[Channel.A]["pulse_mode"] = index
             logger.info(f"更新 A 通道脉冲模式为 {PULSE_NAME[index]}")
             # 脉冲模式已更新，会在下一次周期任务中自动应用
 
@@ -195,7 +195,6 @@ class ControllerSettingsTab(QWidget):
         if self.main_window.controller:
             controller = self.main_window.controller
             controller.pulse_mode_b = index
-            controller.channel_states[Channel.B]["pulse_mode"] = index
             logger.info(f"更新 B 通道脉冲模式为 {PULSE_NAME[index]}")
             # 脉冲模式已更新，会在下一次周期任务中自动应用
 
@@ -314,7 +313,7 @@ class ControllerSettingsTab(QWidget):
         """更新A通道交互命令启用状态"""
         if self.main_window.controller:
             controller = self.main_window.controller
-            controller.is_dynamic_bone_mode_a = bool(state)  # 更新动骨模式状态
+            controller.enable_interaction_mode_a = bool(state)  # 更新为新的交互模式状态变量
             # 更新总体交互命令状态
             controller.enable_interaction_commands = (bool(state) or self.enable_interaction_commands_b_checkbox.isChecked())
             logger.info(f"A通道交互命令已{'启用' if state else '禁用'}")
@@ -323,7 +322,7 @@ class ControllerSettingsTab(QWidget):
         """更新B通道交互命令启用状态"""
         if self.main_window.controller:
             controller = self.main_window.controller
-            controller.is_dynamic_bone_mode_b = bool(state)  # 更新动骨模式状态
+            controller.enable_interaction_mode_b = bool(state)  # 更新为新的交互模式状态变量
             # 更新总体交互命令状态
             controller.enable_interaction_commands = (self.enable_interaction_commands_a_checkbox.isChecked() or bool(state))
             logger.info(f"B通道交互命令已{'启用' if state else '禁用'}")

@@ -48,8 +48,6 @@ class DGLabController:
         self.app_status_online = False  # App 端在线情况
         # 功能控制参数
         self.enable_panel_control = True   # 禁用面板控制功能 (双向)
-        self.is_dynamic_bone_mode_a = False  # Default mode for Channel A (仅程序端)
-        self.is_dynamic_bone_mode_b = False  # Default mode for Channel B (仅程序端)
         self.pulse_mode_a = 0  # pulse mode for Channel A (双向 - 更新名称)
         self.pulse_mode_b = 0  # pulse mode for Channel B (双向 - 更新名称)
         self.current_select_channel = Channel.A  # 游戏内面板控制的通道选择, 默认为 A (双向)
@@ -91,12 +89,16 @@ class DGLabController:
         self.enable_interaction_commands = True  # 默认启用交互命令 
         self.enable_ton_commands = True  # 默认启用游戏联动命令
         
+        # 交互模式控制 - 替代原来的动骨模式标志
+        self.enable_interaction_mode_a = False  # 通道A交互模式开关
+        self.enable_interaction_mode_b = False  # 通道B交互模式开关
+        
         # 通道状态模型
         self.channel_states = {
             Channel.A: {
                 "current_strength": 0,
                 "target_strength": 0,
-                "mode": "panel" if not self.is_dynamic_bone_mode_a else "interaction",
+                "mode": "panel" if not self.enable_interaction_mode_a else "interaction",
                 "pulse_mode": self.pulse_mode_a,
                 "last_command_source": None,
                 "last_command_time": 0,
@@ -104,7 +106,7 @@ class DGLabController:
             Channel.B: {
                 "current_strength": 0,
                 "target_strength": 0,
-                "mode": "panel" if not self.is_dynamic_bone_mode_b else "interaction",
+                "mode": "panel" if not self.enable_interaction_mode_b else "interaction",
                 "pulse_mode": self.pulse_mode_b,
                 "last_command_source": None, 
                 "last_command_time": 0,
@@ -284,9 +286,9 @@ class DGLabController:
             if not channels:
                 return
             
-            # 将物理骨或接触数据转换为命令
+            # 修改交互数据处理逻辑
             for channel_name in channels:
-                if channel_name == "A" and self.is_dynamic_bone_mode_a:
+                if channel_name == "A" and self.enable_interaction_mode_a:
                     # 计算映射值
                     mapped_value = int(value * self.last_strength.a_limit if self.last_strength else 100)
                     await self.add_command(CommandType.INTERACTION_COMMAND,
@@ -294,7 +296,7 @@ class DGLabController:
                                          StrengthOperationType.SET_TO,
                                          mapped_value,
                                          f"interaction_{address}")
-                elif channel_name == "B" and self.is_dynamic_bone_mode_b:
+                elif channel_name == "B" and self.enable_interaction_mode_b:
                     # 计算映射值
                     mapped_value = int(value * self.last_strength.b_limit if self.last_strength else 100)
                     await self.add_command(CommandType.INTERACTION_COMMAND,
@@ -373,29 +375,6 @@ class DGLabController:
                 if channel in self.pulse_last_update_time:
                     del self.pulse_last_update_time[channel]
 
-    async def set_float_output(self, value, channel):
-        """
-        动骨与碰撞体激活对应通道输出
-        TODO: FIX
-        """
-        if value >= 0.0:
-            if channel == Channel.A and self.is_dynamic_bone_mode_a:
-                final_output_a = math.ceil(
-                    self.map_value(value, self.last_strength.a_limit * 0.2, self.last_strength.a_limit))
-                await self.add_command(CommandType.INTERACTION_COMMAND,
-                                     channel,
-                                     StrengthOperationType.SET_TO,
-                                     final_output_a,
-                                     "interaction_float_output")
-            elif channel == Channel.B and self.is_dynamic_bone_mode_b:
-                final_output_b = math.ceil(
-                    self.map_value(value, self.last_strength.b_limit * 0.2, self.last_strength.b_limit))
-                await self.add_command(CommandType.INTERACTION_COMMAND,
-                                     channel,
-                                     StrengthOperationType.SET_TO,
-                                     final_output_b,
-                                     "interaction_float_output")
-
     async def chatbox_toggle_timer_handle(self):
         """1秒计时器 计时结束后切换 Chatbox 状态"""
         await asyncio.sleep(1)
@@ -433,61 +412,61 @@ class DGLabController:
         await asyncio.sleep(1)
 
         if channel == Channel.A:
-            self.is_dynamic_bone_mode_a = not self.is_dynamic_bone_mode_a
-            mode_name = "可交互模式" if self.is_dynamic_bone_mode_a else "面板设置模式"
+            self.enable_interaction_mode_a = not self.enable_interaction_mode_a
+            mode_name = "可交互模式" if self.enable_interaction_mode_a else "面板设置模式"
             logger.info("通道 A 切换为" + mode_name)
             # 更新UI
             if self.main_window:
                 self.main_window.controller_settings_tab.enable_interaction_commands_a_checkbox.blockSignals(True)
-                self.main_window.controller_settings_tab.enable_interaction_commands_a_checkbox.setChecked(self.is_dynamic_bone_mode_a)
+                self.main_window.controller_settings_tab.enable_interaction_commands_a_checkbox.setChecked(self.enable_interaction_mode_a)
                 self.main_window.controller_settings_tab.enable_interaction_commands_a_checkbox.blockSignals(False)
         elif channel == Channel.B:
-            self.is_dynamic_bone_mode_b = not self.is_dynamic_bone_mode_b
-            mode_name = "可交互模式" if self.is_dynamic_bone_mode_b else "面板设置模式"
+            self.enable_interaction_mode_b = not self.enable_interaction_mode_b
+            mode_name = "可交互模式" if self.enable_interaction_mode_b else "面板设置模式"
             logger.info("通道 B 切换为" + mode_name)
             # 更新UI
             if self.main_window:
                 self.main_window.controller_settings_tab.enable_interaction_commands_b_checkbox.blockSignals(True)
-                self.main_window.controller_settings_tab.enable_interaction_commands_b_checkbox.setChecked(self.is_dynamic_bone_mode_b)
+                self.main_window.controller_settings_tab.enable_interaction_commands_b_checkbox.setChecked(self.enable_interaction_mode_b)
                 self.main_window.controller_settings_tab.enable_interaction_commands_b_checkbox.blockSignals(False)
                 
         # 更新总体交互命令启用状态
         if self.main_window:
-            self.enable_interaction_commands = self.is_dynamic_bone_mode_a or self.is_dynamic_bone_mode_b
+            self.enable_interaction_commands = self.enable_interaction_mode_a or self.enable_interaction_mode_b
 
     async def set_mode(self, value, channel):
-        """切换通道的控制模式"""
+        """切换通道面板控制/交互模式"""
         if not value:  # 只处理按下事件
             return
         
         if channel == Channel.A:
-            self.is_dynamic_bone_mode_a = not self.is_dynamic_bone_mode_a
-            mode = "交互控制" if self.is_dynamic_bone_mode_a else "面板控制"
-            self.channel_states[Channel.A]["mode"] = "interaction" if self.is_dynamic_bone_mode_a else "panel"
+            self.enable_interaction_mode_a = not self.enable_interaction_mode_a
+            mode = "交互控制" if self.enable_interaction_mode_a else "面板控制"
+            self.channel_states[Channel.A]["mode"] = "interaction" if self.enable_interaction_mode_a else "panel"
             logger.info(f"切换 A 通道为 {mode} 模式")
-            await self.send_value_to_vrchat("/avatar/parameters/SoundPad/ModeA", int(self.is_dynamic_bone_mode_a))
+            await self.send_value_to_vrchat("/avatar/parameters/SoundPad/ModeA", int(self.enable_interaction_mode_a))
             
             # 更新UI中A通道交互控制复选框
             if self.main_window:
                 self.main_window.controller_settings_tab.enable_interaction_commands_a_checkbox.blockSignals(True)
-                self.main_window.controller_settings_tab.enable_interaction_commands_a_checkbox.setChecked(self.is_dynamic_bone_mode_a)
+                self.main_window.controller_settings_tab.enable_interaction_commands_a_checkbox.setChecked(self.enable_interaction_mode_a)
                 self.main_window.controller_settings_tab.enable_interaction_commands_a_checkbox.blockSignals(False)
         else:
-            self.is_dynamic_bone_mode_b = not self.is_dynamic_bone_mode_b
-            mode = "交互控制" if self.is_dynamic_bone_mode_b else "面板控制"
-            self.channel_states[Channel.B]["mode"] = "interaction" if self.is_dynamic_bone_mode_b else "panel"
+            self.enable_interaction_mode_b = not self.enable_interaction_mode_b
+            mode = "交互控制" if self.enable_interaction_mode_b else "面板控制"
+            self.channel_states[Channel.B]["mode"] = "interaction" if self.enable_interaction_mode_b else "panel"
             logger.info(f"切换 B 通道为 {mode} 模式")
-            await self.send_value_to_vrchat("/avatar/parameters/SoundPad/ModeB", int(self.is_dynamic_bone_mode_b))
+            await self.send_value_to_vrchat("/avatar/parameters/SoundPad/ModeB", int(self.enable_interaction_mode_b))
             
             # 更新UI中B通道交互控制复选框
             if self.main_window:
                 self.main_window.controller_settings_tab.enable_interaction_commands_b_checkbox.blockSignals(True)
-                self.main_window.controller_settings_tab.enable_interaction_commands_b_checkbox.setChecked(self.is_dynamic_bone_mode_b)
+                self.main_window.controller_settings_tab.enable_interaction_commands_b_checkbox.setChecked(self.enable_interaction_mode_b)
                 self.main_window.controller_settings_tab.enable_interaction_commands_b_checkbox.blockSignals(False)
                 
         # 更新总体交互命令启用状态
         if self.main_window:
-            self.enable_interaction_commands = self.is_dynamic_bone_mode_a or self.is_dynamic_bone_mode_b
+            self.enable_interaction_commands = self.enable_interaction_mode_a or self.enable_interaction_mode_b
 
 
     async def strength_fire_mode(self, value, channel, strength, last_strength_mod=None):
@@ -585,8 +564,8 @@ class DGLabController:
         通过 ChatBox 发送当前强度数值
         """
         if self.last_strength:
-            mode_name_a = "交互" if self.is_dynamic_bone_mode_a else "面板"
-            mode_name_b = "交互" if self.is_dynamic_bone_mode_b else "面板"
+            mode_name_a = "交互" if self.enable_interaction_mode_a else "面板"
+            mode_name_b = "交互" if self.enable_interaction_mode_b else "面板"
             channel_strength = f"[A]: {self.last_strength.a} B: {self.last_strength.b}" if self.current_select_channel == Channel.A else f"A: {self.last_strength.a} [B]: {self.last_strength.b}"
             self.send_message_to_vrchat_chatbox(
                 f"MAX A: {self.last_strength.a_limit} B: {self.last_strength.b_limit}\n"
@@ -692,13 +671,19 @@ class DGLabController:
             # 更多面板控制解析...
         elif address.startswith("/avatar/parameters/Contact_"):
             # 交互控制
-            if self.is_dynamic_bone_mode_a and "Channel_A" in address:
+            if self.enable_interaction_mode_a and "Channel_A" in address:
                 await self.add_command(CommandType.INTERACTION_COMMAND,
                                      Channel.A,
                                      StrengthOperationType.SET_TO,
                                      self.map_value(value, 0, self.last_strength.a_limit),
                                      f"interaction_{address}")
-            # 更多交互控制解析...
+            elif self.enable_interaction_mode_b and "Channel_B" in address:
+                await self.add_command(CommandType.INTERACTION_COMMAND,
+                                     Channel.B,
+                                     StrengthOperationType.SET_TO,
+                                     self.map_value(value, 0, self.last_strength.b_limit),
+                                     f"interaction_{address}")
+        # 更多交互控制解析...
 
     def update_strength_from_gui(self, channel, value):
         """处理来自GUI的强度更新"""
@@ -720,9 +705,9 @@ class DGLabController:
             
             # 对所有启用的通道应用伤害
             channels_to_affect = []
-            if self.ton_damage_channel_a:
+            if self.enable_interaction_mode_a:
                 channels_to_affect.append(Channel.A)
-            if self.ton_damage_channel_b:
+            if self.enable_interaction_mode_b:
                 channels_to_affect.append(Channel.B)
             
             # 如果没有启用任何通道，默认使用 A 通道
@@ -746,9 +731,9 @@ class DGLabController:
             
             # 获取启用的通道
             channels_to_affect = []
-            if self.ton_death_channel_a:
+            if self.enable_interaction_mode_a:
                 channels_to_affect.append(Channel.A)
-            if self.ton_death_channel_b:
+            if self.enable_interaction_mode_b:
                 channels_to_affect.append(Channel.B)
             
             # 如果没有启用任何通道，默认使用 A 通道
