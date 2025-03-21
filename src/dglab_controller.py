@@ -230,6 +230,11 @@ class DGLabController:
             elif address == "/avatar/parameters/SoundPad/Volume":
                 self.fire_mode_strength_step = int(value * 100)
                 logger.info(f"更新一键开火强度为 {self.fire_mode_strength_step}")
+                # 更新UI界面
+                if self.main_window and hasattr(self.main_window, 'controller_settings_tab'):
+                    self.main_window.controller_settings_tab.strength_step_spinbox.blockSignals(True)
+                    self.main_window.controller_settings_tab.strength_step_spinbox.setValue(self.fire_mode_strength_step)
+                    self.main_window.controller_settings_tab.strength_step_spinbox.blockSignals(False)
             elif address == "/avatar/parameters/SoundPad/PanelControl":
                 await self.set_panel_control(value)
             
