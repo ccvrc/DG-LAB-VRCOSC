@@ -271,21 +271,40 @@ class DGLabController:
         except Exception as e:
             logger.error(f"处理面板 OSC 消息出错: {e}", exc_info=True)
 
-    async def handle_osc_message_pb(self, address, value, channels=None):
+    async def handle_osc_message_pb(self, address, value, channels=None, mapping_ranges=None):
         """
         处理交互控制的 OSC 消息（物理骨等）
+        
+        :param address: OSC 地址
+        :param value: OSC 数据值 (0-1 之间的浮点数)
+        :param channels: 要应用的通道列表 ["A", "B"]
+        :param mapping_ranges: 映射范围字典 {'A': {'min': 0, 'max': 100}, 'B': {'min': 0, 'max': 100}}
         """
         try:
             if not channels:
                 return
+            
+            # 如果没有提供映射范围，使用默认的 0-100%
+            if mapping_ranges is None:
+                mapping_ranges = {'A': {'min': 0, 'max': 100}, 'B': {'min': 0, 'max': 100}}
             
             # 修改交互数据处理逻辑
             for channel_name in channels:
                 if channel_name == "A" and self.enable_interaction_mode_a:
                     # 只在 last_strength 存在时才发送交互命令
                     if self.last_strength:
-                        # 计算映射值
-                        mapped_value = int(value * self.last_strength.a_limit)
+                        # 获取A通道的映射范围
+                        a_min = mapping_ranges.get('A', {}).get('min', 0) / 100.0
+                        a_max = mapping_ranges.get('A', {}).get('max', 100) / 100.0
+                        
+                        # 确保min <= max
+                        if a_min > a_max:
+                            a_min, a_max = a_max, a_min
+                        
+                        # 在映射范围内进行线性映射
+                        mapped_percent = a_min + (a_max - a_min) * value
+                        mapped_value = int(mapped_percent * self.last_strength.a_limit)
+                        
                         await self.add_command(CommandType.INTERACTION_COMMAND,
                                              Channel.A,
                                              StrengthOperationType.SET_TO,
@@ -294,8 +313,18 @@ class DGLabController:
                 elif channel_name == "B" and self.enable_interaction_mode_b:
                     # 只在 last_strength 存在时才发送交互命令
                     if self.last_strength:
-                        # 计算映射值
-                        mapped_value = int(value * self.last_strength.b_limit)
+                        # 获取B通道的映射范围
+                        b_min = mapping_ranges.get('B', {}).get('min', 0) / 100.0
+                        b_max = mapping_ranges.get('B', {}).get('max', 100) / 100.0
+                        
+                        # 确保min <= max
+                        if b_min > b_max:
+                            b_min, b_max = b_max, b_min
+                        
+                        # 在映射范围内进行线性映射
+                        mapped_percent = b_min + (b_max - b_min) * value
+                        mapped_value = int(mapped_percent * self.last_strength.b_limit)
+                        
                         await self.add_command(CommandType.INTERACTION_COMMAND,
                                              Channel.B,
                                              StrengthOperationType.SET_TO,
