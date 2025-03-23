@@ -149,12 +149,19 @@ class DGLabController:
                             specific_pulse_data_a = PULSE_DATA[PULSE_NAME[self.pulse_mode_a]]
                             await self.client.clear_pulses(Channel.A)
                             
-                            if PULSE_NAME[self.pulse_mode_a] == '压缩' or PULSE_NAME[self.pulse_mode_a] == '节奏步伐':
-                                await self.client.add_pulses(Channel.A, *(specific_pulse_data_a * 3))
-                            else:
-                                await self.client.add_pulses(Channel.A, *(specific_pulse_data_a * 5))
-                            
-                            self.pulse_last_update_time[Channel.A] = current_time
+                            try:
+                                if PULSE_NAME[self.pulse_mode_a] == '压缩' or PULSE_NAME[self.pulse_mode_a] == '节奏步伐':
+                                    await self.client.add_pulses(Channel.A, *(specific_pulse_data_a * 3))
+                                else:
+                                    await self.client.add_pulses(Channel.A, *(specific_pulse_data_a * 5))
+                                
+                                # 只有在成功发送波形后才更新时间戳
+                                self.pulse_last_update_time[Channel.A] = current_time
+                            except Exception as e:
+                                logger.error(f"A通道波形发送失败: {e}")
+                                # 发送失败时删除时间戳，促使下次循环再次尝试
+                                if Channel.A in self.pulse_last_update_time:
+                                    del self.pulse_last_update_time[Channel.A]
                         
                         # 给设备一点时间处理
                         await asyncio.sleep(0.1)
@@ -168,14 +175,23 @@ class DGLabController:
                             specific_pulse_data_b = PULSE_DATA[PULSE_NAME[self.pulse_mode_b]]
                             await self.client.clear_pulses(Channel.B)
                             
-                            if PULSE_NAME[self.pulse_mode_b] == '压缩' or PULSE_NAME[self.pulse_mode_b] == '节奏步伐':
-                                await self.client.add_pulses(Channel.B, *(specific_pulse_data_b * 3))
-                            else:
-                                await self.client.add_pulses(Channel.B, *(specific_pulse_data_b * 5))
-                            
-                            self.pulse_last_update_time[Channel.B] = current_time
+                            try:
+                                if PULSE_NAME[self.pulse_mode_b] == '压缩' or PULSE_NAME[self.pulse_mode_b] == '节奏步伐':
+                                    await self.client.add_pulses(Channel.B, *(specific_pulse_data_b * 3))
+                                else:
+                                    await self.client.add_pulses(Channel.B, *(specific_pulse_data_b * 5))
+                                
+                                # 只有在成功发送波形后才更新时间戳
+                                self.pulse_last_update_time[Channel.B] = current_time
+                            except Exception as e:
+                                logger.error(f"B通道波形发送失败: {e}")
+                                # 发送失败时删除时间戳，促使下次循环再次尝试
+                                if Channel.B in self.pulse_last_update_time:
+                                    del self.pulse_last_update_time[Channel.B]
             except Exception as e:
                 logger.error(f"periodic_send_pulse_data 任务中发生错误: {e}")
+                # 发生任何异常时清空所有时间戳，确保下次循环重新尝试发送所有波形
+                self.pulse_last_update_time = {}
                 await asyncio.sleep(5)  # 延迟后重试
             await asyncio.sleep(3)  # 每 x 秒检查一次
 

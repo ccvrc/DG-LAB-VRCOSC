@@ -211,6 +211,10 @@ class NetworkConfigTab(QWidget):
                         logger.info("重新绑定成功")
                         controller.app_status_online = True
                         self.update_connection_status(controller.app_status_online)
+                        # 重连成功后重置波形更新时间，强制下一次循环重新发送波形
+                        controller.pulse_last_update_time = {} 
+                        # 同步UI状态到控制器
+                        self.main_window.controller_settings_tab.sync_from_controller()
                     else:
                         logger.info(f"获取到状态码：{RetCode}")
 
