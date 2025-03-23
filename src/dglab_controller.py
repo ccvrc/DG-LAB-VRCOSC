@@ -52,6 +52,7 @@ class DGLabController:
         self.pulse_mode_b = 0  # pulse mode for Channel B (双向 - 更新名称)
         self.current_select_channel = Channel.A  # 游戏内面板控制的通道选择, 默认为 A (双向)
         self.fire_mode_strength_step = 30    # 一键开火默认强度 (双向)
+        self.adjust_strength_step = 10    # 按钮3和按钮4调节强度的步进值 (双向)
         self.fire_mode_active = False  # 标记当前是否在进行开火操作
         self.fire_mode_lock = asyncio.Lock()  # 一键开火模式锁
         self.data_updated_event = asyncio.Event()  # 数据更新事件
@@ -258,14 +259,14 @@ class DGLabController:
                     await self.add_command(CommandType.PANEL_COMMAND,
                                          self.current_select_channel,
                                          StrengthOperationType.DECREASE,
-                                         self.fire_mode_strength_step,
+                                         self.adjust_strength_step,
                                          "panel_decrease")
             elif address == "/avatar/parameters/SoundPad/Button/4":
                 if value:  # 只处理按下事件
                     await self.add_command(CommandType.PANEL_COMMAND,
                                          self.current_select_channel,
                                          StrengthOperationType.INCREASE,
-                                         self.fire_mode_strength_step,
+                                         self.adjust_strength_step,
                                          "panel_increase")
             elif address == "/avatar/parameters/SoundPad/Button/5":
                 await self.strength_fire_mode(value, self.current_select_channel, self.fire_mode_strength_step, self.last_strength)
@@ -580,7 +581,7 @@ class DGLabController:
                 f"MAX A: {self.last_strength.a_limit} B: {self.last_strength.b_limit}\n"
                 f"Mode A: {mode_name_a} B: {mode_name_b} \n"
                 f"Pulse A: {PULSE_NAME[self.pulse_mode_a]} B: {PULSE_NAME[self.pulse_mode_b]} \n"
-                f"Fire Step: {self.fire_mode_strength_step}\n"
+                f"Fire Step: {self.fire_mode_strength_step} Adjust Step: {self.adjust_strength_step}\n"
                 f"Current: {channel_strength} \n"
             )
         else:

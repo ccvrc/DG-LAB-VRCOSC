@@ -75,7 +75,13 @@ class ControllerSettingsTab(QWidget):
         self.strength_step_spinbox = QSpinBox()
         self.strength_step_spinbox.setRange(0, 100)
         self.strength_step_spinbox.setValue(30)
-        self.controller_form.addRow("开火强度步长:", self.strength_step_spinbox)
+        self.controller_form.addRow("开火强度步进:", self.strength_step_spinbox)
+
+        # 调节强度步长
+        self.adjust_strength_step_spinbox = QSpinBox()
+        self.adjust_strength_step_spinbox.setRange(0, 100)
+        self.adjust_strength_step_spinbox.setValue(10)
+        self.controller_form.addRow("调节强度步进:", self.adjust_strength_step_spinbox)
 
         self.controller_group.setLayout(self.controller_form)
         self.layout.addRow(self.controller_group)
@@ -127,6 +133,7 @@ class ControllerSettingsTab(QWidget):
 
         # Connect UI to controller update methods
         self.strength_step_spinbox.valueChanged.connect(self.update_strength_step)
+        self.adjust_strength_step_spinbox.valueChanged.connect(self.update_adjust_strength_step)
         self.enable_panel_control_checkbox.stateChanged.connect(self.update_panel_control)
         self.pulse_mode_a_combobox.currentIndexChanged.connect(self.update_pulse_mode_a)
         self.pulse_mode_b_combobox.currentIndexChanged.connect(self.update_pulse_mode_b)
@@ -144,6 +151,7 @@ class ControllerSettingsTab(QWidget):
         if self.main_window.controller:
             self.dg_controller = self.main_window.controller
             self.dg_controller.fire_mode_strength_step = self.strength_step_spinbox.value()
+            self.dg_controller.adjust_strength_step = self.adjust_strength_step_spinbox.value()
             self.dg_controller.enable_panel_control = self.enable_panel_control_checkbox.isChecked()
             self.dg_controller.pulse_mode_a = self.pulse_mode_a_combobox.currentIndex()
             self.dg_controller.pulse_mode_b = self.pulse_mode_b_combobox.currentIndex()
@@ -333,3 +341,9 @@ class ControllerSettingsTab(QWidget):
             controller = self.main_window.controller
             controller.enable_ton_commands = bool(state)
             logger.info(f"游戏联动命令已{'启用' if state else '禁用'}")
+
+    def update_adjust_strength_step(self, value):
+        if self.main_window.controller:
+            controller = self.main_window.controller
+            controller.adjust_strength_step = value
+            logger.info(f"更新调节强度步进为 {value}")

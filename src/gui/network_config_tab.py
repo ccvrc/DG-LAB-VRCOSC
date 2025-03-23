@@ -224,12 +224,7 @@ class NetworkConfigTab(QWidget):
             self.start_button.setEnabled(True)
             self.main_window.log_viewer_tab.log_text_edit.append(f"ERROR: {error_message}")
 
-    def handle_osc_message_task_pad(self, address, *args, controller):
-        """将OSC命令传递给控制器队列处理机制"""
-        asyncio.create_task(controller.handle_osc_message_pad(address, *args))
 
-    def handle_osc_message_task_pb(self, address, *args):
-        asyncio.create_task(self.main_window.controller.handle_osc_message_pb(address, *args))
 
     def generate_qrcode(self, data: str):
         """生成二维码并转换为PySide6可显示的QPixmap"""
@@ -327,8 +322,10 @@ class NetworkConfigTab(QWidget):
 
     def handle_osc_message_task_pad(self, address, *args, controller):
         """将OSC命令传递给控制器队列处理机制"""
+        logger.info(f"收到OSC消息 (面板控制): {address} {args}")
         asyncio.create_task(controller.handle_osc_message_pad(address, *args))
 
     def handle_osc_message_task_pb_with_channels(self, address, *args, controller, channels):
         """将OSC命令传递给控制器队列处理机制，带通道信息"""
+        logger.info(f"收到OSC消息 (参数绑定): {address} {args} 通道: {channels}")
         asyncio.create_task(controller.handle_osc_message_pb(address, *args, channels=channels))
