@@ -174,6 +174,8 @@ class NetworkConfigTab(QWidget):
                 logger.info("DGLabController 已初始化")
                 # After controller initialization, bind settings
                 self.main_window.controller_settings_tab.bind_controller_settings()
+                # 确保UI状态与控制器状态同步
+                self.main_window.controller_settings_tab.sync_from_controller()
 
                 # 设置 OSC 服务器
                 osc_server_instance = osc_server.AsyncIOOSCUDPServer(
@@ -265,6 +267,8 @@ class NetworkConfigTab(QWidget):
             self.main_window.controller_settings_tab.controller_group.setEnabled(True)  # 启用控制器设置
             self.main_window.controller_settings_tab.command_types_group.setEnabled(True)  # 启用命令类型控制
             self.main_window.ton_damage_system_tab.damage_group.setEnabled(True)
+            # 确保UI状态与控制器状态同步
+            self.main_window.controller_settings_tab.sync_from_controller()
         else:
             self.connection_status_label.setText("未连接")
             self.connection_status_label.setStyleSheet("""

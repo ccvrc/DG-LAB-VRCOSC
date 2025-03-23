@@ -157,9 +157,65 @@ class ControllerSettingsTab(QWidget):
                                                             self.enable_interaction_commands_b_checkbox.isChecked())
             self.dg_controller.enable_ton_commands = self.enable_ton_commands_checkbox.isChecked()
             
-            logger.info("DGLabController 参数已绑定")
+            # 同步交互模式状态变量
+            self.dg_controller.enable_interaction_mode_a = self.enable_interaction_commands_a_checkbox.isChecked()
+            self.dg_controller.enable_interaction_mode_b = self.enable_interaction_commands_b_checkbox.isChecked()
+            
+            # 同步更新通道状态模型
+            if hasattr(self.dg_controller, 'channel_states'):
+                if Channel.A in self.dg_controller.channel_states:
+                    self.dg_controller.channel_states[Channel.A]["mode"] = "interaction" if self.dg_controller.enable_interaction_mode_a else "panel"
+                if Channel.B in self.dg_controller.channel_states:
+                    self.dg_controller.channel_states[Channel.B]["mode"] = "interaction" if self.dg_controller.enable_interaction_mode_b else "panel"
+            
+            logger.info(f"DGLabController 参数已绑定，A通道交互模式：{self.dg_controller.enable_interaction_mode_a}，B通道交互模式：{self.dg_controller.enable_interaction_mode_b}")
         else:
             logger.warning("Controller is not initialized yet.")
+            
+    def sync_from_controller(self):
+        """从控制器恢复UI状态，确保UI和后端状态一致"""
+        if self.main_window.controller:
+            controller = self.main_window.controller
+            
+            # 阻止信号触发的更新循环 - 阻断各个控件的信号，而不是整个tab
+            self.enable_gui_commands_checkbox.blockSignals(True)
+            self.enable_panel_commands_checkbox.blockSignals(True)
+            self.enable_interaction_commands_a_checkbox.blockSignals(True)
+            self.enable_interaction_commands_b_checkbox.blockSignals(True)
+            self.enable_ton_commands_checkbox.blockSignals(True)
+            self.enable_chatbox_status_checkbox.blockSignals(True)
+            self.strength_step_spinbox.blockSignals(True)
+            self.adjust_strength_step_spinbox.blockSignals(True)
+            self.pulse_mode_a_combobox.blockSignals(True)
+            self.pulse_mode_b_combobox.blockSignals(True)
+            
+            # 同步命令类型控制复选框状态
+            self.enable_gui_commands_checkbox.setChecked(controller.enable_gui_commands)
+            self.enable_panel_commands_checkbox.setChecked(controller.enable_panel_commands)
+            self.enable_interaction_commands_a_checkbox.setChecked(controller.enable_interaction_mode_a)
+            self.enable_interaction_commands_b_checkbox.setChecked(controller.enable_interaction_mode_b)
+            self.enable_ton_commands_checkbox.setChecked(controller.enable_ton_commands)
+            
+            # 同步其他控制设置
+            self.enable_chatbox_status_checkbox.setChecked(controller.enable_chatbox_status)
+            self.strength_step_spinbox.setValue(controller.fire_mode_strength_step)
+            self.adjust_strength_step_spinbox.setValue(controller.adjust_strength_step)
+            self.pulse_mode_a_combobox.setCurrentIndex(controller.pulse_mode_a)
+            self.pulse_mode_b_combobox.setCurrentIndex(controller.pulse_mode_b)
+            
+            # 恢复信号
+            self.enable_gui_commands_checkbox.blockSignals(False)
+            self.enable_panel_commands_checkbox.blockSignals(False)
+            self.enable_interaction_commands_a_checkbox.blockSignals(False)
+            self.enable_interaction_commands_b_checkbox.blockSignals(False)
+            self.enable_ton_commands_checkbox.blockSignals(False)
+            self.enable_chatbox_status_checkbox.blockSignals(False)
+            self.strength_step_spinbox.blockSignals(False)
+            self.adjust_strength_step_spinbox.blockSignals(False)
+            self.pulse_mode_a_combobox.blockSignals(False)
+            self.pulse_mode_b_combobox.blockSignals(False)
+            
+            logger.info("已从控制器同步UI状态")
 
     # Controller update methods
     def update_strength_step(self, value):
@@ -192,8 +248,8 @@ class ControllerSettingsTab(QWidget):
     def update_chatbox_status(self, state):
         if self.main_window.controller:
             controller = self.main_window.controller
-            self.dg_controller.enable_chatbox_status = bool(state)
-            logger.info(f"ChatBox status enabled: {self.dg_controller.enable_chatbox_status}")
+            controller.enable_chatbox_status = bool(state)
+            logger.info(f"ChatBox status enabled: {controller.enable_chatbox_status}")
 
     def set_a_channel_strength(self, value):
         """根据滑动条的值设定 A 通道强度"""
@@ -307,6 +363,11 @@ class ControllerSettingsTab(QWidget):
             controller.enable_interaction_mode_a = bool(state)  # 更新为新的交互模式状态变量
             # 更新总体交互命令状态
             controller.enable_interaction_commands = (bool(state) or self.enable_interaction_commands_b_checkbox.isChecked())
+            
+            # 更新通道状态模型
+            if hasattr(controller, 'channel_states') and Channel.A in controller.channel_states:
+                controller.channel_states[Channel.A]["mode"] = "interaction" if bool(state) else "panel"
+                
             logger.info(f"A通道交互命令已{'启用' if state else '禁用'}")
     
     def update_interaction_commands_b_state(self, state):
@@ -316,6 +377,11 @@ class ControllerSettingsTab(QWidget):
             controller.enable_interaction_mode_b = bool(state)  # 更新为新的交互模式状态变量
             # 更新总体交互命令状态
             controller.enable_interaction_commands = (self.enable_interaction_commands_a_checkbox.isChecked() or bool(state))
+            
+            # 更新通道状态模型
+            if hasattr(controller, 'channel_states') and Channel.B in controller.channel_states:
+                controller.channel_states[Channel.B]["mode"] = "interaction" if bool(state) else "panel"
+                
             logger.info(f"B通道交互命令已{'启用' if state else '禁用'}")
     
     def update_ton_commands_state(self, state):

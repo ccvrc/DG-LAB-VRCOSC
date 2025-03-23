@@ -87,15 +87,15 @@ class DGLabController:
         self.enable_ton_commands = True  # 默认启用游戏联动命令
         
         # 交互模式控制 - 替代原来的动骨模式标志
-        self.enable_interaction_mode_a = False  # 通道A交互模式开关
-        self.enable_interaction_mode_b = False  # 通道B交互模式开关
+        self.enable_interaction_mode_a = True  # 通道A交互模式开关
+        self.enable_interaction_mode_b = True  # 通道B交互模式开关
         
         # 通道状态模型
         self.channel_states = {
             Channel.A: {
                 "current_strength": 0,
                 "target_strength": 0,
-                "mode": "panel" if not self.enable_interaction_mode_a else "interaction",
+                "mode": "interaction" if self.enable_interaction_mode_a else "panel",
                 "pulse_mode": self.pulse_mode_a,
                 "last_command_source": None,
                 "last_command_time": 0,
@@ -103,7 +103,7 @@ class DGLabController:
             Channel.B: {
                 "current_strength": 0,
                 "target_strength": 0,
-                "mode": "panel" if not self.enable_interaction_mode_b else "interaction",
+                "mode": "interaction" if self.enable_interaction_mode_b else "panel",
                 "pulse_mode": self.pulse_mode_b,
                 "last_command_source": None, 
                 "last_command_time": 0,
