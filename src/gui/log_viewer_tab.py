@@ -163,7 +163,7 @@ class LogViewerTab(QWidget):
             controller_info = (
                 f"== 控制器状态 ==\n"
                 f"设备在线: {controller.app_status_online}\n"
-                f"面板控制: {controller.enable_panel_control}\n"
+                f"允许OSC控制: {controller.enable_osc_control}\n"
                 f"一键开火强度: {controller.fire_mode_strength_step}\n"
                 f"ChatBox 状态: {controller.enable_chatbox_status}\n"
                 f"当前选择通道: {'A' if controller.current_select_channel == Channel.A else 'B'}\n"

@@ -52,10 +52,10 @@ class ControllerSettingsTab(QWidget):
         self.allow_a_channel_update = True
         self.allow_b_channel_update = True
 
-        # 是否启用面板控制
-        self.enable_panel_control_checkbox = QCheckBox("允许 avatar 控制设备") # PanelControl 关闭后忽略所有游戏内传入的控制
-        self.enable_panel_control_checkbox.setChecked(True)
-        self.controller_form.addRow(self.enable_panel_control_checkbox)
+        # 是否启用OSC控制
+        self.enable_osc_control_checkbox = QCheckBox("允许 avatar OSC 控制设备") # OSC控制关闭后忽略所有游戏内传入的控制
+        self.enable_osc_control_checkbox.setChecked(True)
+        self.controller_form.addRow(self.enable_osc_control_checkbox)
 
         # ChatBox状态开关
         self.enable_chatbox_status_checkbox = QCheckBox("启用ChatBox状态显示")
@@ -134,7 +134,7 @@ class ControllerSettingsTab(QWidget):
         # Connect UI to controller update methods
         self.strength_step_spinbox.valueChanged.connect(self.update_strength_step)
         self.adjust_strength_step_spinbox.valueChanged.connect(self.update_adjust_strength_step)
-        self.enable_panel_control_checkbox.stateChanged.connect(self.update_panel_control)
+        self.enable_osc_control_checkbox.stateChanged.connect(self.update_panel_control)
         self.pulse_mode_a_combobox.currentIndexChanged.connect(self.update_pulse_mode_a)
         self.pulse_mode_b_combobox.currentIndexChanged.connect(self.update_pulse_mode_b)
         self.enable_chatbox_status_checkbox.stateChanged.connect(self.update_chatbox_status)
@@ -152,7 +152,7 @@ class ControllerSettingsTab(QWidget):
             self.dg_controller = self.main_window.controller
             self.dg_controller.fire_mode_strength_step = self.strength_step_spinbox.value()
             self.dg_controller.adjust_strength_step = self.adjust_strength_step_spinbox.value()
-            self.dg_controller.enable_panel_control = self.enable_panel_control_checkbox.isChecked()
+            self.dg_controller.enable_osc_control = self.enable_osc_control_checkbox.isChecked()
             self.dg_controller.pulse_mode_a = self.pulse_mode_a_combobox.currentIndex()
             self.dg_controller.pulse_mode_b = self.pulse_mode_b_combobox.currentIndex()
             self.dg_controller.enable_chatbox_status = self.enable_chatbox_status_checkbox.isChecked()
@@ -183,8 +183,8 @@ class ControllerSettingsTab(QWidget):
     def update_panel_control(self, state):
         if self.main_window.controller:
             controller = self.main_window.controller
-            self.dg_controller.enable_panel_control = bool(state)
-            logger.info(f"Panel control enabled: {self.dg_controller.enable_panel_control}")
+            self.dg_controller.enable_osc_control = bool(state)
+            logger.info(f"Panel control enabled: {self.dg_controller.enable_osc_control}")
             asyncio.run_coroutine_threadsafe(
                 self.dg_controller.send_value_to_vrchat("/avatar/parameters/SoundPad/PanelControl", bool(state)),
                 asyncio.get_event_loop()

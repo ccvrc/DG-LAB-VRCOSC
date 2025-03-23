@@ -47,7 +47,6 @@ class DGLabController:
         self.last_strength = None  # 记录上次的强度值, 从 app更新, 包含 a b a_limit b_limit
         self.app_status_online = False  # App 端在线情况
         # 功能控制参数
-        self.enable_panel_control = True   # 禁用面板控制功能 (双向)
         self.pulse_mode_a = 0  # pulse mode for Channel A (双向 - 更新名称)
         self.pulse_mode_b = 0  # pulse mode for Channel B (双向 - 更新名称)
         self.current_select_channel = Channel.A  # 游戏内面板控制的通道选择, 默认为 A (双向)
@@ -219,15 +218,8 @@ class DGLabController:
             
             value = args[0]
             # 全局控制参数
-            if address == "/avatar/parameters/SoundPad/CurrentChannel":
-                if value == 0:
-                    self.current_select_channel = Channel.A
-                    logger.info(f"切换当前选择通道为 A")
-                else:
-                    self.current_select_channel = Channel.B
-                    logger.info(f"切换当前选择通道为 B")
-                if self.main_window:
-                    self.main_window.update_current_channel_display("A" if value == 0 else "B")
+            if address == "/avatar/parameters/SoundPad/Page":
+                await self.set_channel(value)
             elif address == "/avatar/parameters/SoundPad/Volume":
                 self.fire_mode_strength_step = int(value * 100)
                 logger.info(f"更新一键开火强度为 {self.fire_mode_strength_step}")
@@ -238,11 +230,6 @@ class DGLabController:
                     self.main_window.controller_settings_tab.strength_step_spinbox.blockSignals(False)
             elif address == "/avatar/parameters/SoundPad/PanelControl":
                 await self.set_panel_control(value)
-            
-            # 如果面板控制被禁用，则不处理按键功能
-            if not self.enable_panel_control:
-                logger.info(f"已禁用面板控制功能")
-                return
             
             # 按键功能转换为命令
             if address == "/avatar/parameters/SoundPad/Button/1":
@@ -518,18 +505,12 @@ class DGLabController:
 
     async def set_panel_control(self, value):
         """
-        面板控制功能开关，禁用控制后无法通过 OSC 对郊狼进行调整
+        面板控制功能开关，功能已简化
         """
-        if value > 0:
-            self.enable_panel_control = True
-        else:
-            self.enable_panel_control = False
-        mode_name = "开启面板控制" if self.enable_panel_control else "已禁用面板控制"
-        logger.info(f": {mode_name}")
-        # 更新 UI 组件 (QSpinBox) 以反映新的值
-        self.main_window.controller_settings_tab.enable_panel_control_checkbox.blockSignals(True)  # 防止触发 valueChanged 事件
-        self.main_window.controller_settings_tab.enable_panel_control_checkbox.setChecked(self.enable_panel_control)
-        self.main_window.controller_settings_tab.enable_panel_control_checkbox.blockSignals(False)
+        # 此方法被保留但功能已简化，不再控制 enable_osc_control
+        logger.info(f"收到面板控制值: {value}")
+        # UI相关代码保留但不再更新已移除的复选框
+        # 如果你不再需要此方法，可以完全删除它
 
     def map_value(self, value, min_value, max_value):
         """
