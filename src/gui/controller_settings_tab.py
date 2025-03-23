@@ -80,7 +80,7 @@ class ControllerSettingsTab(QWidget):
         # 调节强度步长
         self.adjust_strength_step_spinbox = QSpinBox()
         self.adjust_strength_step_spinbox.setRange(0, 100)
-        self.adjust_strength_step_spinbox.setValue(10)
+        self.adjust_strength_step_spinbox.setValue(5)
         self.controller_form.addRow("调节强度步进:", self.adjust_strength_step_spinbox)
 
         self.controller_group.setLayout(self.controller_form)

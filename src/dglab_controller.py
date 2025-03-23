@@ -52,7 +52,7 @@ class DGLabController:
         self.pulse_mode_b = 0  # pulse mode for Channel B (双向 - 更新名称)
         self.current_select_channel = Channel.A  # 游戏内面板控制的通道选择, 默认为 A (双向)
         self.fire_mode_strength_step = 30    # 一键开火默认强度 (双向)
-        self.adjust_strength_step = 10    # 按钮3和按钮4调节强度的步进值 (双向)
+        self.adjust_strength_step = 5    # 按钮3和按钮4调节强度的步进值
         self.fire_mode_active = False  # 标记当前是否在进行开火操作
         self.fire_mode_lock = asyncio.Lock()  # 一键开火模式锁
         self.data_updated_event = asyncio.Event()  # 数据更新事件
@@ -65,7 +65,7 @@ class DGLabController:
         self.send_pulse_task = asyncio.create_task(self.periodic_send_pulse_data())  # 启动设定波形发送任务
         # 按键延迟触发计时
         self.chatbox_toggle_timer = None
-        self.set_mode_timer = None
+        self.mode_toggle_timer = None
         # 回报速率设置为 1HZ，Updates every 0.1 to 1 seconds as needed based on parameter changes (1 to 10 updates per second), but you shouldn't rely on it for fast sync.
         self.pulse_update_lock = asyncio.Lock()  # 添加波形更新锁
         self.pulse_last_update_time = {}  # 记录每个通道最后波形更新时间
@@ -448,35 +448,15 @@ class DGLabController:
         """切换通道面板控制/交互模式"""
         if not value:  # 只处理按下事件
             return
-        
-        if channel == Channel.A:
-            self.enable_interaction_mode_a = not self.enable_interaction_mode_a
-            mode = "交互控制" if self.enable_interaction_mode_a else "面板控制"
-            self.channel_states[Channel.A]["mode"] = "interaction" if self.enable_interaction_mode_a else "panel"
-            logger.info(f"切换 A 通道为 {mode} 模式")
-            await self.send_value_to_vrchat("/avatar/parameters/SoundPad/ModeA", int(self.enable_interaction_mode_a))
             
-            # 更新UI中A通道交互控制复选框
-            if self.main_window:
-                self.main_window.controller_settings_tab.enable_interaction_commands_a_checkbox.blockSignals(True)
-                self.main_window.controller_settings_tab.enable_interaction_commands_a_checkbox.setChecked(self.enable_interaction_mode_a)
-                self.main_window.controller_settings_tab.enable_interaction_commands_a_checkbox.blockSignals(False)
-        else:
-            self.enable_interaction_mode_b = not self.enable_interaction_mode_b
-            mode = "交互控制" if self.enable_interaction_mode_b else "面板控制"
-            self.channel_states[Channel.B]["mode"] = "interaction" if self.enable_interaction_mode_b else "panel"
-            logger.info(f"切换 B 通道为 {mode} 模式")
-            await self.send_value_to_vrchat("/avatar/parameters/SoundPad/ModeB", int(self.enable_interaction_mode_b))
-            
-            # 更新UI中B通道交互控制复选框
-            if self.main_window:
-                self.main_window.controller_settings_tab.enable_interaction_commands_b_checkbox.blockSignals(True)
-                self.main_window.controller_settings_tab.enable_interaction_commands_b_checkbox.setChecked(self.enable_interaction_mode_b)
-                self.main_window.controller_settings_tab.enable_interaction_commands_b_checkbox.blockSignals(False)
-                
-        # 更新总体交互命令启用状态
-        if self.main_window:
-            self.enable_interaction_commands = self.enable_interaction_mode_a or self.enable_interaction_mode_b
+        if value == 1: # 按下按键
+            if self.mode_toggle_timer is not None:
+                self.mode_toggle_timer.cancel()
+            self.mode_toggle_timer = asyncio.create_task(self.set_mode_timer_handle(channel))
+        elif value == 0: #松开按键
+            if self.mode_toggle_timer:
+                self.mode_toggle_timer.cancel()
+                self.mode_toggle_timer = None
 
 
     async def strength_fire_mode(self, value, channel, strength, last_strength_mod=None):
@@ -497,7 +477,7 @@ class DGLabController:
                 await self.add_command(CommandType.PANEL_COMMAND,
                                       channel,
                                       StrengthOperationType.SET_TO,
-                                      strength,
+                                      strength + self.channel_states[channel]["current_strength"],
                                       "panel_fire_start")
                 self.fire_mode_active = True
         else:  # 松开按钮，恢复原强度
