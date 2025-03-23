@@ -68,9 +68,6 @@ class DGLabController:
         # 回报速率设置为 1HZ，Updates every 0.1 to 1 seconds as needed based on parameter changes (1 to 10 updates per second), but you shouldn't rely on it for fast sync.
         self.pulse_update_lock = asyncio.Lock()  # 添加波形更新锁
         self.pulse_last_update_time = {}  # 记录每个通道最后波形更新时间
-        self.osc_command_queue = {}  # 按地址存储最新的OSC命令
-        self.osc_queue_lock = asyncio.Lock()  # OSC队列锁
-        self.osc_processing_task = asyncio.create_task(self.process_osc_commands())  # 启动OSC处理任务
         
         # 命令队列相关
         self.command_queue = asyncio.PriorityQueue()  # 优先级队列
@@ -181,32 +178,6 @@ class DGLabController:
                 logger.error(f"periodic_send_pulse_data 任务中发生错误: {e}")
                 await asyncio.sleep(5)  # 延迟后重试
             await asyncio.sleep(3)  # 每 x 秒检查一次
-
-    async def process_osc_commands(self):
-        """处理OSC命令队列，合并相同地址的命令，保留最新值"""
-        while True:
-            try:
-                # 获取并清空队列
-                async with self.osc_queue_lock:
-                    current_commands = self.osc_command_queue.copy()
-                    self.osc_command_queue.clear()
-                
-                # 处理当前队列中的命令
-                for address, command_data in current_commands.items():
-                    try:
-                        args, channels = command_data['args'], command_data.get('channels', None)
-                        if channels:  # 这是物理骨骼控制命令
-                            await self.handle_osc_message_pb(address, *args, channels=channels)
-                        else:  # 这是面板控制命令
-                            await self.handle_osc_message_pad(address, *args)
-                    except Exception as e:
-                        logger.error(f"处理OSC命令时发生错误: {address} {args} - {e}")
-                
-                # 短暂休眠后再次处理队列
-                await asyncio.sleep(0.05)  # 20Hz 处理频率，可根据需要调整
-            except Exception as e:
-                logger.error(f"OSC命令处理循环发生错误: {e}")
-                await asyncio.sleep(1)  # 错误后延迟重试
 
     async def handle_osc_message_pad(self, address, *args):
         """
