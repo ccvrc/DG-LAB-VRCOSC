@@ -301,7 +301,11 @@ class NetworkConfigTab(QWidget):
         for addr in osc_addresses:
             address = addr['address']
             channels = addr['channels']
-            mapping_ranges = addr.get('mapping_ranges', {})
+            # 确保有映射范围参数
+            mapping_ranges = addr.get('mapping_ranges', {
+                'A': {'min': 0, 'max': 100},
+                'B': {'min': 0, 'max': 100}
+            })
             handler = functools.partial(self.handle_osc_message_task_pb_with_channels, 
                                         controller=controller, 
                                         channels=channels,
@@ -335,5 +339,17 @@ class NetworkConfigTab(QWidget):
 
     def handle_osc_message_task_pb_with_channels(self, address, *args, controller, channels, mapping_ranges=None):
         """将OSC命令传递给控制器队列处理机制，带通道信息和映射范围"""
-        logger.info(f"收到OSC消息 (参数绑定): {address} {args} 通道: {channels}")
-        asyncio.create_task(controller.handle_osc_message_pb(address, *args, channels=channels, mapping_ranges=mapping_ranges))
+        # 确保channels参数格式统一
+        channel_list = []
+        if isinstance(channels, dict):
+            # 将字典格式 {'A': True, 'B': False} 转换为列表格式 ['A']
+            if channels.get('A', False):
+                channel_list.append('A')
+            if channels.get('B', False):
+                channel_list.append('B')
+        elif isinstance(channels, list):
+            # 如果已经是列表格式，直接使用
+            channel_list = channels
+        
+        logger.info(f"收到OSC消息 (参数绑定): {address} {args} 通道: {channel_list}")
+        asyncio.create_task(controller.handle_osc_message_pb(address, *args, channels=channel_list, mapping_ranges=mapping_ranges))

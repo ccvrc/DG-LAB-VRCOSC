@@ -131,24 +131,35 @@ class OSCParametersTab(QWidget):
 
     def update_address_list(self):
         """更新 OSC 地址列表"""
-        addresses = []
+        new_addresses = []
         for i in range(self.address_list_widget.count()):
             widget = self.address_list_widget.itemWidget(self.address_list_widget.item(i))
             if isinstance(widget, OSCAddressWidget):
                 address = widget.address_edit.text().strip()
                 if address:  # 只添加非空地址
-                    channels = []
-                    if widget.channel_a_checkbox.isChecked():
-                        channels.append("A")
-                    if widget.channel_b_checkbox.isChecked():
-                        channels.append("B")
-                    if channels:  # 至少选择了一个通道
-                        addresses.append({
+                    channels = {
+                        'A': widget.channel_a_checkbox.isChecked(),
+                        'B': widget.channel_b_checkbox.isChecked()
+                    }
+                    # 添加映射范围设置
+                    mapping_ranges = {
+                        'A': {
+                            'min': widget.get_a_min_value(),
+                            'max': widget.get_a_max_value()
+                        },
+                        'B': {
+                            'min': widget.get_b_min_value(),
+                            'max': widget.get_b_max_value()
+                        }
+                    }
+                    if channels['A'] or channels['B']:  # 至少选择了一个通道
+                        new_addresses.append({
                             'address': address,
-                            'channels': channels
+                            'channels': channels,
+                            'mapping_ranges': mapping_ranges
                         })
-        self.addresses = addresses
-        logger.info(f"更新 OSC 地址列表: {len(addresses)} 个地址")
+        self.addresses = new_addresses
+        logger.info(f"更新 OSC 地址列表: {len(new_addresses)} 个地址")
         
         # 如果控制器已初始化，更新 OSC 映射
         if self.main_window.controller:
@@ -371,7 +382,37 @@ class OSCAddressWidget(QWidget):
         self.b_max_slider.setVisible(is_b_visible)
         self.b_max_value_label.setVisible(is_b_visible)
         
-        # 发出布局变更信号
+        # 强制更新布局
+        if hasattr(self.layout, 'invalidate') and hasattr(self.layout, 'activate'):
+            self.layout.invalidate()
+            self.layout.activate()
+        
+        # 首先更新自身大小
+        self.adjustSize()
+        
+        # 尝试找到父级QListWidget和对应的QListWidgetItem
+        # 注意：可能存在多层嵌套的情况
+        def find_list_widget_parent(widget):
+            if widget is None:
+                return None
+            if isinstance(widget, QListWidget):
+                return widget
+            return find_list_widget_parent(widget.parent())
+        
+        list_widget = find_list_widget_parent(self.parent())
+        if list_widget:
+            # 查找对应的item并更新其大小
+            for i in range(list_widget.count()):
+                item = list_widget.item(i)
+                if item and list_widget.itemWidget(item) == self:
+                    current_size = self.sizeHint()
+                    if current_size.isValid():
+                        item.setSizeHint(current_size)
+                    # 使用QWidget的标准update()方法，不需要参数
+                    list_widget.viewport().update()  # 更新列表视图的可视区域
+                    break
+        
+        # 更新几何属性
         self.updateGeometry()
     
     def on_a_min_changed(self, value):
