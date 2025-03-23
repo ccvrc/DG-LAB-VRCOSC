@@ -615,42 +615,6 @@ class DGLabController:
                 logger.error(f"处理命令时出错: {e}", exc_info=True)
                 await asyncio.sleep(0.1)  # 错误后短暂延迟
 
-    async def handle_avatar_parameter(self, address, value):
-        """处理来自VRChat的OSC参数变化"""
-        if address.startswith("/avatar/parameters/SoundPad/"):
-            # 面板控制
-            param_name = address.split("/")[-1]
-            if param_name == "FireA" and value > 0.5:
-                await self.add_command(CommandType.PANEL_COMMAND, 
-                                     Channel.A, 
-                                     StrengthOperationType.SET_TO, 
-                                     self.fire_mode_strength_step,
-                                     "panel_fire_a")
-            # 更多面板控制解析...
-        elif address.startswith("/avatar/parameters/Contact_"):
-            # 交互控制
-            if self.enable_interaction_mode_a and "Channel_A" in address:
-                await self.add_command(CommandType.INTERACTION_COMMAND,
-                                     Channel.A,
-                                     StrengthOperationType.SET_TO,
-                                     self.map_value(value, 0, self.last_strength.a_limit),
-                                     f"interaction_{address}")
-            elif self.enable_interaction_mode_b and "Channel_B" in address:
-                await self.add_command(CommandType.INTERACTION_COMMAND,
-                                     Channel.B,
-                                     StrengthOperationType.SET_TO,
-                                     self.map_value(value, 0, self.last_strength.b_limit),
-                                     f"interaction_{address}")
-        # 更多交互控制解析...
-
-    def update_strength_from_gui(self, channel, value):
-        """处理来自GUI的强度更新"""
-        asyncio.create_task(self.add_command(CommandType.GUI_COMMAND,
-                                           channel,
-                                           StrengthOperationType.SET_TO,
-                                           value,
-                                           "gui_strength_update"))
-
     async def handle_ton_damage(self, damage_value, damage_multiplier=1.0):
         """处理来自 ToN 游戏的伤害数据"""
         try:
