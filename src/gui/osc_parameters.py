@@ -1,5 +1,5 @@
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
-                               QLineEdit, QCheckBox, QLabel, QListWidget, QListWidgetItem, QAbstractItemView)
+                               QLineEdit, QCheckBox, QLabel, QListWidget, QListWidgetItem, QAbstractItemView, QSlider)
 from PySide6.QtCore import Qt, Signal
 import logging
 import yaml
@@ -112,12 +112,12 @@ class OSCParametersTab(QWidget):
                 # 添加映射范围设置
                 mapping_ranges = {
                     'A': {
-                        'min': int(widget.a_min_edit.text() or "0"),
-                        'max': int(widget.a_max_edit.text() or "100")
+                        'min': widget.get_a_min_value(),
+                        'max': widget.get_a_max_value()
                     },
                     'B': {
-                        'min': int(widget.b_min_edit.text() or "0"),
-                        'max': int(widget.b_max_edit.text() or "100")
+                        'min': widget.get_b_min_value(),
+                        'max': widget.get_b_max_value()
                     }
                 }
                 new_addresses.append({
@@ -225,14 +225,14 @@ class OSCParametersTab(QWidget):
                 # A 通道映射范围
                 if 'A' in mapping_ranges and isinstance(mapping_ranges['A'], dict):
                     a_range = mapping_ranges['A']
-                    widget.a_min_edit.setText(str(a_range.get('min', 0)))
-                    widget.a_max_edit.setText(str(a_range.get('max', 100)))
+                    widget.set_a_min_value(a_range['min'])
+                    widget.set_a_max_value(a_range['max'])
                 
                 # B 通道映射范围
                 if 'B' in mapping_ranges and isinstance(mapping_ranges['B'], dict):
                     b_range = mapping_ranges['B']
-                    widget.b_min_edit.setText(str(b_range.get('min', 0)))
-                    widget.b_max_edit.setText(str(b_range.get('max', 100)))
+                    widget.set_b_min_value(b_range['min'])
+                    widget.set_b_max_value(b_range['max'])
             
             # 连接信号
             widget.addressChanged.connect(self.on_address_changed)
@@ -279,22 +279,29 @@ class OSCAddressWidget(QWidget):
         self.a_range_row = QHBoxLayout()
         self.layout.addLayout(self.a_range_row)
         
-        self.a_range_label = QLabel("A通道映射范围:")
+        self.a_range_label = QLabel("A通道范围:")
         self.a_range_row.addWidget(self.a_range_label)
         
-        self.a_min_edit = QLineEdit()
-        self.a_min_edit.setPlaceholderText("最小值(%)")
-        self.a_min_edit.setText("0")
-        self.a_min_edit.setFixedWidth(80)
-        self.a_range_row.addWidget(self.a_min_edit)
+        # A通道最小值和最大值在同一行
+        self.a_min_slider = QSlider(Qt.Horizontal)
+        self.a_min_slider.setRange(0, 100)
+        self.a_min_slider.setValue(0)
+        self.a_min_slider.setFixedWidth(120)
+        self.a_range_row.addWidget(self.a_min_slider)
         
-        self.a_range_row.addWidget(QLabel("-"))
+        self.a_min_value_label = QLabel("最小:0%")
+        self.a_range_row.addWidget(self.a_min_value_label)
         
-        self.a_max_edit = QLineEdit()
-        self.a_max_edit.setPlaceholderText("最大值(%)")
-        self.a_max_edit.setText("100")
-        self.a_max_edit.setFixedWidth(80)
-        self.a_range_row.addWidget(self.a_max_edit)
+        self.a_range_row.addSpacing(10)
+        
+        self.a_max_slider = QSlider(Qt.Horizontal)
+        self.a_max_slider.setRange(0, 100)
+        self.a_max_slider.setValue(100)
+        self.a_max_slider.setFixedWidth(120)
+        self.a_range_row.addWidget(self.a_max_slider)
+        
+        self.a_max_value_label = QLabel("最大:100%")
+        self.a_range_row.addWidget(self.a_max_value_label)
         
         self.a_range_row.addStretch()
         
@@ -302,22 +309,29 @@ class OSCAddressWidget(QWidget):
         self.b_range_row = QHBoxLayout()
         self.layout.addLayout(self.b_range_row)
         
-        self.b_range_label = QLabel("B通道映射范围:")
+        self.b_range_label = QLabel("B通道范围:")
         self.b_range_row.addWidget(self.b_range_label)
         
-        self.b_min_edit = QLineEdit()
-        self.b_min_edit.setPlaceholderText("最小值(%)")
-        self.b_min_edit.setText("0")
-        self.b_min_edit.setFixedWidth(80)
-        self.b_range_row.addWidget(self.b_min_edit)
+        # B通道最小值和最大值在同一行
+        self.b_min_slider = QSlider(Qt.Horizontal)
+        self.b_min_slider.setRange(0, 100)
+        self.b_min_slider.setValue(0)
+        self.b_min_slider.setFixedWidth(120)
+        self.b_range_row.addWidget(self.b_min_slider)
         
-        self.b_range_row.addWidget(QLabel("-"))
+        self.b_min_value_label = QLabel("最小:0%")
+        self.b_range_row.addWidget(self.b_min_value_label)
         
-        self.b_max_edit = QLineEdit()
-        self.b_max_edit.setPlaceholderText("最大值(%)")
-        self.b_max_edit.setText("100")
-        self.b_max_edit.setFixedWidth(80)
-        self.b_range_row.addWidget(self.b_max_edit)
+        self.b_range_row.addSpacing(10)
+        
+        self.b_max_slider = QSlider(Qt.Horizontal)
+        self.b_max_slider.setRange(0, 100)
+        self.b_max_slider.setValue(100)
+        self.b_max_slider.setFixedWidth(120)
+        self.b_range_row.addWidget(self.b_max_slider)
+        
+        self.b_max_value_label = QLabel("最大:100%")
+        self.b_range_row.addWidget(self.b_max_value_label)
         
         self.b_range_row.addStretch()
         
@@ -326,10 +340,10 @@ class OSCAddressWidget(QWidget):
         self.channel_a_checkbox.stateChanged.connect(self.on_channel_changed)
         self.channel_b_checkbox.stateChanged.connect(self.on_channel_changed)
         
-        self.a_min_edit.textChanged.connect(self.validate_a_range)
-        self.a_max_edit.textChanged.connect(self.validate_a_range)
-        self.b_min_edit.textChanged.connect(self.validate_b_range)
-        self.b_max_edit.textChanged.connect(self.validate_b_range)
+        self.a_min_slider.valueChanged.connect(self.on_a_min_changed)
+        self.a_max_slider.valueChanged.connect(self.on_a_max_changed)
+        self.b_min_slider.valueChanged.connect(self.on_b_min_changed)
+        self.b_max_slider.valueChanged.connect(self.on_b_max_changed)
         
         # 初始状态更新
         self.update_range_visibility()
@@ -340,61 +354,98 @@ class OSCAddressWidget(QWidget):
     
     def update_range_visibility(self):
         """根据通道选择状态更新映射范围控件的可见性"""
-        self.a_range_label.setVisible(self.channel_a_checkbox.isChecked())
-        self.a_min_edit.setVisible(self.channel_a_checkbox.isChecked())
-        self.a_max_edit.setVisible(self.channel_a_checkbox.isChecked())
+        is_a_visible = self.channel_a_checkbox.isChecked()
+        is_b_visible = self.channel_b_checkbox.isChecked()
         
-        self.b_range_label.setVisible(self.channel_b_checkbox.isChecked())
-        self.b_min_edit.setVisible(self.channel_b_checkbox.isChecked())
-        self.b_max_edit.setVisible(self.channel_b_checkbox.isChecked())
+        # A通道控件可见性
+        self.a_range_label.setVisible(is_a_visible)
+        self.a_min_slider.setVisible(is_a_visible)
+        self.a_min_value_label.setVisible(is_a_visible)
+        self.a_max_slider.setVisible(is_a_visible)
+        self.a_max_value_label.setVisible(is_a_visible)
+        
+        # B通道控件可见性
+        self.b_range_label.setVisible(is_b_visible)
+        self.b_min_slider.setVisible(is_b_visible)
+        self.b_min_value_label.setVisible(is_b_visible)
+        self.b_max_slider.setVisible(is_b_visible)
+        self.b_max_value_label.setVisible(is_b_visible)
         
         # 发出布局变更信号
         self.updateGeometry()
     
-    def validate_a_range(self):
-        """验证A通道的映射范围值"""
-        try:
-            min_val = float(self.a_min_edit.text() or "0")
-            max_val = float(self.a_max_edit.text() or "100")
-            
-            # 确保最小值不大于最大值
-            if min_val > max_val:
-                self.a_min_edit.setText(str(max_val))
-                min_val = max_val
-                
-            # 确保值在0-100范围内
-            min_val = max(0, min(100, min_val))
-            max_val = max(0, min(100, max_val))
-            
-            self.a_min_edit.setText(str(int(min_val)))
-            self.a_max_edit.setText(str(int(max_val)))
-            
-            self.mapRangeChanged.emit()
-        except ValueError:
-            # 如果输入的不是有效数字，则重置为默认值
-            self.a_min_edit.setText("0")
-            self.a_max_edit.setText("100")
+    def on_a_min_changed(self, value):
+        """A通道最小值变更处理"""
+        # 更新标签显示
+        self.a_min_value_label.setText(f"最小:{value}%")
+        
+        # 确保最小值不大于最大值
+        if value > self.a_max_slider.value():
+            self.a_max_slider.setValue(value)
+        
+        self.mapRangeChanged.emit()
     
-    def validate_b_range(self):
-        """验证B通道的映射范围值"""
-        try:
-            min_val = float(self.b_min_edit.text() or "0")
-            max_val = float(self.b_max_edit.text() or "100")
-            
-            # 确保最小值不大于最大值
-            if min_val > max_val:
-                self.b_min_edit.setText(str(max_val))
-                min_val = max_val
-                
-            # 确保值在0-100范围内
-            min_val = max(0, min(100, min_val))
-            max_val = max(0, min(100, max_val))
-            
-            self.b_min_edit.setText(str(int(min_val)))
-            self.b_max_edit.setText(str(int(max_val)))
-            
-            self.mapRangeChanged.emit()
-        except ValueError:
-            # 如果输入的不是有效数字，则重置为默认值
-            self.b_min_edit.setText("0")
-            self.b_max_edit.setText("100")
+    def on_a_max_changed(self, value):
+        """A通道最大值变更处理"""
+        # 更新标签显示
+        self.a_max_value_label.setText(f"最大:{value}%")
+        
+        # 确保最大值不小于最小值
+        if value < self.a_min_slider.value():
+            self.a_min_slider.setValue(value)
+        
+        self.mapRangeChanged.emit()
+    
+    def on_b_min_changed(self, value):
+        """B通道最小值变更处理"""
+        # 更新标签显示
+        self.b_min_value_label.setText(f"最小:{value}%")
+        
+        # 确保最小值不大于最大值
+        if value > self.b_max_slider.value():
+            self.b_max_slider.setValue(value)
+        
+        self.mapRangeChanged.emit()
+    
+    def on_b_max_changed(self, value):
+        """B通道最大值变更处理"""
+        # 更新标签显示
+        self.b_max_value_label.setText(f"最大:{value}%")
+        
+        # 确保最大值不小于最小值
+        if value < self.b_min_slider.value():
+            self.b_min_slider.setValue(value)
+        
+        self.mapRangeChanged.emit()
+    
+    def get_a_min_value(self):
+        """获取A通道最小值"""
+        return self.a_min_slider.value()
+    
+    def get_a_max_value(self):
+        """获取A通道最大值"""
+        return self.a_max_slider.value()
+    
+    def get_b_min_value(self):
+        """获取B通道最小值"""
+        return self.b_min_slider.value()
+    
+    def get_b_max_value(self):
+        """获取B通道最大值"""
+        return self.b_max_slider.value()
+    
+    def set_a_min_value(self, value):
+        """设置A通道最小值"""
+        self.a_min_slider.setValue(int(value))
+    
+    def set_a_max_value(self, value):
+        """设置A通道最大值"""
+        self.a_max_slider.setValue(int(value))
+    
+    def set_b_min_value(self, value):
+        """设置B通道最小值"""
+        self.b_min_slider.setValue(int(value))
+    
+    def set_b_max_value(self, value):
+        """设置B通道最大值"""
+        self.b_max_slider.setValue(int(value))
