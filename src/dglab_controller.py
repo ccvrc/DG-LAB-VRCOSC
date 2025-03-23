@@ -503,15 +503,6 @@ class DGLabController:
                 channel_name = "A" if self.current_select_channel == Channel.A else "B"
                 self.main_window.controller_settings_tab.update_current_channel_display(channel_name)
 
-    async def set_panel_control(self, value):
-        """
-        面板控制功能开关，功能已简化
-        """
-        # 此方法被保留但功能已简化，不再控制 enable_osc_control
-        logger.info(f"收到面板控制值: {value}")
-        # UI相关代码保留但不再更新已移除的复选框
-        # 如果你不再需要此方法，可以完全删除它
-
     def map_value(self, value, min_value, max_value):
         """
         将 Contact/Physbones 值映射到强度范围
@@ -616,10 +607,6 @@ class DGLabController:
                 
                 # 更新当前强度记录
                 channel_state["current_strength"] = channel_state["target_strength"]
-                
-                # 如果启用了ChatBox状态，则更新显示
-                if self.enable_chatbox_status:
-                    await self.send_strength_status()
                 
                 # 完成命令处理
                 self.command_queue.task_done()
