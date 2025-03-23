@@ -1,5 +1,5 @@
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
-                               QLineEdit, QCheckBox, QLabel, QListWidget, QListWidgetItem, QAbstractItemView)
+                               QLineEdit, QCheckBox, QLabel, QListWidget, QListWidgetItem, QAbstractItemView, QSlider)
 from PySide6.QtCore import Qt, Signal
 import logging
 import yaml
@@ -43,7 +43,14 @@ class OSCParametersTab(QWidget):
 
     def add_address(self):
         # 添加新地址到数据模型
-        new_address = {'address': '', 'channels': {'A': False, 'B': False}}
+        new_address = {
+            'address': '', 
+            'channels': {'A': False, 'B': False},
+            'mapping_ranges': {
+                'A': {'min': 0, 'max': 100},
+                'B': {'min': 0, 'max': 100}
+            }
+        }
         self.addresses.append(new_address)
         
         # 添加到UI
@@ -54,6 +61,7 @@ class OSCParametersTab(QWidget):
         self.address_list_widget.setItemWidget(item, widget)
         widget.addressChanged.connect(self.on_address_changed)
         widget.channelChanged.connect(self.on_channel_changed)
+        widget.mapRangeChanged.connect(self.on_map_range_changed)
         self.address_list_widget.setCurrentItem(item)
         
         # 保存并发送更新信号
@@ -80,6 +88,13 @@ class OSCParametersTab(QWidget):
         self.save_addresses()
         self.addresses_updated.emit()
 
+    def on_map_range_changed(self):
+        """处理映射范围变更事件"""
+        # 同步 UI 到数据模型，确保二者一致
+        self.sync_ui_to_model()
+        self.save_addresses()
+        self.addresses_updated.emit()
+
     def sync_ui_to_model(self):
         """同步 UI 到数据模型，重建 self.addresses 列表"""
         new_addresses = []
@@ -94,9 +109,21 @@ class OSCParametersTab(QWidget):
                     'A': widget.channel_a_checkbox.isChecked(),
                     'B': widget.channel_b_checkbox.isChecked()
                 }
+                # 添加映射范围设置
+                mapping_ranges = {
+                    'A': {
+                        'min': widget.get_a_min_value(),
+                        'max': widget.get_a_max_value()
+                    },
+                    'B': {
+                        'min': widget.get_b_min_value(),
+                        'max': widget.get_b_max_value()
+                    }
+                }
                 new_addresses.append({
                     'address': address,
-                    'channels': channels
+                    'channels': channels,
+                    'mapping_ranges': mapping_ranges
                 })
         
         # 更新数据模型
@@ -192,12 +219,31 @@ class OSCParametersTab(QWidget):
                 widget.channel_a_checkbox.setChecked('A' in channels)
                 widget.channel_b_checkbox.setChecked('B' in channels)
             
+            # 处理映射范围设置 - 如果数据中有映射范围信息，则应用它
+            mapping_ranges = address_data.get('mapping_ranges', {})
+            if mapping_ranges and isinstance(mapping_ranges, dict):
+                # A 通道映射范围
+                if 'A' in mapping_ranges and isinstance(mapping_ranges['A'], dict):
+                    a_range = mapping_ranges['A']
+                    widget.set_a_min_value(a_range['min'])
+                    widget.set_a_max_value(a_range['max'])
+                
+                # B 通道映射范围
+                if 'B' in mapping_ranges and isinstance(mapping_ranges['B'], dict):
+                    b_range = mapping_ranges['B']
+                    widget.set_b_min_value(b_range['min'])
+                    widget.set_b_max_value(b_range['max'])
+            
             # 连接信号
             widget.addressChanged.connect(self.on_address_changed)
             widget.channelChanged.connect(self.on_channel_changed)
+            widget.mapRangeChanged.connect(self.on_map_range_changed)
             
             item.setSizeHint(widget.sizeHint())
             self.address_list_widget.setItemWidget(item, widget)
+            
+            # 更新映射范围控件的可见性
+            widget.update_range_visibility()
         
         logger.info(f"UI已更新，显示 {len(self.addresses)} 个OSC地址")
 
@@ -208,22 +254,198 @@ class OSCParametersTab(QWidget):
 class OSCAddressWidget(QWidget):
     addressChanged = Signal()
     channelChanged = Signal()
+    mapRangeChanged = Signal()
 
     def __init__(self):
         super().__init__()
-        self.layout = QHBoxLayout()
+        self.layout = QVBoxLayout()
         self.setLayout(self.layout)
+        
+        # 地址和通道选择行
+        self.address_row = QHBoxLayout()
+        self.layout.addLayout(self.address_row)
 
         self.address_edit = QLineEdit()
         self.address_edit.setPlaceholderText("OSC 地址")
-        self.layout.addWidget(self.address_edit)
+        self.address_row.addWidget(self.address_edit)
 
         self.channel_a_checkbox = QCheckBox("A")
-        self.layout.addWidget(self.channel_a_checkbox)
+        self.address_row.addWidget(self.channel_a_checkbox)
 
         self.channel_b_checkbox = QCheckBox("B")
-        self.layout.addWidget(self.channel_b_checkbox)
-
+        self.address_row.addWidget(self.channel_b_checkbox)
+        
+        # A 通道映射范围行
+        self.a_range_row = QHBoxLayout()
+        self.layout.addLayout(self.a_range_row)
+        
+        self.a_range_label = QLabel("A通道范围:")
+        self.a_range_row.addWidget(self.a_range_label)
+        
+        # A通道最小值和最大值在同一行
+        self.a_min_slider = QSlider(Qt.Horizontal)
+        self.a_min_slider.setRange(0, 100)
+        self.a_min_slider.setValue(0)
+        self.a_min_slider.setFixedWidth(120)
+        self.a_range_row.addWidget(self.a_min_slider)
+        
+        self.a_min_value_label = QLabel("最小:0%")
+        self.a_range_row.addWidget(self.a_min_value_label)
+        
+        self.a_range_row.addSpacing(10)
+        
+        self.a_max_slider = QSlider(Qt.Horizontal)
+        self.a_max_slider.setRange(0, 100)
+        self.a_max_slider.setValue(100)
+        self.a_max_slider.setFixedWidth(120)
+        self.a_range_row.addWidget(self.a_max_slider)
+        
+        self.a_max_value_label = QLabel("最大:100%")
+        self.a_range_row.addWidget(self.a_max_value_label)
+        
+        self.a_range_row.addStretch()
+        
+        # B 通道映射范围行
+        self.b_range_row = QHBoxLayout()
+        self.layout.addLayout(self.b_range_row)
+        
+        self.b_range_label = QLabel("B通道范围:")
+        self.b_range_row.addWidget(self.b_range_label)
+        
+        # B通道最小值和最大值在同一行
+        self.b_min_slider = QSlider(Qt.Horizontal)
+        self.b_min_slider.setRange(0, 100)
+        self.b_min_slider.setValue(0)
+        self.b_min_slider.setFixedWidth(120)
+        self.b_range_row.addWidget(self.b_min_slider)
+        
+        self.b_min_value_label = QLabel("最小:0%")
+        self.b_range_row.addWidget(self.b_min_value_label)
+        
+        self.b_range_row.addSpacing(10)
+        
+        self.b_max_slider = QSlider(Qt.Horizontal)
+        self.b_max_slider.setRange(0, 100)
+        self.b_max_slider.setValue(100)
+        self.b_max_slider.setFixedWidth(120)
+        self.b_range_row.addWidget(self.b_max_slider)
+        
+        self.b_max_value_label = QLabel("最大:100%")
+        self.b_range_row.addWidget(self.b_max_value_label)
+        
+        self.b_range_row.addStretch()
+        
+        # 连接信号
         self.address_edit.textChanged.connect(self.addressChanged)
-        self.channel_a_checkbox.stateChanged.connect(self.channelChanged)
-        self.channel_b_checkbox.stateChanged.connect(self.channelChanged)
+        self.channel_a_checkbox.stateChanged.connect(self.on_channel_changed)
+        self.channel_b_checkbox.stateChanged.connect(self.on_channel_changed)
+        
+        self.a_min_slider.valueChanged.connect(self.on_a_min_changed)
+        self.a_max_slider.valueChanged.connect(self.on_a_max_changed)
+        self.b_min_slider.valueChanged.connect(self.on_b_min_changed)
+        self.b_max_slider.valueChanged.connect(self.on_b_max_changed)
+        
+        # 初始状态更新
+        self.update_range_visibility()
+    
+    def on_channel_changed(self):
+        self.update_range_visibility()
+        self.channelChanged.emit()
+    
+    def update_range_visibility(self):
+        """根据通道选择状态更新映射范围控件的可见性"""
+        is_a_visible = self.channel_a_checkbox.isChecked()
+        is_b_visible = self.channel_b_checkbox.isChecked()
+        
+        # A通道控件可见性
+        self.a_range_label.setVisible(is_a_visible)
+        self.a_min_slider.setVisible(is_a_visible)
+        self.a_min_value_label.setVisible(is_a_visible)
+        self.a_max_slider.setVisible(is_a_visible)
+        self.a_max_value_label.setVisible(is_a_visible)
+        
+        # B通道控件可见性
+        self.b_range_label.setVisible(is_b_visible)
+        self.b_min_slider.setVisible(is_b_visible)
+        self.b_min_value_label.setVisible(is_b_visible)
+        self.b_max_slider.setVisible(is_b_visible)
+        self.b_max_value_label.setVisible(is_b_visible)
+        
+        # 发出布局变更信号
+        self.updateGeometry()
+    
+    def on_a_min_changed(self, value):
+        """A通道最小值变更处理"""
+        # 更新标签显示
+        self.a_min_value_label.setText(f"最小:{value}%")
+        
+        # 确保最小值不大于最大值
+        if value > self.a_max_slider.value():
+            self.a_max_slider.setValue(value)
+        
+        self.mapRangeChanged.emit()
+    
+    def on_a_max_changed(self, value):
+        """A通道最大值变更处理"""
+        # 更新标签显示
+        self.a_max_value_label.setText(f"最大:{value}%")
+        
+        # 确保最大值不小于最小值
+        if value < self.a_min_slider.value():
+            self.a_min_slider.setValue(value)
+        
+        self.mapRangeChanged.emit()
+    
+    def on_b_min_changed(self, value):
+        """B通道最小值变更处理"""
+        # 更新标签显示
+        self.b_min_value_label.setText(f"最小:{value}%")
+        
+        # 确保最小值不大于最大值
+        if value > self.b_max_slider.value():
+            self.b_max_slider.setValue(value)
+        
+        self.mapRangeChanged.emit()
+    
+    def on_b_max_changed(self, value):
+        """B通道最大值变更处理"""
+        # 更新标签显示
+        self.b_max_value_label.setText(f"最大:{value}%")
+        
+        # 确保最大值不小于最小值
+        if value < self.b_min_slider.value():
+            self.b_min_slider.setValue(value)
+        
+        self.mapRangeChanged.emit()
+    
+    def get_a_min_value(self):
+        """获取A通道最小值"""
+        return self.a_min_slider.value()
+    
+    def get_a_max_value(self):
+        """获取A通道最大值"""
+        return self.a_max_slider.value()
+    
+    def get_b_min_value(self):
+        """获取B通道最小值"""
+        return self.b_min_slider.value()
+    
+    def get_b_max_value(self):
+        """获取B通道最大值"""
+        return self.b_max_slider.value()
+    
+    def set_a_min_value(self, value):
+        """设置A通道最小值"""
+        self.a_min_slider.setValue(int(value))
+    
+    def set_a_max_value(self, value):
+        """设置A通道最大值"""
+        self.a_max_slider.setValue(int(value))
+    
+    def set_b_min_value(self, value):
+        """设置B通道最小值"""
+        self.b_min_slider.setValue(int(value))
+    
+    def set_b_max_value(self, value):
+        """设置B通道最大值"""
+        self.b_max_slider.setValue(int(value))

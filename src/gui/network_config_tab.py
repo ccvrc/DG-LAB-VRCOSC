@@ -297,7 +297,11 @@ class NetworkConfigTab(QWidget):
         for addr in osc_addresses:
             address = addr['address']
             channels = addr['channels']
-            handler = functools.partial(self.handle_osc_message_task_pb_with_channels, controller=controller, channels=channels)
+            mapping_ranges = addr.get('mapping_ranges', {})
+            handler = functools.partial(self.handle_osc_message_task_pb_with_channels, 
+                                        controller=controller, 
+                                        channels=channels,
+                                        mapping_ranges=mapping_ranges)
             self.dispatcher.map(address, handler)
             self.osc_address_handlers[address] = handler
         logger.info("OSC dispatcher mappings updated with custom addresses.")
@@ -325,7 +329,7 @@ class NetworkConfigTab(QWidget):
         logger.info(f"收到OSC消息 (面板控制): {address} {args}")
         asyncio.create_task(controller.handle_osc_message_pad(address, *args))
 
-    def handle_osc_message_task_pb_with_channels(self, address, *args, controller, channels):
-        """将OSC命令传递给控制器队列处理机制，带通道信息"""
+    def handle_osc_message_task_pb_with_channels(self, address, *args, controller, channels, mapping_ranges=None):
+        """将OSC命令传递给控制器队列处理机制，带通道信息和映射范围"""
         logger.info(f"收到OSC消息 (参数绑定): {address} {args} 通道: {channels}")
-        asyncio.create_task(controller.handle_osc_message_pb(address, *args, channels=channels))
+        asyncio.create_task(controller.handle_osc_message_pb(address, *args, channels=channels, mapping_ranges=mapping_ranges))
