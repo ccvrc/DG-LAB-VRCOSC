@@ -7,6 +7,7 @@ import logging
 
 from pydglab_ws import Channel, StrengthOperationType
 from pulse_data import PULSE_NAME
+from command_types import CommandType
 
 logger = logging.getLogger(__name__)
 
@@ -51,33 +52,10 @@ class ControllerSettingsTab(QWidget):
         self.allow_a_channel_update = True
         self.allow_b_channel_update = True
 
-        # 是否启用面板控制
-        self.enable_panel_control_checkbox = QCheckBox("允许 avatar 控制设备") # PanelControl 关闭后忽略所有游戏内传入的控制
-        self.enable_panel_control_checkbox.setChecked(True)
-        self.controller_form.addRow(self.enable_panel_control_checkbox)
-
         # ChatBox状态开关
         self.enable_chatbox_status_checkbox = QCheckBox("启用ChatBox状态显示")
         self.enable_chatbox_status_checkbox.setChecked(False)
         self.controller_form.addRow(self.enable_chatbox_status_checkbox)
-
-        # 创建水平布局用于放置 dynamic_bone_mode 和 current_select_channel 显示
-        dynamic_bone_layout = QHBoxLayout()
-
-        # 动骨模式选择
-        self.dynamic_bone_mode_a_checkbox = QCheckBox("A通道交互模式")
-        self.dynamic_bone_mode_b_checkbox = QCheckBox("B通道交互模式")
-
-        # 添加复选框到水平布局
-        dynamic_bone_layout.addWidget(self.dynamic_bone_mode_a_checkbox)
-        dynamic_bone_layout.addWidget(self.dynamic_bone_mode_b_checkbox)
-
-        # 在同行右侧增加 current_select_channel 显示标签
-        self.current_channel_label = QLabel("面板当前控制通道: 未设置")
-        dynamic_bone_layout.addWidget(self.current_channel_label)
-
-        # 将水平布局添加到主布局
-        self.controller_form.addRow(dynamic_bone_layout)
 
         # 波形模式选择
         self.pulse_mode_a_combobox = QComboBox()
@@ -92,31 +70,93 @@ class ControllerSettingsTab(QWidget):
         self.strength_step_spinbox = QSpinBox()
         self.strength_step_spinbox.setRange(0, 100)
         self.strength_step_spinbox.setValue(30)
-        self.controller_form.addRow("开火强度步长:", self.strength_step_spinbox)
+        self.controller_form.addRow("开火强度步进:", self.strength_step_spinbox)
+
+        # 调节强度步长
+        self.adjust_strength_step_spinbox = QSpinBox()
+        self.adjust_strength_step_spinbox.setRange(0, 100)
+        self.adjust_strength_step_spinbox.setValue(5)
+        self.controller_form.addRow("调节强度步进:", self.adjust_strength_step_spinbox)
 
         self.controller_group.setLayout(self.controller_form)
         self.layout.addRow(self.controller_group)
 
+        # 命令类型控制组
+        self.command_types_group = QGroupBox("命令来源控制")
+        self.command_types_group.setEnabled(False)  # 默认禁用
+        self.command_types_form = QFormLayout()
+
+        # 创建命令类型控制复选框
+        self.enable_gui_commands_checkbox = QCheckBox("启用程序界面控制")
+        self.enable_gui_commands_checkbox.setChecked(True)
+        self.command_types_form.addRow(self.enable_gui_commands_checkbox)
+
+        # 创建水平布局，包含面板控制复选框和当前通道显示
+        panel_layout = QHBoxLayout()
+        
+        # 添加面板控制复选框
+        self.enable_panel_commands_checkbox = QCheckBox("启用Soundpad控制")
+        self.enable_panel_commands_checkbox.setChecked(True)
+        panel_layout.addWidget(self.enable_panel_commands_checkbox)
+        
+        # 添加当前选择通道显示标签
+        self.current_channel_label = QLabel("面板当前控制通道: 未设置")
+        panel_layout.addWidget(self.current_channel_label)
+        
+        # 将水平布局添加到主布局
+        self.command_types_form.addRow(panel_layout)
+
+        # 将交互命令拆分为A/B通道独立控制
+        interaction_layout = QHBoxLayout()
+        
+        self.enable_interaction_commands_a_checkbox = QCheckBox("A通道交互控制")
+        self.enable_interaction_commands_a_checkbox.setChecked(True)
+        interaction_layout.addWidget(self.enable_interaction_commands_a_checkbox)
+        
+        self.enable_interaction_commands_b_checkbox = QCheckBox("B通道交互控制")
+        self.enable_interaction_commands_b_checkbox.setChecked(True)
+        interaction_layout.addWidget(self.enable_interaction_commands_b_checkbox)
+        
+        self.command_types_form.addRow("启用交互方式控制:", interaction_layout)
+
+        self.enable_ton_commands_checkbox = QCheckBox("启用游戏联动控制")
+        self.enable_ton_commands_checkbox.setChecked(True)
+        self.command_types_form.addRow(self.enable_ton_commands_checkbox)
+
+        self.command_types_group.setLayout(self.command_types_form)
+        self.layout.addRow(self.command_types_group)
+
         # Connect UI to controller update methods
         self.strength_step_spinbox.valueChanged.connect(self.update_strength_step)
-        self.enable_panel_control_checkbox.stateChanged.connect(self.update_panel_control)
-        self.dynamic_bone_mode_a_checkbox.stateChanged.connect(self.update_dynamic_bone_mode_a)
-        self.dynamic_bone_mode_b_checkbox.stateChanged.connect(self.update_dynamic_bone_mode_b)
+        self.adjust_strength_step_spinbox.valueChanged.connect(self.update_adjust_strength_step)
         self.pulse_mode_a_combobox.currentIndexChanged.connect(self.update_pulse_mode_a)
         self.pulse_mode_b_combobox.currentIndexChanged.connect(self.update_pulse_mode_b)
         self.enable_chatbox_status_checkbox.stateChanged.connect(self.update_chatbox_status)
+        
+        # 连接命令类型控制复选框
+        self.enable_gui_commands_checkbox.stateChanged.connect(self.update_gui_commands_state)
+        self.enable_panel_commands_checkbox.stateChanged.connect(self.update_panel_commands_state)
+        self.enable_interaction_commands_a_checkbox.stateChanged.connect(self.update_interaction_commands_a_state)
+        self.enable_interaction_commands_b_checkbox.stateChanged.connect(self.update_interaction_commands_b_state)
+        self.enable_ton_commands_checkbox.stateChanged.connect(self.update_ton_commands_state)
 
     def bind_controller_settings(self):
         """将GUI设置与DGLabController变量绑定"""
         if self.main_window.controller:
             self.dg_controller = self.main_window.controller
             self.dg_controller.fire_mode_strength_step = self.strength_step_spinbox.value()
-            self.dg_controller.enable_panel_control = self.enable_panel_control_checkbox.isChecked()
-            self.dg_controller.is_dynamic_bone_mode_a = self.dynamic_bone_mode_a_checkbox.isChecked()
-            self.dg_controller.is_dynamic_bone_mode_b = self.dynamic_bone_mode_b_checkbox.isChecked()
+            self.dg_controller.adjust_strength_step = self.adjust_strength_step_spinbox.value()
             self.dg_controller.pulse_mode_a = self.pulse_mode_a_combobox.currentIndex()
             self.dg_controller.pulse_mode_b = self.pulse_mode_b_combobox.currentIndex()
             self.dg_controller.enable_chatbox_status = self.enable_chatbox_status_checkbox.isChecked()
+            
+            # 绑定命令类型控制状态
+            self.dg_controller.enable_gui_commands = self.enable_gui_commands_checkbox.isChecked()
+            self.dg_controller.enable_panel_commands = self.enable_panel_commands_checkbox.isChecked()
+            self.dg_controller.enable_interaction_commands = (self.enable_interaction_commands_a_checkbox.isChecked() or 
+                                                            self.enable_interaction_commands_b_checkbox.isChecked())
+            self.dg_controller.enable_ton_commands = self.enable_ton_commands_checkbox.isChecked()
+            
             logger.info("DGLabController 参数已绑定")
         else:
             logger.warning("Controller is not initialized yet.")
@@ -125,46 +165,29 @@ class ControllerSettingsTab(QWidget):
     def update_strength_step(self, value):
         if self.main_window.controller:
             controller = self.main_window.controller
-            self.dg_controller.fire_mode_strength_step = value
+            controller.fire_mode_strength_step = value
             logger.info(f"Updated strength step to {value}")
-            self.dg_controller.send_value_to_vrchat("/avatar/parameters/SoundPad/Volume", 0.01*value)
-
-    def update_panel_control(self, state):
-        if self.main_window.controller:
-            controller = self.main_window.controller
-            self.dg_controller.enable_panel_control = bool(state)
-            logger.info(f"Panel control enabled: {self.dg_controller.enable_panel_control}")
-            self.dg_controller.send_value_to_vrchat("/avatar/parameters/SoundPad/PanelControl", bool(state))
-
-    def update_dynamic_bone_mode_a(self, state):
-        if self.main_window.controller:
-            controller = self.main_window.controller
-            self.dg_controller.is_dynamic_bone_mode_a = bool(state)
-            logger.info(f"Dynamic bone mode A: {self.dg_controller.is_dynamic_bone_mode_a}")
-
-    def update_dynamic_bone_mode_b(self, state):
-        if self.main_window.controller:
-            controller = self.main_window.controller
-            self.dg_controller.is_dynamic_bone_mode_b = bool(state)
-            logger.info(f"Dynamic bone mode B: {self.dg_controller.is_dynamic_bone_mode_b}")
+            # 使用统一的命令处理
+            asyncio.run_coroutine_threadsafe(
+                controller.send_value_to_vrchat("/avatar/parameters/SoundPad/Volume", 0.01*value),
+                asyncio.get_event_loop()
+            )
 
     def update_pulse_mode_a(self, index):
+        """更新 A 通道脉冲模式"""
         if self.main_window.controller:
-            asyncio.create_task(self.dg_controller.set_pulse_data(None, Channel.A, index))
-            logger.info(f"Pulse mode A updated to {PULSE_NAME[index]}")
-            # 立即更新标签中的波形名称
-            if self.main_window.controller.last_strength:
-                self.a_channel_label.setText(
-                    f"A 通道强度: {self.main_window.controller.last_strength.a} 强度上限: {self.main_window.controller.last_strength.a_limit}  波形: {PULSE_NAME[index]}")
+            controller = self.main_window.controller
+            controller.pulse_mode_a = index
+            logger.info(f"更新 A 通道脉冲模式为 {PULSE_NAME[index]}")
+            # 脉冲模式已更新，会在下一次周期任务中自动应用
 
     def update_pulse_mode_b(self, index):
+        """更新 B 通道脉冲模式"""
         if self.main_window.controller:
-            asyncio.create_task(self.dg_controller.set_pulse_data(None, Channel.B, index))
-            logger.info(f"Pulse mode B updated to {PULSE_NAME[index]}")
-            # 立即更新标签中的波形名称
-            if self.main_window.controller.last_strength:
-                self.b_channel_label.setText(
-                    f"B 通道强度: {self.main_window.controller.last_strength.b} 强度上限: {self.main_window.controller.last_strength.b_limit}  波形: {PULSE_NAME[index]}")
+            controller = self.main_window.controller
+            controller.pulse_mode_b = index
+            logger.info(f"更新 B 通道脉冲模式为 {PULSE_NAME[index]}")
+            # 脉冲模式已更新，会在下一次周期任务中自动应用
 
     def update_chatbox_status(self, state):
         if self.main_window.controller:
@@ -174,16 +197,28 @@ class ControllerSettingsTab(QWidget):
 
     def set_a_channel_strength(self, value):
         """根据滑动条的值设定 A 通道强度"""
-        if self.main_window.controller:
-            asyncio.create_task(self.dg_controller.client.set_strength(Channel.A, StrengthOperationType.SET_TO, value))
-            self.dg_controller.last_strength.a = value  # 同步更新 last_strength 的 A 通道值
+        if self.main_window.controller and self.allow_a_channel_update:
+            controller = self.main_window.controller
+            asyncio.create_task(controller.add_command(
+                CommandType.GUI_COMMAND,
+                Channel.A,
+                StrengthOperationType.SET_TO,
+                value,
+                "gui_slider_a"
+            ))
             self.a_channel_slider.setToolTip(f"SET A 通道强度: {value}")
 
     def set_b_channel_strength(self, value):
         """根据滑动条的值设定 B 通道强度"""
-        if self.main_window.controller:
-            asyncio.create_task(self.dg_controller.client.set_strength(Channel.B, StrengthOperationType.SET_TO, value))
-            self.dg_controller.last_strength.b = value  # 同步更新 last_strength 的 B 通道值
+        if self.main_window.controller and self.allow_b_channel_update:
+            controller = self.main_window.controller
+            asyncio.create_task(controller.add_command(
+                CommandType.GUI_COMMAND,
+                Channel.B,
+                StrengthOperationType.SET_TO,
+                value,
+                "gui_slider_b"
+            ))
             self.b_channel_slider.setToolTip(f"SET B 通道强度: {value}")
 
     def disable_a_channel_updates(self):
@@ -249,3 +284,49 @@ class ControllerSettingsTab(QWidget):
                 self.b_channel_slider.blockSignals(False)
                 self.b_channel_label.setText(
                     f"B 通道强度: {self.main_window.controller.last_strength.b} 强度上限: {self.main_window.controller.last_strength.b_limit}  波形: {PULSE_NAME[self.main_window.controller.pulse_mode_b]}")
+
+    # 命令类型控制方法
+    def update_gui_commands_state(self, state):
+        """更新GUI命令启用状态"""
+        if self.main_window.controller:
+            controller = self.main_window.controller
+            controller.enable_gui_commands = bool(state)
+            logger.info(f"GUI命令已{'启用' if state else '禁用'}")
+            
+    def update_panel_commands_state(self, state):
+        """更新面板命令启用状态"""
+        if self.main_window.controller:
+            controller = self.main_window.controller
+            controller.enable_panel_commands = bool(state)
+            logger.info(f"面板命令已{'启用' if state else '禁用'}")
+            
+    def update_interaction_commands_a_state(self, state):
+        """更新A通道交互命令启用状态"""
+        if self.main_window.controller:
+            controller = self.main_window.controller
+            controller.enable_interaction_mode_a = bool(state)  # 更新为新的交互模式状态变量
+            # 更新总体交互命令状态
+            controller.enable_interaction_commands = (bool(state) or self.enable_interaction_commands_b_checkbox.isChecked())
+            logger.info(f"A通道交互命令已{'启用' if state else '禁用'}")
+    
+    def update_interaction_commands_b_state(self, state):
+        """更新B通道交互命令启用状态"""
+        if self.main_window.controller:
+            controller = self.main_window.controller
+            controller.enable_interaction_mode_b = bool(state)  # 更新为新的交互模式状态变量
+            # 更新总体交互命令状态
+            controller.enable_interaction_commands = (self.enable_interaction_commands_a_checkbox.isChecked() or bool(state))
+            logger.info(f"B通道交互命令已{'启用' if state else '禁用'}")
+    
+    def update_ton_commands_state(self, state):
+        """更新游戏联动命令启用状态"""
+        if self.main_window.controller:
+            controller = self.main_window.controller
+            controller.enable_ton_commands = bool(state)
+            logger.info(f"游戏联动命令已{'启用' if state else '禁用'}")
+
+    def update_adjust_strength_step(self, value):
+        if self.main_window.controller:
+            controller = self.main_window.controller
+            controller.adjust_strength_step = value
+            logger.info(f"更新调节强度步进为 {value}")

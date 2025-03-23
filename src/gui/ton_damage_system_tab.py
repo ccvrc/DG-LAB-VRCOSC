@@ -7,6 +7,7 @@ import logging
 import json
 
 from pydglab_ws import Channel, StrengthOperationType
+from command_types import CommandType
 
 from ton_websocket_handler import WebSocketClient
 
@@ -170,7 +171,13 @@ class TonDamageSystemTab(QWidget):
         if current_value > 0:
             logger.info(f"Damage reduced by {reduction_strength}%. Current damage: {new_value}%")
         if self.main_window.app_status_online and self.main_window.controller.last_strength and self.main_window.controller.last_strength.a != new_value and not self.main_window.controller.fire_mode_active:
-            asyncio.create_task(self.main_window.controller.client.set_strength(Channel.A, StrengthOperationType.SET_TO, new_strength))
+            asyncio.create_task(self.main_window.controller.add_command(
+                CommandType.TON_COMMAND,
+                Channel.A,
+                StrengthOperationType.SET_TO,
+                new_strength,
+                "ton_damage_reduction"
+            ))
 
     def handle_websocket_message(self, message):
         """Handle incoming WebSocket messages and update status or damage accordingly."""
@@ -238,7 +245,13 @@ class TonDamageSystemTab(QWidget):
         logger.info("Resetting damage accumulation.")
         self.damage_progress_bar.setValue(0)
         if self.main_window.app_status_online and self.main_window.controller:
-            asyncio.create_task(self.main_window.controller.client.set_strength(Channel.A, StrengthOperationType.SET_TO, 0))
+            asyncio.create_task(self.main_window.controller.add_command(
+                CommandType.TON_COMMAND,
+                Channel.A,
+                StrengthOperationType.SET_TO,
+                0,
+                "ton_damage_reset"
+            ))
             asyncio.create_task(self.main_window.controller.strength_fire_mode(False, Channel.A, self.death_penalty_strength_slider.value(), self.main_window.controller.last_strength)) #可能遗漏
 
     async def trigger_death_penalty(self):
@@ -247,12 +260,34 @@ class TonDamageSystemTab(QWidget):
         penalty_time = self.death_penalty_time_spinbox.value()  # 获取惩罚持续时间
         logger.warning(f"Death penalty triggered: Strength={penalty_strength}, Time={penalty_time}s")
         self.damage_progress_bar.setValue(100)  # 将伤害设置为 100%
-        if self.main_window.controller:
-            last_strength_mod = self.main_window.controller.last_strength
-            last_strength_mod.a = self.damage_strength_slider.value() # 开火值基于伤害强度上限更新
-            logger.warning(f"Death penalty triggered: a {last_strength_mod.a} fire {penalty_strength}")
-            # 开始惩罚
-            if self.main_window.app_status_online:
-                asyncio.create_task(self.main_window.controller.strength_fire_mode(True, Channel.A, penalty_strength, last_strength_mod))
-                await asyncio.sleep(penalty_time)  # 等待指定的惩罚持续时间
-                asyncio.create_task(self.main_window.controller.strength_fire_mode(False, Channel.A, penalty_strength, last_strength_mod))
+        
+        # 使用控制器的统一接口处理死亡惩罚
+        if self.main_window.controller and self.main_window.app_status_online:
+            await self.main_window.controller.handle_ton_death(penalty_strength, penalty_time)
+
+    def update_damage(self, damage_value):
+        """Update the damage value and progress bar."""
+        if damage_value > 0 and self.enable_damage_checkbox.isChecked():
+            # 当前伤害进度
+            current_value = self.damage_progress_bar.value()
+            # 根据伤害倍率计算实际增加的伤害值
+            actual_damage = damage_value * self.damage_multiplier_slider.value()
+            # 计算新的伤害进度
+            new_value = min(current_value + actual_damage, 100)
+            # 更新伤害进度条
+            self.damage_progress_bar.setValue(int(new_value))
+            logger.info(f"收到伤害 {damage_value}，伤害倍率 {self.damage_multiplier_slider.value()}，实际伤害 {actual_damage}")
+            
+            # 如果控制器初始化且设备在线，发送伤害命令
+            if self.main_window.app_status_online and self.main_window.controller:
+                # 获取伤害强度上限
+                max_strength = self.damage_strength_slider.value()
+                # 计算实际应用的强度值
+                applied_strength = int((new_value / 100) * max_strength)
+                # 创建伤害处理任务
+                asyncio.create_task(
+                    self.main_window.controller.handle_ton_damage(
+                        actual_damage, 
+                        self.damage_multiplier_slider.value()
+                    )
+                )

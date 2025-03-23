@@ -224,12 +224,7 @@ class NetworkConfigTab(QWidget):
             self.start_button.setEnabled(True)
             self.main_window.log_viewer_tab.log_text_edit.append(f"ERROR: {error_message}")
 
-    def handle_osc_message_task_pad(self, address, *args, controller):
-        """将OSC命令传递给控制器队列处理机制"""
-        asyncio.create_task(controller.handle_osc_message_pad(address, *args))
 
-    def handle_osc_message_task_pb(self, address, *args):
-        asyncio.create_task(self.main_window.controller.handle_osc_message_pb(address, *args))
 
     def generate_qrcode(self, data: str):
         """生成二维码并转换为PySide6可显示的QPixmap"""
@@ -268,6 +263,7 @@ class NetworkConfigTab(QWidget):
             """)
             # 启用 DGLabController 设置
             self.main_window.controller_settings_tab.controller_group.setEnabled(True)  # 启用控制器设置
+            self.main_window.controller_settings_tab.command_types_group.setEnabled(True)  # 启用命令类型控制
             self.main_window.ton_damage_system_tab.damage_group.setEnabled(True)
         else:
             self.connection_status_label.setText("未连接")
@@ -281,6 +277,7 @@ class NetworkConfigTab(QWidget):
             """)
             # 禁用 DGLabController 设置
             self.main_window.controller_settings_tab.controller_group.setEnabled(False)  # 禁用控制器设置
+            self.main_window.controller_settings_tab.command_types_group.setEnabled(False)  # 禁用命令类型控制
             self.main_window.ton_damage_system_tab.damage_group.setEnabled(False)
         self.connection_status_label.adjustSize()  # 根据内容调整标签大小
 
@@ -325,8 +322,10 @@ class NetworkConfigTab(QWidget):
 
     def handle_osc_message_task_pad(self, address, *args, controller):
         """将OSC命令传递给控制器队列处理机制"""
+        logger.info(f"收到OSC消息 (面板控制): {address} {args}")
         asyncio.create_task(controller.handle_osc_message_pad(address, *args))
 
     def handle_osc_message_task_pb_with_channels(self, address, *args, controller, channels):
         """将OSC命令传递给控制器队列处理机制，带通道信息"""
+        logger.info(f"收到OSC消息 (参数绑定): {address} {args} 通道: {channels}")
         asyncio.create_task(controller.handle_osc_message_pb(address, *args, channels=channels))
