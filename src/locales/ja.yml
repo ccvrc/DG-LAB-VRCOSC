@@ -28,10 +28,21 @@ network_tab:
 controller_tab:
   title: "コントローラー設定"
   current_channel: "現在のチャンネル"
-  intensity: "強度"
-  waveform: "波形"
+  intensity: "チャンネル強度"
+  waveform: "波形モード"
   pulse_width: "パルス幅"
   frequency: "周波数"
+  enable_chatbox: "ChatBoxステータス表示を有効化"
+  strength_step: "発火強度ステップ"
+  adjust_step: "調整強度ステップ"
+  command_sources: "コマンドソース制御"
+  enable_gui_control: "UI制御を有効化"
+  enable_soundpad: "Soundpad制御を有効化"
+  current_panel: "現在のパネルチャンネル"
+  not_set: "未設定"
+  enable_interaction: "インタラクション制御を有効化"
+  interaction_control: "チャンネルインタラクション"
+  enable_game_integration: "ゲーム連携を有効化"
 
 osc_tab:
   title: "OSCパラメータ"

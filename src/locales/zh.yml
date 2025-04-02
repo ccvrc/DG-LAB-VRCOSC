@@ -28,10 +28,21 @@ network_tab:
 controller_tab:
   title: "控制器设置"
   current_channel: "当前通道"
-  intensity: "强度"
-  waveform: "波形"
+  intensity: "通道强度"
+  waveform: "波形模式"
   pulse_width: "脉宽"
   frequency: "频率"
+  enable_chatbox: "启用ChatBox状态显示"
+  strength_step: "开火强度步进"
+  adjust_step: "调节强度步进"
+  command_sources: "命令来源控制"
+  enable_gui_control: "启用程序界面控制"
+  enable_soundpad: "启用Soundpad控制"
+  current_panel: "面板当前控制通道"
+  not_set: "未设置"
+  enable_interaction: "启用交互方式控制"
+  interaction_control: "通道交互控制"
+  enable_game_integration: "启用游戏联动控制"
 
 osc_tab:
   title: "OSC参数配置"

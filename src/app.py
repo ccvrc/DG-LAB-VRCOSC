@@ -8,7 +8,7 @@ import logging
 
 from config import load_settings
 from logger_config import setup_logging
-from i18n import set_language, translate as _
+from i18n import set_language, translate as _, signals
 
 # Import the GUI modules
 from gui.network_config_tab import NetworkConfigTab
@@ -72,6 +72,9 @@ class MainWindow(QMainWindow):
 
         # Setup logging to the log viewer
         self.app_setup_logging()
+        
+        # 监听语言变更信号
+        signals.language_changed.connect(self.update_ui_language)
 
     def app_setup_logging(self):
         """设置日志系统输出到 QTextEdit 和控制台"""
@@ -95,6 +98,33 @@ class MainWindow(QMainWindow):
 
     def get_osc_addresses(self):
         return self.osc_parameters_tab.get_addresses()
+        
+    def update_ui_language(self):
+        """更新UI上的所有文本为当前语言"""
+        # 更新窗口标题
+        self.setWindowTitle(_("main.title"))
+        
+        # 更新选项卡标题
+        self.tab_widget.setTabText(0, _("main.tabs.network"))
+        self.tab_widget.setTabText(1, _("main.tabs.controller"))
+        self.tab_widget.setTabText(2, _("main.tabs.osc"))
+        self.tab_widget.setTabText(3, _("main.tabs.ton"))
+        self.tab_widget.setTabText(4, _("main.tabs.log"))
+        self.tab_widget.setTabText(5, _("main.settings.language"))
+        
+        # 通知各个选项卡更新其UI
+        # 通过发送信号或调用各选项卡的更新方法来实现
+        if hasattr(self.network_config_tab, 'update_ui_texts'):
+            self.network_config_tab.update_ui_texts()
+        if hasattr(self.controller_settings_tab, 'update_ui_texts'):
+            self.controller_settings_tab.update_ui_texts()
+        if hasattr(self.ton_damage_system_tab, 'update_ui_texts'):
+            self.ton_damage_system_tab.update_ui_texts()
+        if hasattr(self.log_viewer_tab, 'update_ui_texts'):
+            self.log_viewer_tab.update_ui_texts()
+        if hasattr(self.osc_parameters_tab, 'update_ui_texts'):
+            self.osc_parameters_tab.update_ui_texts()
+        # language_settings_tab已经在监听语言变更信号
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)

@@ -28,10 +28,21 @@ network_tab:
 controller_tab:
   title: "Controller Settings"
   current_channel: "Current Channel"
-  intensity: "Intensity"
-  waveform: "Waveform"
+  intensity: "Channel Intensity"
+  waveform: "Waveform Mode"
   pulse_width: "Pulse Width"
   frequency: "Frequency"
+  enable_chatbox: "Enable ChatBox Status Display"
+  strength_step: "Fire Intensity Step"
+  adjust_step: "Adjust Intensity Step"
+  command_sources: "Command Source Control"
+  enable_gui_control: "Enable UI Control"
+  enable_soundpad: "Enable Soundpad Control"
+  current_panel: "Current Panel Channel"
+  not_set: "Not Set"
+  enable_interaction: "Enable Interaction Control"
+  interaction_control: "Channel Interaction"
+  enable_game_integration: "Enable Game Integration"
 
 osc_tab:
   title: "OSC Parameters"

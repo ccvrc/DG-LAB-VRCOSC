@@ -9,7 +9,7 @@ from pydglab_ws import DGLabWSServer, RetCode, StrengthData, FeedbackButton
 from dglab_controller import DGLabController
 from qasync import asyncio
 from pythonosc import osc_server, dispatcher, udp_client
-from i18n import translate as _
+from i18n import translate as _, signals
 
 import functools # Use the built-in functools module
 import sys
@@ -358,3 +358,36 @@ class NetworkConfigTab(QWidget):
         
         logger.info(f"收到OSC消息 (参数绑定): {address} {args} 通道: {channel_list}")
         asyncio.create_task(controller.handle_osc_message_pb(address, *args, channels=channel_list, mapping_ranges=mapping_ranges))
+
+    def update_ui_texts(self):
+        """更新所有UI文本为当前语言"""
+        # 更新分组框标题
+        self.network_config_group.setTitle(_("network_tab.title"))
+        
+        # 更新表单标签
+        for i in range(self.form_layout.rowCount()):
+            label_item = self.form_layout.itemAt(i, QFormLayout.LabelRole)
+            if label_item and label_item.widget():
+                label_widget = label_item.widget()
+                if isinstance(label_widget, QLabel):
+                    label_text = label_widget.text()
+                    if label_text.startswith("选择网卡") or "Interface" in label_text:
+                        label_widget.setText(_("network_tab.interface") + ":")
+                    elif "WebSocket" in label_text or "端口" in label_text:
+                        label_widget.setText(_("network_tab.websocket_port") + ":")
+                    elif "OSC" in label_text:
+                        label_widget.setText(_("network_tab.osc_port") + ":")
+                    elif "状态" in label_text or "Status" in label_text:
+                        label_widget.setText(_("network_tab.status") + ":")
+        
+        # 更新状态标签
+        if self.main_window.app_status_online:
+            self.connection_status_label.setText(_("network_tab.online"))
+        else:
+            self.connection_status_label.setText(_("network_tab.offline"))
+            
+        # 更新按钮文本
+        if self.start_button.isEnabled():
+            self.start_button.setText(_("network_tab.connect"))
+        else:
+            self.start_button.setText(_("network_tab.disconnect"))

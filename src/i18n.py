@@ -2,8 +2,16 @@ import os
 import yaml
 import logging
 from typing import Dict, Any
+from PySide6.QtCore import QObject, Signal
 
 logger = logging.getLogger(__name__)
+
+# 语言变更信号类
+class LanguageSignals(QObject):
+    language_changed = Signal(str)  # 参数是新的语言代码
+
+# 创建信号实例
+signals = LanguageSignals()
 
 # 支持的语言
 LANGUAGES = {
@@ -67,6 +75,8 @@ def set_language(lang_code):
     if lang_code in LANGUAGES:
         _current_language = lang_code
         logger.info(f"Language set to {LANGUAGES[lang_code]} ({lang_code})")
+        # 发送语言变更信号
+        signals.language_changed.emit(lang_code)
         return True
     else:
         logger.warning(f"Language {lang_code} not supported")
