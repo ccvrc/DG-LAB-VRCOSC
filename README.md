@@ -59,3 +59,36 @@ VRChat 游戏内轮盘菜单：
     <img src="docs/images/misaka-h.png" alt="misaka-h" style="height: 450px;">
 </div>
 Artworks by Wanlin
+
+## 多语言支持
+
+此应用程序支持多语言界面：
+- 中文（默认）
+- 英文
+- 日语（框架已准备好，翻译需要完善）
+
+### 修改语言
+
+您可以通过界面中的"语言"选项卡更改语言设置。更改语言设置后，需要重启应用程序才能生效。
+
+### 添加新的翻译或修改现有翻译
+
+翻译文件位于 `src/locales` 目录中，每种语言对应一个YAML格式的文件：
+- `zh.yml` - 中文
+- `en.yml` - 英文
+- `ja.yml` - 日语
+
+如果您想添加或修改翻译，只需编辑相应的语言文件即可。
+
+### 为代码添加多语言支持
+
+如果您开发新功能或修改现有代码，请使用翻译函数来支持多语言：
+
+```python
+from i18n import translate as _
+
+# 使用方法
+label = QLabel(_("category.text_id"))
+```
+
+翻译函数会根据当前选择的语言自动查找对应的翻译文本。

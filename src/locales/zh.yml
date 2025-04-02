@@ -1,0 +1,54 @@
+# 中文翻译文件
+main:
+  title: "DG-Lab WebSocket Controller for VRChat"
+  tabs:
+    network: "网络配置"
+    controller: "控制器设置"
+    osc: "OSC参数配置"
+    ton: "ToN游戏联动"
+    log: "日志查看"
+  settings:
+    language: "语言"
+    language_changed: "语言已更改为{language}，重启应用后生效"
+    save: "保存"
+    cancel: "取消"
+
+network_tab:
+  title: "网络配置"
+  interface: "网卡选择"
+  ip_address: "IP地址"
+  websocket_port: "WebSocket端口"
+  osc_port: "OSC端口"
+  connect: "连接"
+  disconnect: "断开"
+  status: "状态"
+  online: "在线"
+  offline: "未连接，请点击连接后扫描二维码"
+
+controller_tab:
+  title: "控制器设置"
+  current_channel: "当前通道"
+  intensity: "强度"
+  waveform: "波形"
+  pulse_width: "脉宽"
+  frequency: "频率"
+
+osc_tab:
+  title: "OSC参数配置"
+  parameter_name: "参数名称"
+  parameter_type: "参数类型"
+  add: "添加"
+  remove: "删除"
+  save: "保存"
+  cancel: "取消"
+
+ton_tab:
+  title: "ToN游戏联动"
+  enable: "启用ToN伤害系统"
+  test: "测试"
+
+log_tab:
+  title: "日志查看"
+  clear: "清除"
+  level: "日志级别"
+  save: "保存日志" 

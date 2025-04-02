@@ -1,0 +1,54 @@
+# 日本語翻訳ファイル
+main:
+  title: "DG-Lab WebSocket Controller for VRChat"
+  tabs:
+    network: "ネットワーク設定"
+    controller: "コントローラー設定"
+    osc: "OSCパラメータ"
+    ton: "ToNゲーム連携"
+    log: "ログビューア"
+  settings:
+    language: "言語"
+    language_changed: "言語が{language}に変更されました。再起動後に有効になります"
+    save: "保存"
+    cancel: "キャンセル"
+
+network_tab:
+  title: "ネットワーク設定"
+  interface: "ネットワークインターフェース"
+  ip_address: "IPアドレス"
+  websocket_port: "WebSocketポート"
+  osc_port: "OSCポート"
+  connect: "接続"
+  disconnect: "切断"
+  status: "状態"
+  online: "オンライン"
+  offline: "オフライン、接続後にQRコードをスキャンしてください"
+
+controller_tab:
+  title: "コントローラー設定"
+  current_channel: "現在のチャンネル"
+  intensity: "強度"
+  waveform: "波形"
+  pulse_width: "パルス幅"
+  frequency: "周波数"
+
+osc_tab:
+  title: "OSCパラメータ"
+  parameter_name: "パラメータ名"
+  parameter_type: "パラメータタイプ"
+  add: "追加"
+  remove: "削除"
+  save: "保存"
+  cancel: "キャンセル"
+
+ton_tab:
+  title: "ToNゲーム連携"
+  enable: "ToNダメージシステムを有効化"
+  test: "テスト"
+
+log_tab:
+  title: "ログビューア"
+  clear: "クリア"
+  level: "ログレベル"
+  save: "ログを保存" 

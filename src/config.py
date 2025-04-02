@@ -7,6 +7,15 @@ import ipaddress
 import logging
 logger = logging.getLogger(__name__)
 
+# 默认设置
+DEFAULT_SETTINGS = {
+    'interface': '',
+    'ip': '',
+    'port': 5678,
+    'osc_port': 9001,
+    'language': 'zh'  # 添加默认语言设置
+}
+
 # Get active IP addresses (unchanged)
 def get_active_ip_addresses():
     ip_addresses = {}
@@ -38,9 +47,16 @@ def load_settings():
     if os.path.exists('settings.yml'):
         with open('settings.yml', 'r') as f:
             logger.info("settings.yml found")
-            return yaml.safe_load(f)
-    logger.info("No settings.yml found")
-    return None
+            settings = yaml.safe_load(f) or {}
+            
+            # 确保所有设置都存在
+            for key, value in DEFAULT_SETTINGS.items():
+                if key not in settings:
+                    settings[key] = value
+                    
+            return settings
+    logger.info("No settings.yml found, using default settings")
+    return DEFAULT_SETTINGS.copy()
 
 # Save the configuration to a YAML file
 def save_settings(settings):

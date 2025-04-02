@@ -9,6 +9,7 @@ from pydglab_ws import DGLabWSServer, RetCode, StrengthData, FeedbackButton
 from dglab_controller import DGLabController
 from qasync import asyncio
 from pythonosc import osc_server, dispatcher, udp_client
+from i18n import translate as _
 
 import functools # Use the built-in functools module
 import sys
@@ -28,7 +29,7 @@ class NetworkConfigTab(QWidget):
         self.setLayout(self.layout)
 
         # 创建网络配置组
-        self.network_config_group = QGroupBox("网络配置")
+        self.network_config_group = QGroupBox(_("network_tab.title"))
         self.form_layout = QFormLayout()
 
         # 网卡选择
@@ -36,19 +37,19 @@ class NetworkConfigTab(QWidget):
         active_ips = get_active_ip_addresses()
         for interface, ip in active_ips.items():
             self.ip_combobox.addItem(f"{interface}: {ip}")
-        self.form_layout.addRow("选择网卡:", self.ip_combobox)
+        self.form_layout.addRow(_("network_tab.interface") + ":", self.ip_combobox)
 
         # 端口选择
         self.port_spinbox = QSpinBox()
         self.port_spinbox.setRange(1024, 65535)
         self.port_spinbox.setValue(self.main_window.settings['port'])  # Set the default or loaded value
-        self.form_layout.addRow("WS连接端口:", self.port_spinbox)
+        self.form_layout.addRow(_("network_tab.websocket_port") + ":", self.port_spinbox)
 
         # OSC端口选择
         self.osc_port_spinbox = QSpinBox()
         self.osc_port_spinbox.setRange(1024, 65535)
         self.osc_port_spinbox.setValue(self.main_window.settings['osc_port'])  # Set the default or loaded value
-        self.form_layout.addRow("OSC接收端口:", self.osc_port_spinbox)
+        self.form_layout.addRow(_("network_tab.osc_port") + ":", self.osc_port_spinbox)
 
         # 创建 dispatcher 和地址处理器字典
         self.dispatcher = dispatcher.Dispatcher()
@@ -56,7 +57,7 @@ class NetworkConfigTab(QWidget):
         self.panel_control_handlers = {}  # 面板控制 OSC 地址的处理器
 
         # 添加客户端连接状态标签
-        self.connection_status_label = QLabel("未连接, 请在点击启动后扫描二维码连接")
+        self.connection_status_label = QLabel(_("network_tab.offline"))
         self.connection_status_label.setAlignment(Qt.AlignCenter)  # 设置内容居中
         self.connection_status_label.setStyleSheet("""
             QLabel {
@@ -67,10 +68,10 @@ class NetworkConfigTab(QWidget):
             }
         """)
         self.connection_status_label.adjustSize()  # 调整大小以适应内容
-        self.form_layout.addRow("客户端连接状态:", self.connection_status_label)
+        self.form_layout.addRow(_("network_tab.status") + ":", self.connection_status_label)
 
         # 启动按钮
-        self.start_button = QPushButton("启动")
+        self.start_button = QPushButton(_("network_tab.connect"))
         self.start_button.setStyleSheet("background-color: green; color: white;")  # 设置按钮初始为绿色
         self.start_button.clicked.connect(self.start_server_button_clicked)
         self.form_layout.addRow(self.start_button)
@@ -121,7 +122,7 @@ class NetworkConfigTab(QWidget):
 
     def start_server_button_clicked(self):
         """启动按钮被点击后的处理逻辑"""
-        self.start_button.setText("已启动")  # 修改按钮文本
+        self.start_button.setText(_("network_tab.disconnect"))  # 修改按钮文本
         self.start_button.setStyleSheet("background-color: grey; color: white;")  # 将按钮置灰
         self.start_button.setEnabled(False)  # 禁用按钮
         self.start_server()  # 调用现有的启动服务器逻辑
@@ -258,7 +259,7 @@ class NetworkConfigTab(QWidget):
         self.main_window.app_status_online = is_online
         """根据设备连接状态更新标签的文本和颜色"""
         if is_online:
-            self.connection_status_label.setText("已连接")
+            self.connection_status_label.setText(_("network_tab.online"))
             self.connection_status_label.setStyleSheet("""
                 QLabel {
                     background-color: green;
@@ -274,7 +275,7 @@ class NetworkConfigTab(QWidget):
             # 确保UI状态与控制器状态同步
             self.main_window.controller_settings_tab.sync_from_controller()
         else:
-            self.connection_status_label.setText("未连接")
+            self.connection_status_label.setText(_("network_tab.offline"))
             self.connection_status_label.setStyleSheet("""
                 QLabel {
                     background-color: red;

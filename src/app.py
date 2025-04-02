@@ -8,6 +8,7 @@ import logging
 
 from config import load_settings
 from logger_config import setup_logging
+from i18n import set_language, translate as _
 
 # Import the GUI modules
 from gui.network_config_tab import NetworkConfigTab
@@ -15,6 +16,7 @@ from gui.controller_settings_tab import ControllerSettingsTab
 from gui.ton_damage_system_tab import TonDamageSystemTab
 from gui.log_viewer_tab import LogViewerTab
 from gui.osc_parameters import OSCParametersTab
+from gui.language_settings_tab import LanguageSettingsTab
 
 setup_logging()
 # Configure the logger
@@ -30,19 +32,19 @@ def resource_path(relative_path):
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("DG-Lab WebSocket Controller for VRChat")
+        
+        # Load settings from file or use defaults
+        self.settings = load_settings()
+        
+        # 设置语言
+        if 'language' in self.settings:
+            set_language(self.settings['language'])
+            
+        self.setWindowTitle(_("main.title"))
         self.setGeometry(300, 300, 650, 600)
 
         # 设置窗口图标
         self.setWindowIcon(QIcon(resource_path('docs/images/fish-cake.ico')))
-
-        # Load settings from file or use defaults
-        self.settings = load_settings() or {
-            'interface': '',
-            'ip': '',
-            'port': 5678,
-            'osc_port': 9001
-        }
 
         # Set initial controller to None
         self.controller = None
@@ -58,14 +60,15 @@ class MainWindow(QMainWindow):
         self.ton_damage_system_tab = TonDamageSystemTab(self)
         self.log_viewer_tab = LogViewerTab(self)
         self.osc_parameters_tab = OSCParametersTab(self)
-
+        self.language_settings_tab = LanguageSettingsTab(self)
 
         # Add tabs to the tab widget
-        self.tab_widget.addTab(self.network_config_tab, "网络配置")
-        self.tab_widget.addTab(self.controller_settings_tab, "控制器设置")
-        self.tab_widget.addTab(self.osc_parameters_tab, "OSC参数配置")
-        self.tab_widget.addTab(self.ton_damage_system_tab, "ToN游戏联动")
-        self.tab_widget.addTab(self.log_viewer_tab, "日志查看")
+        self.tab_widget.addTab(self.network_config_tab, _("main.tabs.network"))
+        self.tab_widget.addTab(self.controller_settings_tab, _("main.tabs.controller"))
+        self.tab_widget.addTab(self.osc_parameters_tab, _("main.tabs.osc"))
+        self.tab_widget.addTab(self.ton_damage_system_tab, _("main.tabs.ton"))
+        self.tab_widget.addTab(self.log_viewer_tab, _("main.tabs.log"))
+        self.tab_widget.addTab(self.language_settings_tab, _("main.settings.language"))
 
         # Setup logging to the log viewer
         self.app_setup_logging()

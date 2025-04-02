@@ -1,0 +1,54 @@
+# English translation file
+main:
+  title: "DG-Lab WebSocket Controller for VRChat"
+  tabs:
+    network: "Network Config"
+    controller: "Controller Settings"
+    osc: "OSC Parameters"
+    ton: "ToN Game Integration"
+    log: "Log Viewer"
+  settings:
+    language: "Language"
+    language_changed: "Language changed to {language}, will take effect after restart"
+    save: "Save"
+    cancel: "Cancel"
+
+network_tab:
+  title: "Network Configuration"
+  interface: "Network Interface"
+  ip_address: "IP Address"
+  websocket_port: "WebSocket Port"
+  osc_port: "OSC Port"
+  connect: "Connect"
+  disconnect: "Disconnect"
+  status: "Status"
+  online: "Online"
+  offline: "Offline, scan QR code after connecting"
+
+controller_tab:
+  title: "Controller Settings"
+  current_channel: "Current Channel"
+  intensity: "Intensity"
+  waveform: "Waveform"
+  pulse_width: "Pulse Width"
+  frequency: "Frequency"
+
+osc_tab:
+  title: "OSC Parameters"
+  parameter_name: "Parameter Name"
+  parameter_type: "Parameter Type"
+  add: "Add"
+  remove: "Remove"
+  save: "Save"
+  cancel: "Cancel"
+
+ton_tab:
+  title: "ToN Game Integration"
+  enable: "Enable ToN Damage System"
+  test: "Test"
+
+log_tab:
+  title: "Log Viewer"
+  clear: "Clear"
+  level: "Log Level"
+  save: "Save Log" 
