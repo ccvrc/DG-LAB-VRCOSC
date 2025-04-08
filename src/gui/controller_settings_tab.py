@@ -412,31 +412,29 @@ class ControllerSettingsTab(QWidget):
         
         self.enable_chatbox_status_checkbox.setText(_("controller_tab.enable_chatbox"))
         
-        # 更新波形模式标签
-        self.controller_form.removeRow(self.pulse_mode_a_combobox)
-        self.controller_form.removeRow(self.pulse_mode_b_combobox)
-        self.controller_form.addRow(f"A {_('controller_tab.waveform')}:", self.pulse_mode_a_combobox)
-        self.controller_form.addRow(f"B {_('controller_tab.waveform')}:", self.pulse_mode_b_combobox)
-        
         # 更新步长标签
-        self.controller_form.removeRow(self.strength_step_spinbox)
-        self.controller_form.removeRow(self.adjust_strength_step_spinbox)
-        self.controller_form.addRow(_("controller_tab.strength_step") + ":", self.strength_step_spinbox)
-        self.controller_form.addRow(_("controller_tab.adjust_step") + ":", self.adjust_strength_step_spinbox)
+        for i in range(self.controller_form.rowCount()):
+            label_item = self.controller_form.itemAt(i, QFormLayout.LabelRole)
+            if label_item and label_item.widget():
+                label_widget = label_item.widget()
+                if isinstance(label_widget, QLabel):
+                    if label_widget.text().startswith("强度步长"):
+                        label_widget.setText(_("controller_tab.strength_step") + ":")
+                    elif label_widget.text().startswith("调节步长"):
+                        label_widget.setText(_("controller_tab.adjust_step") + ":")
         
         # 更新命令控制复选框文本
         self.enable_gui_commands_checkbox.setText(_("controller_tab.enable_gui_control"))
         self.enable_panel_commands_checkbox.setText(_("controller_tab.enable_soundpad"))
         
         # 更新当前通道显示
-        if hasattr(self, 'current_channel_label'):
-            current_text = self.current_channel_label.text()
-            if ":" in current_text:
-                channel_name = current_text.split(":", 1)[1].strip()
-                if channel_name and channel_name != _("controller_tab.not_set"):
-                    self.current_channel_label.setText(_("controller_tab.current_panel") + f": {channel_name}")
-                else:
-                    self.current_channel_label.setText(_("controller_tab.current_panel") + ": " + _("controller_tab.not_set"))
+        current_text = self.current_channel_label.text()
+        if ":" in current_text:
+            channel_name = current_text.split(":", 1)[1].strip()
+            if channel_name and channel_name != _("controller_tab.not_set"):
+                self.current_channel_label.setText(_("controller_tab.current_panel") + f": {channel_name}")
+            else:
+                self.current_channel_label.setText(_("controller_tab.current_panel") + ": " + _("controller_tab.not_set"))
         
         # 更新交互控制标签和复选框
         self.enable_interaction_commands_a_checkbox.setText(f"A {_('controller_tab.interaction_control')}")
@@ -448,6 +446,11 @@ class ControllerSettingsTab(QWidget):
             if label_item and label_item.widget():
                 label_widget = label_item.widget()
                 if isinstance(label_widget, QLabel) and label_widget.text().startswith("启用交互"):
+                    # 创建新的水平布局
+                    interaction_layout = QHBoxLayout()
+                    interaction_layout.addWidget(self.enable_interaction_commands_a_checkbox)
+                    interaction_layout.addWidget(self.enable_interaction_commands_b_checkbox)
+                    
                     self.command_types_form.removeRow(i)
                     self.command_types_form.insertRow(i, _("controller_tab.enable_interaction") + ":", interaction_layout)
                     break
