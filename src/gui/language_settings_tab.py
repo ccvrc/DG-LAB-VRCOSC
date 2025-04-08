@@ -2,7 +2,7 @@ from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QComboB
 from PySide6.QtCore import Qt
 import logging
 
-from i18n import LANGUAGES, get_current_language, set_language, translate as _, signals
+from i18n import LANGUAGES, get_current_language, set_language, translate as _, language_signals
 
 logger = logging.getLogger(__name__)
 
@@ -60,7 +60,7 @@ class LanguageSettingsTab(QWidget):
         self.setLayout(layout)
         
         # 监听语言变更信号
-        signals.language_changed.connect(self.update_ui_texts)
+        language_signals.language_changed.connect(self.update_ui_texts)
         
     def save_settings(self):
         """保存语言设置"""

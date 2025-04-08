@@ -9,7 +9,7 @@ from pydglab_ws import DGLabWSServer, RetCode, StrengthData, FeedbackButton
 from dglab_controller import DGLabController
 from qasync import asyncio
 from pythonosc import osc_server, dispatcher, udp_client
-from i18n import translate as _, signals
+from i18n import translate as _, language_signals
 
 import functools # Use the built-in functools module
 import sys

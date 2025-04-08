@@ -11,7 +11,7 @@ class LanguageSignals(QObject):
     language_changed = Signal(str)  # 参数是新的语言代码
 
 # 创建信号实例
-signals = LanguageSignals()
+language_signals = LanguageSignals()
 
 # 支持的语言
 LANGUAGES = {
@@ -76,7 +76,7 @@ def set_language(lang_code):
         _current_language = lang_code
         logger.info(f"Language set to {LANGUAGES[lang_code]} ({lang_code})")
         # 发送语言变更信号
-        signals.language_changed.emit(lang_code)
+        language_signals.language_changed.emit(lang_code)
         return True
     else:
         logger.warning(f"Language {lang_code} not supported")

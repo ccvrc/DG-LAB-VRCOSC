@@ -8,7 +8,7 @@ import logging
 from pydglab_ws import Channel, StrengthOperationType
 from pulse_data import PULSE_NAME
 from command_types import CommandType
-from i18n import translate as _, signals
+from i18n import translate as _, language_signals
 
 logger = logging.getLogger(__name__)
 

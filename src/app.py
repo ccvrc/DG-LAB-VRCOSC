@@ -8,7 +8,7 @@ import logging
 
 from config import load_settings
 from logger_config import setup_logging
-from i18n import set_language, translate as _, signals
+from i18n import set_language, translate as _, language_signals
 
 # Import the GUI modules
 from gui.network_config_tab import NetworkConfigTab
@@ -74,7 +74,7 @@ class MainWindow(QMainWindow):
         self.app_setup_logging()
         
         # 监听语言变更信号
-        signals.language_changed.connect(self.update_ui_language)
+        language_signals.language_changed.connect(self.update_ui_language)
 
     def app_setup_logging(self):
         """设置日志系统输出到 QTextEdit 和控制台"""
