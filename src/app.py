@@ -16,7 +16,6 @@ from gui.controller_settings_tab import ControllerSettingsTab
 from gui.ton_damage_system_tab import TonDamageSystemTab
 from gui.log_viewer_tab import LogViewerTab
 from gui.osc_parameters import OSCParametersTab
-from gui.language_settings_tab import LanguageSettingsTab
 
 setup_logging()
 # Configure the logger
@@ -41,7 +40,7 @@ class MainWindow(QMainWindow):
             set_language(self.settings['language'])
             
         self.setWindowTitle(_("main.title"))
-        self.setGeometry(300, 300, 650, 600)
+        self.setGeometry(300, 300, 700, 600)
 
         # 设置窗口图标
         self.setWindowIcon(QIcon(resource_path('docs/images/fish-cake.ico')))
@@ -60,7 +59,6 @@ class MainWindow(QMainWindow):
         self.ton_damage_system_tab = TonDamageSystemTab(self)
         self.log_viewer_tab = LogViewerTab(self)
         self.osc_parameters_tab = OSCParametersTab(self)
-        self.language_settings_tab = LanguageSettingsTab(self)
 
         # Add tabs to the tab widget
         self.tab_widget.addTab(self.network_config_tab, _("main.tabs.network"))
@@ -68,7 +66,6 @@ class MainWindow(QMainWindow):
         self.tab_widget.addTab(self.osc_parameters_tab, _("main.tabs.osc"))
         self.tab_widget.addTab(self.ton_damage_system_tab, _("main.tabs.ton"))
         self.tab_widget.addTab(self.log_viewer_tab, _("main.tabs.log"))
-        self.tab_widget.addTab(self.language_settings_tab, _("main.settings.language"))
 
         # Setup logging to the log viewer
         self.app_setup_logging()
@@ -110,7 +107,6 @@ class MainWindow(QMainWindow):
         self.tab_widget.setTabText(2, _("main.tabs.osc"))
         self.tab_widget.setTabText(3, _("main.tabs.ton"))
         self.tab_widget.setTabText(4, _("main.tabs.log"))
-        self.tab_widget.setTabText(5, _("main.settings.language"))
         
         # 通知各个选项卡更新其UI
         # 通过发送信号或调用各选项卡的更新方法来实现
@@ -124,7 +120,6 @@ class MainWindow(QMainWindow):
             self.log_viewer_tab.update_ui_texts()
         if hasattr(self.osc_parameters_tab, 'update_ui_texts'):
             self.osc_parameters_tab.update_ui_texts()
-        # language_settings_tab已经在监听语言变更信号
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)

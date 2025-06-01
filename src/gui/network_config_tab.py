@@ -1,5 +1,5 @@
 from PySide6.QtWidgets import (QWidget, QGroupBox, QFormLayout, QComboBox, QSpinBox,
-                               QLabel, QPushButton, QHBoxLayout)
+                               QLabel, QPushButton, QHBoxLayout, QVBoxLayout)
 from PySide6.QtCore import Qt
 import logging
 import asyncio
@@ -9,7 +9,7 @@ from pydglab_ws import DGLabWSServer, RetCode, StrengthData, FeedbackButton
 from dglab_controller import DGLabController
 from qasync import asyncio
 from pythonosc import osc_server, dispatcher, udp_client
-from i18n import translate as _, language_signals
+from i18n import translate as _, language_signals, LANGUAGES, get_current_language, set_language
 
 import functools # Use the built-in functools module
 import sys
@@ -25,8 +25,16 @@ class NetworkConfigTab(QWidget):
         super().__init__()
         self.main_window = main_window
 
-        self.layout = QHBoxLayout(self)
-        self.setLayout(self.layout)
+        # 创建主布局（垂直布局）
+        self.main_layout = QVBoxLayout(self)
+
+        # 创建内容布局（水平布局，包含配置和二维码）
+        self.content_layout = QHBoxLayout()
+
+        # 创建左侧配置布局（垂直布局）
+        self.config_layout = QVBoxLayout()
+
+        self.setLayout(self.main_layout)
 
         # 创建网络配置组
         self.network_config_group = QGroupBox(_("network_tab.title"))
@@ -78,12 +86,42 @@ class NetworkConfigTab(QWidget):
 
         self.network_config_group.setLayout(self.form_layout)
 
-        # 将网络配置组添加到布局
-        self.layout.addWidget(self.network_config_group)
+        # 将网络配置组添加到左侧配置布局
+        self.config_layout.addWidget(self.network_config_group)
+
+        # 创建语言设置区域
+        self.language_layout = QHBoxLayout()
+        self.language_label = QLabel(_("main.settings.language") + ":")
+        self.language_combo = QComboBox()
+        for lang_code, lang_name in LANGUAGES.items():
+            self.language_combo.addItem(lang_name, lang_code)
+
+        # 设置当前语言
+        current_language = self.main_window.settings.get('language') or get_current_language()
+        for i in range(self.language_combo.count()):
+            if self.language_combo.itemData(i) == current_language:
+                self.language_combo.setCurrentIndex(i)
+                break
+
+        # 连接语言选择变更信号，直接生效
+        self.language_combo.currentTextChanged.connect(self.on_language_changed)
+
+        self.language_layout.addWidget(self.language_label)
+        self.language_layout.addWidget(self.language_combo)
+        self.language_layout.addStretch()  # 添加弹性空间
+
+        # 将语言设置添加到配置布局
+        self.config_layout.addLayout(self.language_layout)
+
+        # 将配置布局添加到内容布局
+        self.content_layout.addLayout(self.config_layout)
 
         # 二维码显示
         self.qrcode_label = QLabel(self)
-        self.layout.addWidget(self.qrcode_label)
+        self.content_layout.addWidget(self.qrcode_label)
+
+        # 将内容布局添加到主布局
+        self.main_layout.addLayout(self.content_layout)
 
         # Apply loaded settings to the UI components
         self.apply_settings_to_ui()
@@ -92,6 +130,9 @@ class NetworkConfigTab(QWidget):
         self.ip_combobox.currentTextChanged.connect(self.save_network_settings)
         self.port_spinbox.valueChanged.connect(self.save_network_settings)
         self.osc_port_spinbox.valueChanged.connect(self.save_network_settings)
+
+        # 监听语言变更信号以更新UI
+        language_signals.language_changed.connect(self.update_ui_texts)
 
     def apply_settings_to_ui(self):
         """Apply the loaded settings to the UI elements."""
@@ -119,6 +160,21 @@ class NetworkConfigTab(QWidget):
 
             save_settings(self.main_window.settings)
             logger.info("Network settings saved.")
+
+    def on_language_changed(self):
+        """处理语言选择变更，直接生效"""
+        selected_language = self.language_combo.currentData()
+        if selected_language:
+            # 更新设置
+            self.main_window.settings['language'] = selected_language
+
+            # 保存设置到文件
+            save_settings(self.main_window.settings)
+
+            # 设置当前语言 - 这将触发语言变更信号
+            set_language(selected_language)
+
+            logger.info(f"Language changed to {LANGUAGES.get(selected_language, selected_language)} ({selected_language})")
 
     def start_server_button_clicked(self):
         """启动按钮被点击后的处理逻辑"""
@@ -379,6 +435,7 @@ class NetworkConfigTab(QWidget):
                         label_widget.setText(_("network_tab.osc_port") + ":")
                     elif "状态" in label_text or "Status" in label_text:
                         label_widget.setText(_("network_tab.status") + ":")
+
         
         # 更新状态标签
         if self.main_window.app_status_online:
@@ -391,3 +448,6 @@ class NetworkConfigTab(QWidget):
             self.start_button.setText(_("network_tab.connect"))
         else:
             self.start_button.setText(_("network_tab.disconnect"))
+
+        # 更新语言标签
+        self.language_label.setText(_("main.settings.language") + ":")

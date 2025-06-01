@@ -6,6 +6,8 @@ import yaml
 import os
 import asyncio
 
+from i18n import translate as _
+
 logger = logging.getLogger(__name__)
 
 class OSCParametersTab(QWidget):
@@ -25,8 +27,8 @@ class OSCParametersTab(QWidget):
 
         # Buttons to add and remove addresses
         self.button_layout = QHBoxLayout()
-        self.add_button = QPushButton("添加地址")
-        self.remove_button = QPushButton("移除地址")
+        self.add_button = QPushButton(_("osc_tab.add"))
+        self.remove_button = QPushButton(_("osc_tab.remove"))
         self.button_layout.addWidget(self.add_button)
         self.button_layout.addWidget(self.remove_button)
         self.layout.addLayout(self.button_layout)
@@ -262,6 +264,18 @@ class OSCParametersTab(QWidget):
         # Return the list of addresses
         return self.addresses
 
+    def update_ui_texts(self):
+        """更新所有UI文本为当前语言"""
+        # 更新按钮文本
+        self.add_button.setText(_("osc_tab.add"))
+        self.remove_button.setText(_("osc_tab.remove"))
+        
+        # 更新各个地址项的UI
+        for i in range(self.address_list_widget.count()):
+            widget = self.address_list_widget.itemWidget(self.address_list_widget.item(i))
+            if isinstance(widget, OSCAddressWidget):
+                widget.update_ui_texts()
+
 class OSCAddressWidget(QWidget):
     addressChanged = Signal()
     channelChanged = Signal()
@@ -277,7 +291,7 @@ class OSCAddressWidget(QWidget):
         self.layout.addLayout(self.address_row)
 
         self.address_edit = QLineEdit()
-        self.address_edit.setPlaceholderText("OSC 地址")
+        self.address_edit.setPlaceholderText(_("osc_tab.address_placeholder"))
         self.address_row.addWidget(self.address_edit)
 
         self.channel_a_checkbox = QCheckBox("A")
@@ -290,7 +304,7 @@ class OSCAddressWidget(QWidget):
         self.a_range_row = QHBoxLayout()
         self.layout.addLayout(self.a_range_row)
         
-        self.a_range_label = QLabel("A通道范围:")
+        self.a_range_label = QLabel(_("osc_tab.channel_range_a") + ":")
         self.a_range_row.addWidget(self.a_range_label)
         
         # A通道最小值和最大值在同一行
@@ -300,7 +314,7 @@ class OSCAddressWidget(QWidget):
         self.a_min_slider.setFixedWidth(120)
         self.a_range_row.addWidget(self.a_min_slider)
         
-        self.a_min_value_label = QLabel("最小:0%")
+        self.a_min_value_label = QLabel(_("osc_tab.min_value") + ":0%")
         self.a_range_row.addWidget(self.a_min_value_label)
         
         self.a_range_row.addSpacing(10)
@@ -311,7 +325,7 @@ class OSCAddressWidget(QWidget):
         self.a_max_slider.setFixedWidth(120)
         self.a_range_row.addWidget(self.a_max_slider)
         
-        self.a_max_value_label = QLabel("最大:100%")
+        self.a_max_value_label = QLabel(_("osc_tab.max_value") + ":100%")
         self.a_range_row.addWidget(self.a_max_value_label)
         
         self.a_range_row.addStretch()
@@ -320,7 +334,7 @@ class OSCAddressWidget(QWidget):
         self.b_range_row = QHBoxLayout()
         self.layout.addLayout(self.b_range_row)
         
-        self.b_range_label = QLabel("B通道范围:")
+        self.b_range_label = QLabel(_("osc_tab.channel_range_b") + ":")
         self.b_range_row.addWidget(self.b_range_label)
         
         # B通道最小值和最大值在同一行
@@ -330,7 +344,7 @@ class OSCAddressWidget(QWidget):
         self.b_min_slider.setFixedWidth(120)
         self.b_range_row.addWidget(self.b_min_slider)
         
-        self.b_min_value_label = QLabel("最小:0%")
+        self.b_min_value_label = QLabel(_("osc_tab.min_value") + ":0%")
         self.b_range_row.addWidget(self.b_min_value_label)
         
         self.b_range_row.addSpacing(10)
@@ -341,7 +355,7 @@ class OSCAddressWidget(QWidget):
         self.b_max_slider.setFixedWidth(120)
         self.b_range_row.addWidget(self.b_max_slider)
         
-        self.b_max_value_label = QLabel("最大:100%")
+        self.b_max_value_label = QLabel(_("osc_tab.max_value") + ":100%")
         self.b_range_row.addWidget(self.b_max_value_label)
         
         self.b_range_row.addStretch()
@@ -418,7 +432,7 @@ class OSCAddressWidget(QWidget):
     def on_a_min_changed(self, value):
         """A通道最小值变更处理"""
         # 更新标签显示
-        self.a_min_value_label.setText(f"最小:{value}%")
+        self.a_min_value_label.setText(f"{_('osc_tab.min_value')}:{value}%")
         
         # 确保最小值不大于最大值
         if value > self.a_max_slider.value():
@@ -429,7 +443,7 @@ class OSCAddressWidget(QWidget):
     def on_a_max_changed(self, value):
         """A通道最大值变更处理"""
         # 更新标签显示
-        self.a_max_value_label.setText(f"最大:{value}%")
+        self.a_max_value_label.setText(f"{_('osc_tab.max_value')}:{value}%")
         
         # 确保最大值不小于最小值
         if value < self.a_min_slider.value():
@@ -440,7 +454,7 @@ class OSCAddressWidget(QWidget):
     def on_b_min_changed(self, value):
         """B通道最小值变更处理"""
         # 更新标签显示
-        self.b_min_value_label.setText(f"最小:{value}%")
+        self.b_min_value_label.setText(f"{_('osc_tab.min_value')}:{value}%")
         
         # 确保最小值不大于最大值
         if value > self.b_max_slider.value():
@@ -451,7 +465,7 @@ class OSCAddressWidget(QWidget):
     def on_b_max_changed(self, value):
         """B通道最大值变更处理"""
         # 更新标签显示
-        self.b_max_value_label.setText(f"最大:{value}%")
+        self.b_max_value_label.setText(f"{_('osc_tab.max_value')}:{value}%")
         
         # 确保最大值不小于最小值
         if value < self.b_min_slider.value():
@@ -490,3 +504,21 @@ class OSCAddressWidget(QWidget):
     def set_b_max_value(self, value):
         """设置B通道最大值"""
         self.b_max_slider.setValue(int(value))
+
+    def update_ui_texts(self):
+        """更新所有UI文本为当前语言"""
+        # 更新各个地址项的UI
+        self.address_edit.setPlaceholderText(_("osc_tab.address_placeholder"))
+        self.a_range_label.setText(_("osc_tab.channel_range_a") + ":")
+        self.b_range_label.setText(_("osc_tab.channel_range_b") + ":")
+        
+        # 更新滑块值标签
+        a_min_value = self.a_min_slider.value()
+        a_max_value = self.a_max_slider.value()
+        b_min_value = self.b_min_slider.value()
+        b_max_value = self.b_max_slider.value()
+        
+        self.a_min_value_label.setText(f"{_('osc_tab.min_value')}:{a_min_value}%")
+        self.a_max_value_label.setText(f"{_('osc_tab.max_value')}:{a_max_value}%")
+        self.b_min_value_label.setText(f"{_('osc_tab.min_value')}:{b_min_value}%")
+        self.b_max_value_label.setText(f"{_('osc_tab.max_value')}:{b_max_value}%")
