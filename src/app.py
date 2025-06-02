@@ -8,6 +8,7 @@ import logging
 
 from config import load_settings
 from logger_config import setup_logging
+from i18n import set_language, translate as _, language_signals
 
 # Import the GUI modules
 from gui.network_config_tab import NetworkConfigTab
@@ -30,19 +31,19 @@ def resource_path(relative_path):
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("DG-Lab WebSocket Controller for VRChat")
-        self.setGeometry(300, 300, 650, 600)
+        
+        # Load settings from file or use defaults
+        self.settings = load_settings()
+        
+        # 设置语言
+        if 'language' in self.settings:
+            set_language(self.settings['language'])
+            
+        self.setWindowTitle(_("main.title"))
+        self.setGeometry(300, 300, 700, 600)
 
         # 设置窗口图标
         self.setWindowIcon(QIcon(resource_path('docs/images/fish-cake.ico')))
-
-        # Load settings from file or use defaults
-        self.settings = load_settings() or {
-            'interface': '',
-            'ip': '',
-            'port': 5678,
-            'osc_port': 9001
-        }
 
         # Set initial controller to None
         self.controller = None
@@ -59,16 +60,18 @@ class MainWindow(QMainWindow):
         self.log_viewer_tab = LogViewerTab(self)
         self.osc_parameters_tab = OSCParametersTab(self)
 
-
         # Add tabs to the tab widget
-        self.tab_widget.addTab(self.network_config_tab, "网络配置")
-        self.tab_widget.addTab(self.controller_settings_tab, "控制器设置")
-        self.tab_widget.addTab(self.osc_parameters_tab, "OSC参数配置")
-        self.tab_widget.addTab(self.ton_damage_system_tab, "ToN游戏联动")
-        self.tab_widget.addTab(self.log_viewer_tab, "日志查看")
+        self.tab_widget.addTab(self.network_config_tab, _("main.tabs.network"))
+        self.tab_widget.addTab(self.controller_settings_tab, _("main.tabs.controller"))
+        self.tab_widget.addTab(self.osc_parameters_tab, _("main.tabs.osc"))
+        self.tab_widget.addTab(self.ton_damage_system_tab, _("main.tabs.ton"))
+        self.tab_widget.addTab(self.log_viewer_tab, _("main.tabs.log"))
 
         # Setup logging to the log viewer
         self.app_setup_logging()
+        
+        # 监听语言变更信号
+        language_signals.language_changed.connect(self.update_ui_language)
 
     def app_setup_logging(self):
         """设置日志系统输出到 QTextEdit 和控制台"""
@@ -92,6 +95,31 @@ class MainWindow(QMainWindow):
 
     def get_osc_addresses(self):
         return self.osc_parameters_tab.get_addresses()
+        
+    def update_ui_language(self):
+        """更新UI上的所有文本为当前语言"""
+        # 更新窗口标题
+        self.setWindowTitle(_("main.title"))
+        
+        # 更新选项卡标题
+        self.tab_widget.setTabText(0, _("main.tabs.network"))
+        self.tab_widget.setTabText(1, _("main.tabs.controller"))
+        self.tab_widget.setTabText(2, _("main.tabs.osc"))
+        self.tab_widget.setTabText(3, _("main.tabs.ton"))
+        self.tab_widget.setTabText(4, _("main.tabs.log"))
+        
+        # 通知各个选项卡更新其UI
+        # 通过发送信号或调用各选项卡的更新方法来实现
+        if hasattr(self.network_config_tab, 'update_ui_texts'):
+            self.network_config_tab.update_ui_texts()
+        if hasattr(self.controller_settings_tab, 'update_ui_texts'):
+            self.controller_settings_tab.update_ui_texts()
+        if hasattr(self.ton_damage_system_tab, 'update_ui_texts'):
+            self.ton_damage_system_tab.update_ui_texts()
+        if hasattr(self.log_viewer_tab, 'update_ui_texts'):
+            self.log_viewer_tab.update_ui_texts()
+        if hasattr(self.osc_parameters_tab, 'update_ui_texts'):
+            self.osc_parameters_tab.update_ui_texts()
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)

@@ -1,5 +1,5 @@
 from PySide6.QtWidgets import (QWidget, QGroupBox, QFormLayout, QComboBox, QSpinBox,
-                               QLabel, QPushButton, QHBoxLayout)
+                               QLabel, QPushButton, QHBoxLayout, QVBoxLayout)
 from PySide6.QtCore import Qt
 import logging
 import asyncio
@@ -9,6 +9,7 @@ from pydglab_ws import DGLabWSServer, RetCode, StrengthData, FeedbackButton
 from dglab_controller import DGLabController
 from qasync import asyncio
 from pythonosc import osc_server, dispatcher, udp_client
+from i18n import translate as _, language_signals, LANGUAGES, get_current_language, set_language
 
 import functools # Use the built-in functools module
 import sys
@@ -24,11 +25,19 @@ class NetworkConfigTab(QWidget):
         super().__init__()
         self.main_window = main_window
 
-        self.layout = QHBoxLayout(self)
-        self.setLayout(self.layout)
+        # 创建主布局（垂直布局）
+        self.main_layout = QVBoxLayout(self)
+
+        # 创建内容布局（水平布局，包含配置和二维码）
+        self.content_layout = QHBoxLayout()
+
+        # 创建左侧配置布局（垂直布局）
+        self.config_layout = QVBoxLayout()
+
+        self.setLayout(self.main_layout)
 
         # 创建网络配置组
-        self.network_config_group = QGroupBox("网络配置")
+        self.network_config_group = QGroupBox(str(_("network_tab.title")))
         self.form_layout = QFormLayout()
 
         # 网卡选择
@@ -36,19 +45,19 @@ class NetworkConfigTab(QWidget):
         active_ips = get_active_ip_addresses()
         for interface, ip in active_ips.items():
             self.ip_combobox.addItem(f"{interface}: {ip}")
-        self.form_layout.addRow("选择网卡:", self.ip_combobox)
+        self.form_layout.addRow(str(_("network_tab.interface")) + ":", self.ip_combobox)
 
         # 端口选择
         self.port_spinbox = QSpinBox()
         self.port_spinbox.setRange(1024, 65535)
         self.port_spinbox.setValue(self.main_window.settings['port'])  # Set the default or loaded value
-        self.form_layout.addRow("WS连接端口:", self.port_spinbox)
+        self.form_layout.addRow(str(_("network_tab.websocket_port")) + ":", self.port_spinbox)
 
         # OSC端口选择
         self.osc_port_spinbox = QSpinBox()
         self.osc_port_spinbox.setRange(1024, 65535)
         self.osc_port_spinbox.setValue(self.main_window.settings['osc_port'])  # Set the default or loaded value
-        self.form_layout.addRow("OSC接收端口:", self.osc_port_spinbox)
+        self.form_layout.addRow(str(_("network_tab.osc_port")) + ":", self.osc_port_spinbox)
 
         # 创建 dispatcher 和地址处理器字典
         self.dispatcher = dispatcher.Dispatcher()
@@ -56,7 +65,7 @@ class NetworkConfigTab(QWidget):
         self.panel_control_handlers = {}  # 面板控制 OSC 地址的处理器
 
         # 添加客户端连接状态标签
-        self.connection_status_label = QLabel("未连接, 请在点击启动后扫描二维码连接")
+        self.connection_status_label = QLabel(str(_("network_tab.offline")))
         self.connection_status_label.setAlignment(Qt.AlignCenter)  # 设置内容居中
         self.connection_status_label.setStyleSheet("""
             QLabel {
@@ -67,22 +76,52 @@ class NetworkConfigTab(QWidget):
             }
         """)
         self.connection_status_label.adjustSize()  # 调整大小以适应内容
-        self.form_layout.addRow("客户端连接状态:", self.connection_status_label)
+        self.form_layout.addRow(str(_("network_tab.status")) + ":", self.connection_status_label)
 
         # 启动按钮
-        self.start_button = QPushButton("启动")
+        self.start_button = QPushButton(str(_("network_tab.connect")))
         self.start_button.setStyleSheet("background-color: green; color: white;")  # 设置按钮初始为绿色
         self.start_button.clicked.connect(self.start_server_button_clicked)
         self.form_layout.addRow(self.start_button)
 
         self.network_config_group.setLayout(self.form_layout)
 
-        # 将网络配置组添加到布局
-        self.layout.addWidget(self.network_config_group)
+        # 将网络配置组添加到左侧配置布局
+        self.config_layout.addWidget(self.network_config_group)
+
+        # 创建语言设置区域
+        self.language_layout = QHBoxLayout()
+        self.language_label = QLabel(str(_("main.settings.language")) + ":")
+        self.language_combo = QComboBox()
+        for lang_code, lang_name in LANGUAGES.items():
+            self.language_combo.addItem(lang_name, lang_code)
+
+        # 设置当前语言
+        current_language = self.main_window.settings.get('language') or get_current_language()
+        for i in range(self.language_combo.count()):
+            if self.language_combo.itemData(i) == current_language:
+                self.language_combo.setCurrentIndex(i)
+                break
+
+        # 连接语言选择变更信号，直接生效
+        self.language_combo.currentTextChanged.connect(self.on_language_changed)
+
+        self.language_layout.addWidget(self.language_label)
+        self.language_layout.addWidget(self.language_combo)
+        self.language_layout.addStretch()  # 添加弹性空间
+
+        # 将语言设置添加到配置布局
+        self.config_layout.addLayout(self.language_layout)
+
+        # 将配置布局添加到内容布局
+        self.content_layout.addLayout(self.config_layout)
 
         # 二维码显示
         self.qrcode_label = QLabel(self)
-        self.layout.addWidget(self.qrcode_label)
+        self.content_layout.addWidget(self.qrcode_label)
+
+        # 将内容布局添加到主布局
+        self.main_layout.addLayout(self.content_layout)
 
         # Apply loaded settings to the UI components
         self.apply_settings_to_ui()
@@ -91,6 +130,9 @@ class NetworkConfigTab(QWidget):
         self.ip_combobox.currentTextChanged.connect(self.save_network_settings)
         self.port_spinbox.valueChanged.connect(self.save_network_settings)
         self.osc_port_spinbox.valueChanged.connect(self.save_network_settings)
+
+        # 监听语言变更信号以更新UI
+        language_signals.language_changed.connect(self.update_ui_texts)
 
     def apply_settings_to_ui(self):
         """Apply the loaded settings to the UI elements."""
@@ -119,9 +161,24 @@ class NetworkConfigTab(QWidget):
             save_settings(self.main_window.settings)
             logger.info("Network settings saved.")
 
+    def on_language_changed(self):
+        """处理语言选择变更，直接生效"""
+        selected_language = self.language_combo.currentData()
+        if selected_language:
+            # 更新设置
+            self.main_window.settings['language'] = selected_language
+
+            # 保存设置到文件
+            save_settings(self.main_window.settings)
+
+            # 设置当前语言 - 这将触发语言变更信号
+            set_language(selected_language)
+
+            logger.info(f"Language changed to {LANGUAGES.get(selected_language, selected_language)} ({selected_language})")
+
     def start_server_button_clicked(self):
         """启动按钮被点击后的处理逻辑"""
-        self.start_button.setText("已启动")  # 修改按钮文本
+        self.start_button.setText(str(_("network_tab.disconnect")))  # 修改按钮文本
         self.start_button.setStyleSheet("background-color: grey; color: white;")  # 将按钮置灰
         self.start_button.setEnabled(False)  # 禁用按钮
         self.start_server()  # 调用现有的启动服务器逻辑
@@ -255,10 +312,10 @@ class NetworkConfigTab(QWidget):
         logger.info("二维码已更新")
 
     def update_connection_status(self, is_online):
-        self.main_window.app_status_online = is_online
         """根据设备连接状态更新标签的文本和颜色"""
+        self.main_window.app_status_online = is_online
         if is_online:
-            self.connection_status_label.setText("已连接")
+            self.connection_status_label.setText(str(_("network_tab.online")))
             self.connection_status_label.setStyleSheet("""
                 QLabel {
                     background-color: green;
@@ -274,7 +331,7 @@ class NetworkConfigTab(QWidget):
             # 确保UI状态与控制器状态同步
             self.main_window.controller_settings_tab.sync_from_controller()
         else:
-            self.connection_status_label.setText("未连接")
+            self.connection_status_label.setText(str(_("network_tab.offline")))
             self.connection_status_label.setStyleSheet("""
                 QLabel {
                     background-color: red;
@@ -357,3 +414,45 @@ class NetworkConfigTab(QWidget):
         
         logger.info(f"收到OSC消息 (参数绑定): {address} {args} 通道: {channel_list}")
         asyncio.create_task(controller.handle_osc_message_pb(address, *args, channels=channel_list, mapping_ranges=mapping_ranges))
+
+    def update_ui_texts(self):
+        """更新所有UI文本为当前语言"""
+        # 更新分组框标题
+        self.network_config_group.setTitle(str(_("network_tab.title")))
+
+        # 更新表单标签 - 使用更可靠的方式来识别标签
+        # 我们知道表单的结构，所以可以直接通过行索引来更新
+        for i in range(self.form_layout.rowCount()):
+            label_item = self.form_layout.itemAt(i, QFormLayout.LabelRole)
+            field_item = self.form_layout.itemAt(i, QFormLayout.FieldRole)
+
+            if label_item and label_item.widget() and field_item and field_item.widget():
+                label_widget = label_item.widget()
+                field_widget = field_item.widget()
+
+                if isinstance(label_widget, QLabel):
+                    # 通过字段类型来识别标签，而不是依赖文本内容
+                    if field_widget == self.ip_combobox:
+                        label_widget.setText(str(_("network_tab.interface")) + ":")
+                    elif field_widget == self.port_spinbox:
+                        label_widget.setText(str(_("network_tab.websocket_port")) + ":")
+                    elif field_widget == self.osc_port_spinbox:
+                        label_widget.setText(str(_("network_tab.osc_port")) + ":")
+                    elif field_widget == self.connection_status_label:
+                        label_widget.setText(str(_("network_tab.status")) + ":")
+
+
+        # 更新状态标签 - 直接根据当前状态更新，不依赖现有文本
+        if hasattr(self.main_window, 'app_status_online') and self.main_window.app_status_online:
+            self.connection_status_label.setText(str(_("network_tab.online")))
+        else:
+            self.connection_status_label.setText(str(_("network_tab.offline")))
+
+        # 更新按钮文本
+        if self.start_button.isEnabled():
+            self.start_button.setText(str(_("network_tab.connect")))
+        else:
+            self.start_button.setText(str(_("network_tab.disconnect")))
+
+        # 更新语言标签
+        self.language_label.setText(str(_("main.settings.language")) + ":")

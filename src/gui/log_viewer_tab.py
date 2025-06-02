@@ -3,8 +3,10 @@ from PySide6.QtGui import QTextCursor, QColor, QTextCharFormat
 from PySide6.QtCore import Qt, QTimer, Signal
 import logging
 import time
+import os
 from pydglab_ws import Channel
 from pulse_data import PULSE_NAME
+from i18n import translate as _
 
 logger = logging.getLogger(__name__)
 
@@ -31,15 +33,21 @@ class SimpleFormatter(logging.Formatter):
     """自定义格式化器，将日志级别缩写并调整时间格式"""
 
     def format(self, record):
-        level_short = {
-            'DEBUG': 'D',
-            'INFO': 'I',
-            'WARNING': 'W',
-            'ERROR': 'E',
-            'CRITICAL': 'C'
-        }.get(record.levelname, 'I')  # 默认 INFO
-        record.levelname = level_short
-        return super().format(record)
+        # 简化日志级别显示
+        levelname = record.levelname
+        if levelname == 'DEBUG':
+            levelname = 'D'
+        elif levelname == 'INFO':
+            levelname = 'I'
+        elif levelname == 'WARNING':
+            levelname = 'W'
+        elif levelname == 'ERROR':
+            levelname = 'E'
+        elif levelname == 'CRITICAL':
+            levelname = 'C'
+        
+        # 使用简化的格式
+        return f"{record.asctime}-{levelname}: {record.getMessage()}"
 
 class LogViewerTab(QWidget):
     def __init__(self, main_window):
@@ -51,7 +59,7 @@ class LogViewerTab(QWidget):
         self.setLayout(self.layout)
 
         # 日志显示框 - 使用 QGroupBox 包装
-        self.log_groupbox = QGroupBox("简约日志")
+        self.log_groupbox = QGroupBox(_("log_tab.simple_log"))
         self.log_groupbox.setCheckable(True)
         self.log_groupbox.setChecked(True)
         self.log_groupbox.toggled.connect(self.toggle_log_display)
@@ -77,17 +85,17 @@ class LogViewerTab(QWidget):
         self.log_handler.setFormatter(formatter)
 
         # 增加可折叠的调试界面
-        self.debug_group = QGroupBox("调试信息")
+        self.debug_group = QGroupBox(_("log_tab.debug_info"))
         self.debug_group.setCheckable(True)
         self.debug_group.setChecked(False)  # 默认折叠状态
         self.debug_group.toggled.connect(self.toggle_debug_info)  # 连接信号槽
 
         self.debug_layout = QHBoxLayout()
-        self.debug_label = QLabel("DGLabController 参数:")
+        self.debug_label = QLabel(_("log_tab.controller_params") + ":")
         self.debug_layout.addWidget(self.debug_label)
 
         # 显示控制器的参数
-        self.param_label = QLabel("正在加载控制器参数...")
+        self.param_label = QLabel(_("log_tab.loading_params"))
         self.debug_layout.addWidget(self.param_label)
 
         self.debug_group.setLayout(self.debug_layout)
@@ -138,51 +146,105 @@ class LogViewerTab(QWidget):
             # A 通道状态
             channel_a_state = controller.channel_states[Channel.A]
             channel_a_info = (
-                f"== A 通道状态 ==\n"
-                f"当前强度: {channel_a_state['current_strength']}\n"
-                f"目标强度: {channel_a_state['target_strength']}\n"
-                f"控制模式: {channel_a_state['mode']}\n"
-                f"脉冲模式: {PULSE_NAME[channel_a_state['pulse_mode']]}\n"
-                f"最近命令来源: {channel_a_state['last_command_source']}\n"
-                f"最近命令时间: {time.strftime('%H:%M:%S', time.localtime(channel_a_state['last_command_time']))}\n"
+                f"== A {_('controller_tab.current_channel')} ==\n"
+                f"{_('controller_tab.intensity')}: {channel_a_state['current_strength']}\n"
+                f"{_('controller_tab.target_strength')}: {channel_a_state['target_strength']}\n"
+                f"{_('controller_tab.mode')}: {channel_a_state['mode']}\n"
+                f"{_('controller_tab.pulse_mode')}: {PULSE_NAME[channel_a_state['pulse_mode']]}\n"
+                f"{_('log_tab.last_command_source')}: {channel_a_state['last_command_source']}\n"
+                f"{_('log_tab.last_command_time')}: {time.strftime('%H:%M:%S', time.localtime(channel_a_state['last_command_time']))}\n"
             )
             
             # B 通道状态
             channel_b_state = controller.channel_states[Channel.B]
             channel_b_info = (
-                f"== B 通道状态 ==\n"
-                f"当前强度: {channel_b_state['current_strength']}\n"
-                f"目标强度: {channel_b_state['target_strength']}\n"
-                f"控制模式: {channel_b_state['mode']}\n"
-                f"脉冲模式: {PULSE_NAME[channel_b_state['pulse_mode']]}\n"
-                f"最近命令来源: {channel_b_state['last_command_source']}\n"
-                f"最近命令时间: {time.strftime('%H:%M:%S', time.localtime(channel_b_state['last_command_time']))}\n"
+                f"== B {_('controller_tab.current_channel')} ==\n"
+                f"{_('controller_tab.intensity')}: {channel_b_state['current_strength']}\n"
+                f"{_('controller_tab.target_strength')}: {channel_b_state['target_strength']}\n"
+                f"{_('controller_tab.mode')}: {channel_b_state['mode']}\n"
+                f"{_('controller_tab.pulse_mode')}: {PULSE_NAME[channel_b_state['pulse_mode']]}\n"
+                f"{_('log_tab.last_command_source')}: {channel_b_state['last_command_source']}\n"
+                f"{_('log_tab.last_command_time')}: {time.strftime('%H:%M:%S', time.localtime(channel_b_state['last_command_time']))}\n"
             )
             
             # 控制器基本信息
             controller_info = (
-                f"== 控制器状态 ==\n"
-                f"设备在线: {controller.app_status_online}\n"
-                f"一键开火强度: {controller.fire_mode_strength_step}\n"
-                f"ChatBox 状态: {controller.enable_chatbox_status}\n"
-                f"当前选择通道: {'A' if controller.current_select_channel == Channel.A else 'B'}\n"
-                f"\n== 命令类型状态 ==\n"
-                f"GUI命令: {'启用' if controller.enable_gui_commands else '禁用'}\n"
-                f"面板命令: {'启用' if controller.enable_panel_commands else '禁用'}\n"
-                f"交互命令: {'启用' if controller.enable_interaction_commands else '禁用'}\n"
-                f"  A通道交互: {'启用' if controller.enable_interaction_mode_a else '禁用'}\n"
-                f"  B通道交互: {'启用' if controller.enable_interaction_mode_b else '禁用'}\n"
-                f"游戏联动命令: {'启用' if controller.enable_ton_commands else '禁用'}\n"
+                f"== {_('log_tab.controller_status')} ==\n"
+                f"{_('log_tab.device_online')}: {controller.app_status_online}\n"
+                f"{_('log_tab.fire_strength')}: {controller.fire_mode_strength_step}\n"
+                f"{_('log_tab.chatbox_status')}: {controller.enable_chatbox_status}\n"
+                f"{_('log_tab.current_channel')}: {'A' if controller.current_select_channel == Channel.A else 'B'}\n"
+                f"\n== {_('log_tab.command_status')} ==\n"
+                f"{_('log_tab.gui_commands')}: {'启用' if controller.enable_gui_commands else '禁用'}\n"
+                f"{_('log_tab.panel_commands')}: {'启用' if controller.enable_panel_commands else '禁用'}\n"
+                f"{_('log_tab.interaction_commands')}: {'启用' if controller.enable_interaction_commands else '禁用'}\n"
+                f"  A{_('log_tab.channel_interaction')}: {'启用' if controller.enable_interaction_mode_a else '禁用'}\n"
+                f"  B{_('log_tab.channel_interaction')}: {'启用' if controller.enable_interaction_mode_b else '禁用'}\n"
+                f"{_('log_tab.game_commands')}: {'启用' if controller.enable_ton_commands else '禁用'}\n"
             )
             
             # 命令队列状态
             queue_info = (
-                f"== 命令队列状态 ==\n"
-                f"当前队列大小: {controller.command_queue.qsize()}\n"
+                f"== {_('log_tab.command_queue')} ==\n"
+                f"{_('log_tab.queue_size')}: {controller.command_queue.qsize()}\n"
             )
             
             # 合并所有信息
             combined_info = controller_info + "\n" + channel_a_info + "\n" + channel_b_info + "\n" + queue_info
             self.param_label.setText(combined_info)
         else:
-            self.param_label.setText("控制器未初始化.")
+            self.param_label.setText(_("log_tab.controller_not_initialized"))
+
+    def update_log_level(self, level_name):
+        """更新日志级别"""
+        # 获取日志处理器
+        logger = logging.getLogger()
+        
+        # 设置日志级别
+        if level_name == "DEBUG":
+            logger.setLevel(logging.DEBUG)
+        elif level_name == "INFO":
+            logger.setLevel(logging.INFO)
+        elif level_name == "WARNING":
+            logger.setLevel(logging.WARNING)
+        elif level_name == "ERROR":
+            logger.setLevel(logging.ERROR)
+        elif level_name == "CRITICAL":
+            logger.setLevel(logging.CRITICAL)
+        
+        # 更新日志文本框中显示的级别
+        logger.info(f"日志级别已更新为 {level_name}")
+    
+    def update_ui_texts(self):
+        """更新UI上的所有文本为当前语言"""
+        # 更新日志组标题
+        self.log_groupbox.setTitle(_("log_tab.simple_log"))
+        
+        # 更新调试组标题
+        self.debug_group.setTitle(_("log_tab.debug_info"))
+        
+        # 更新标签文本
+        self.debug_label.setText(_("log_tab.controller_params") + ":")
+        if not self.main_window.controller:
+            self.param_label.setText(_("log_tab.controller_not_initialized"))
+        else:
+            # 更新控制器参数文本
+            self.update_debug_info()
+        
+        # 更新按钮文本
+        for i in range(self.layout.count()):
+            widget = self.layout.itemAt(i).widget()
+            if isinstance(widget, QPushButton):
+                if widget.text() == "清除" or widget.text() == "Clear":
+                    widget.setText(_("log_tab.clear"))
+                elif widget.text() == "保存日志" or widget.text() == "Save Log":
+                    widget.setText(_("log_tab.save"))
+        
+        # 更新日志级别标签
+        for i in range(self.layout.count()):
+            layout_item = self.layout.itemAt(i)
+            if isinstance(layout_item, QHBoxLayout):
+                for j in range(layout_item.count()):
+                    widget = layout_item.itemAt(j).widget()
+                    if isinstance(widget, QLabel) and (widget.text() == "日志级别" or widget.text() == "Log Level" or "level" in widget.text().lower()):
+                        widget.setText(_("log_tab.level"))

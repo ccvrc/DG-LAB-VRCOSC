@@ -8,6 +8,7 @@ import json
 
 from pydglab_ws import Channel, StrengthOperationType
 from command_types import CommandType
+from i18n import translate as _
 
 from ton_websocket_handler import WebSocketClient
 
@@ -22,22 +23,22 @@ class TonDamageSystemTab(QWidget):
         self.setLayout(self.layout)
 
         # Damage System UI
-        self.damage_group = QGroupBox("Terrors of Nowhere")
+        self.damage_group = QGroupBox(_("ton_tab.title"))
         self.damage_group.setEnabled(False)
         self.damage_layout = QFormLayout()
 
         self.damage_info_layout = QHBoxLayout()
         # Enable Damage System Checkbox
-        self.enable_damage_checkbox = QCheckBox("ToN Damage System")
+        self.enable_damage_checkbox = QCheckBox(_("ton_tab.enable"))
         self.enable_damage_checkbox.stateChanged.connect(self.toggle_damage_system)
         self.damage_info_layout.addWidget(self.enable_damage_checkbox)
 
         # 增加用于显示 DisplayName 的标签
-        self.display_name_label = QLabel("User Display Name: 未知")  # 默认显示为 "未知"
+        self.display_name_label = QLabel(_("ton_tab.user_display_name") + ": " + _("ton_tab.unknown"))  # 默认显示为 "未知"
         self.damage_info_layout.addWidget(self.display_name_label)
 
         # WebSocket Status Label
-        self.websocket_status_label = QLabel("WebSocket Status: Disconnected")
+        self.websocket_status_label = QLabel(_("ton_tab.websocket_status") + ": " + _("ton_tab.disconnected"))
         self.damage_info_layout.addWidget(self.websocket_status_label)
 
         # 将水平布局添加到主布局中
@@ -47,20 +48,20 @@ class TonDamageSystemTab(QWidget):
         self.damage_progress_bar = QProgressBar()
         self.damage_progress_bar.setRange(0, 100)
         self.damage_progress_bar.setValue(0)  # Initial damage is 0%
-        self.damage_layout.addRow("累计伤害:", self.damage_progress_bar)
+        self.damage_layout.addRow(_("ton_tab.accumulated_damage") + ":", self.damage_progress_bar)
 
         # 统一滑动条的宽度
         slider_max_width = 450
 
         # 创建横向布局，用于伤害减免滑动条和标签
         self.damage_reduction_layout = QHBoxLayout()
-        self.damage_reduction_label = QLabel("每秒伤害减免强度: 2 / 10")  # 默认显示
+        self.damage_reduction_label = QLabel(_("ton_tab.damage_reduction") + ": 2 / 10")  # 默认显示
         self.damage_reduction_slider = QSlider(Qt.Horizontal)
         self.damage_reduction_slider.setRange(0, 10)
         self.damage_reduction_slider.setValue(2)  # Default reduction strength per second
         self.damage_reduction_slider.setMaximumWidth(slider_max_width)  # 设置滑动条的最大宽度
         self.damage_reduction_slider.valueChanged.connect(
-            lambda value: self.damage_reduction_label.setText(f"每秒伤害减免强度: {value} / 10"))
+            lambda value: self.damage_reduction_label.setText(f"{_('ton_tab.damage_reduction')}: {value} / 10"))
         self.damage_reduction_slider.valueChanged.connect(
             lambda: self.show_tooltip(self.damage_reduction_slider))  # 实时显示提示
         self.damage_reduction_layout.addWidget(self.damage_reduction_label)
@@ -70,13 +71,13 @@ class TonDamageSystemTab(QWidget):
 
         # 创建横向布局，用于伤害强度滑动条和标签
         self.damage_strength_layout = QHBoxLayout()
-        self.damage_strength_label = QLabel("伤害对应强度上限: 50 / 200")  # 默认显示
+        self.damage_strength_label = QLabel(_("ton_tab.damage_strength") + ": 50 / 200")  # 默认显示
         self.damage_strength_slider = QSlider(Qt.Horizontal)
         self.damage_strength_slider.setRange(0, 200)
         self.damage_strength_slider.setValue(60)  # Default strength multiplier
         self.damage_strength_slider.setMaximumWidth(slider_max_width)  # 设置滑动条的最大宽度
         self.damage_strength_slider.valueChanged.connect(
-            lambda value: self.damage_strength_label.setText(f"伤害对应强度上限: {value} / 200"))
+            lambda value: self.damage_strength_label.setText(f"{_('ton_tab.damage_strength')}: {value} / 200"))
         self.damage_strength_slider.valueChanged.connect(
             lambda: self.show_tooltip(self.damage_strength_slider))  # 实时显示提示
         self.damage_strength_layout.addWidget(self.damage_strength_label)
@@ -86,13 +87,13 @@ class TonDamageSystemTab(QWidget):
 
         # 创建横向布局，用于死亡惩罚强度滑动条和标签
         self.death_penalty_strength_layout = QHBoxLayout()
-        self.death_penalty_strength_label = QLabel("死亡惩罚强度: 30 / 100")  # 默认显示
+        self.death_penalty_strength_label = QLabel(_("ton_tab.death_penalty") + ": 30 / 100")  # 默认显示
         self.death_penalty_strength_slider = QSlider(Qt.Horizontal)
         self.death_penalty_strength_slider.setRange(0, 100)
         self.death_penalty_strength_slider.setValue(30)  # Default death penalty strength is 100%
         self.death_penalty_strength_slider.setMaximumWidth(slider_max_width)  # 设置滑动条的最大宽度
         self.death_penalty_strength_slider.valueChanged.connect(
-            lambda value: self.death_penalty_strength_label.setText(f"死亡惩罚强度: {value} / 100"))
+            lambda value: self.death_penalty_strength_label.setText(f"{_('ton_tab.death_penalty')}: {value} / 100"))
         self.death_penalty_strength_slider.valueChanged.connect(
             lambda: self.show_tooltip(self.death_penalty_strength_slider))  # 实时显示提示
         self.death_penalty_strength_layout.addWidget(self.death_penalty_strength_label)
@@ -104,7 +105,7 @@ class TonDamageSystemTab(QWidget):
         self.death_penalty_time_spinbox = QSpinBox()
         self.death_penalty_time_spinbox.setRange(0, 60)
         self.death_penalty_time_spinbox.setValue(5)  # Default penalty time is 10 seconds
-        self.damage_layout.addRow("死亡惩罚持续时间 (s):", self.death_penalty_time_spinbox)
+        self.damage_layout.addRow(_("ton_tab.death_penalty_time") + ":", self.death_penalty_time_spinbox)
 
         self.damage_group.setLayout(self.damage_layout)
         self.layout.addRow(self.damage_group)
@@ -158,7 +159,7 @@ class TonDamageSystemTab(QWidget):
                 self.websocket_client = None
             self.damage_timer.stop()
             self.reset_damage()
-            self.websocket_status_label.setText("WebSocket Status: 未连接")
+            self.websocket_status_label.setText(_("ton_tab.websocket_status") + ": " + _("ton_tab.disconnected"))
             self.websocket_status_label.setStyleSheet("color: red;")
 
     def reduce_damage(self):
@@ -206,31 +207,31 @@ class TonDamageSystemTab(QWidget):
         elif message.get("Type") == "STATS":
             if message.get("DisplayName"):
                 user_display_name = message.get("DisplayName")
-                self.display_name_label.setText(f"User Display Name: {user_display_name}")
+                self.display_name_label.setText(_("ton_tab.user_display_name") + f": {user_display_name}")
         elif message.get("Type") == "CONNECTED":
             if message.get("DisplayName"):
                 user_display_name = message.get("DisplayName")
-                self.display_name_label.setText(f"User Display Name: {user_display_name}")
+                self.display_name_label.setText(_("ton_tab.user_display_name") + f": {user_display_name}")
 
     def handle_websocket_status_update(self, status):
         """Update WebSocket status label based on connection status."""
         logger.info(f"WebSocket status updated: {status}")
         # Log the exact value of the status for better debugging
         if status.lower() == "connected":
-            self.websocket_status_label.setText("WebSocket Status: 已连接")
+            self.websocket_status_label.setText(_("ton_tab.websocket_status") + ": " + _("ton_tab.connected"))
             self.websocket_status_label.setStyleSheet("color: green;")
         elif status.lower() == "disconnected":
-            self.websocket_status_label.setText("WebSocket Status: 未连接")
+            self.websocket_status_label.setText(_("ton_tab.websocket_status") + ": " + _("ton_tab.disconnected"))
             self.websocket_status_label.setStyleSheet("color: red;")
         else:
             logger.warning(f"Unexpected WebSocket status: {status}")
-            self.websocket_status_label.setText(f"WebSocket Status: 错误 - {status}")
+            self.websocket_status_label.setText(_("ton_tab.websocket_status") + ": " + _("ton_tab.error") + f" - {status}")
             self.websocket_status_label.setStyleSheet("color: orange;")
 
     def handle_websocket_error(self, error_message):
         """Handle WebSocket errors by displaying an error message."""
         logger.error(f"WebSocket error: {error_message}")
-        self.websocket_status_label.setText(f"WebSocket Status: 错误 - {error_message}")
+        self.websocket_status_label.setText(_("ton_tab.websocket_status") + ": " + _("ton_tab.error") + f" - {error_message}")
         self.websocket_status_label.setStyleSheet("color: orange;")
 
     def accumulate_damage(self, value):
@@ -291,3 +292,27 @@ class TonDamageSystemTab(QWidget):
                         self.damage_multiplier_slider.value()
                     )
                 )
+
+    def update_ui_texts(self):
+        """更新UI上的所有文本为当前语言"""
+        # 更新分组框标题
+        self.damage_group.setTitle(_("ton_tab.title"))
+        
+        # 更新复选框和标签文本
+        self.enable_damage_checkbox.setText(_("ton_tab.enable"))
+        self.display_name_label.setText(_("ton_tab.user_display_name") + ": " + _("ton_tab.unknown"))
+        
+        # 更新WebSocket状态标签
+        if self.websocket_client and hasattr(self.websocket_client, 'websocket') and self.websocket_client.websocket:
+            self.websocket_status_label.setText(_("ton_tab.websocket_status") + ": " + _("ton_tab.connected"))
+        else:
+            self.websocket_status_label.setText(_("ton_tab.websocket_status") + ": " + _("ton_tab.disconnected"))
+        
+        # 更新滑动条标签
+        self.damage_layout.itemAt(1, QFormLayout.LabelRole).widget().setText(_("ton_tab.accumulated_damage") + ":")
+        self.damage_reduction_label.setText(_("ton_tab.damage_reduction") + f": {self.damage_reduction_slider.value()} / 10")
+        self.damage_strength_label.setText(_("ton_tab.damage_strength") + f": {self.damage_strength_slider.value()} / 200")
+        self.death_penalty_strength_label.setText(_("ton_tab.death_penalty") + f": {self.death_penalty_strength_slider.value()} / 100")
+        
+        # 更新死亡惩罚持续时间标签
+        self.damage_layout.itemAt(5, QFormLayout.LabelRole).widget().setText(_("ton_tab.death_penalty_time") + ":")

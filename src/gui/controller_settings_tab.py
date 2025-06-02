@@ -8,6 +8,7 @@ import logging
 from pydglab_ws import Channel, StrengthOperationType
 from pulse_data import PULSE_NAME
 from command_types import CommandType
+from i18n import translate as _, language_signals
 
 logger = logging.getLogger(__name__)
 
@@ -22,12 +23,12 @@ class ControllerSettingsTab(QWidget):
         self.setLayout(self.layout)
 
         # 控制器参数设置
-        self.controller_group = QGroupBox("DGLabController 设置")
+        self.controller_group = QGroupBox(_("controller_tab.title"))
         self.controller_group.setEnabled(False)  # 默认禁用
         self.controller_form = QFormLayout()
 
         # 添加 A 通道滑动条和标签
-        self.a_channel_label = QLabel("A 通道强度: 0 / 100")  # 默认显示
+        self.a_channel_label = QLabel(f"A {_('controller_tab.intensity')}: 0 / 100")  # 默认显示
         self.a_channel_slider = QSlider(Qt.Horizontal)
         self.a_channel_slider.setRange(0, 100)  # 默认范围
         self.a_channel_slider.valueChanged.connect(self.set_a_channel_strength)
@@ -38,7 +39,7 @@ class ControllerSettingsTab(QWidget):
         self.controller_form.addRow(self.a_channel_slider)
 
         # 添加 B 通道滑动条和标签
-        self.b_channel_label = QLabel("B 通道强度: 0 / 100")  # 默认显示
+        self.b_channel_label = QLabel(f"B {_('controller_tab.intensity')}: 0 / 100")  # 默认显示
         self.b_channel_slider = QSlider(Qt.Horizontal)
         self.b_channel_slider.setRange(0, 100)  # 默认范围
         self.b_channel_slider.valueChanged.connect(self.set_b_channel_strength)
@@ -53,7 +54,7 @@ class ControllerSettingsTab(QWidget):
         self.allow_b_channel_update = True
 
         # ChatBox状态开关
-        self.enable_chatbox_status_checkbox = QCheckBox("启用ChatBox状态显示")
+        self.enable_chatbox_status_checkbox = QCheckBox(_("controller_tab.enable_chatbox"))
         self.enable_chatbox_status_checkbox.setChecked(False)
         self.controller_form.addRow(self.enable_chatbox_status_checkbox)
 
@@ -63,31 +64,31 @@ class ControllerSettingsTab(QWidget):
         for pulse_name in PULSE_NAME:
             self.pulse_mode_a_combobox.addItem(pulse_name)
             self.pulse_mode_b_combobox.addItem(pulse_name)
-        self.controller_form.addRow("A通道波形模式:", self.pulse_mode_a_combobox)
-        self.controller_form.addRow("B通道波形模式:", self.pulse_mode_b_combobox)
+        self.controller_form.addRow(f"A {_('controller_tab.waveform')}:", self.pulse_mode_a_combobox)
+        self.controller_form.addRow(f"B {_('controller_tab.waveform')}:", self.pulse_mode_b_combobox)
 
         # 强度步长
         self.strength_step_spinbox = QSpinBox()
         self.strength_step_spinbox.setRange(0, 100)
         self.strength_step_spinbox.setValue(30)
-        self.controller_form.addRow("开火强度步进:", self.strength_step_spinbox)
+        self.controller_form.addRow(_("controller_tab.strength_step") + ":", self.strength_step_spinbox)
 
         # 调节强度步长
         self.adjust_strength_step_spinbox = QSpinBox()
         self.adjust_strength_step_spinbox.setRange(0, 100)
         self.adjust_strength_step_spinbox.setValue(5)
-        self.controller_form.addRow("调节强度步进:", self.adjust_strength_step_spinbox)
+        self.controller_form.addRow(_("controller_tab.adjust_step") + ":", self.adjust_strength_step_spinbox)
 
         self.controller_group.setLayout(self.controller_form)
         self.layout.addRow(self.controller_group)
 
         # 命令类型控制组
-        self.command_types_group = QGroupBox("命令来源控制")
+        self.command_types_group = QGroupBox(_("controller_tab.command_sources"))
         self.command_types_group.setEnabled(False)  # 默认禁用
         self.command_types_form = QFormLayout()
 
         # 创建命令类型控制复选框
-        self.enable_gui_commands_checkbox = QCheckBox("启用程序界面控制")
+        self.enable_gui_commands_checkbox = QCheckBox(_("controller_tab.enable_gui_control"))
         self.enable_gui_commands_checkbox.setChecked(True)
         self.command_types_form.addRow(self.enable_gui_commands_checkbox)
 
@@ -95,12 +96,12 @@ class ControllerSettingsTab(QWidget):
         panel_layout = QHBoxLayout()
         
         # 添加面板控制复选框
-        self.enable_panel_commands_checkbox = QCheckBox("启用Soundpad控制")
+        self.enable_panel_commands_checkbox = QCheckBox(_("controller_tab.enable_soundpad"))
         self.enable_panel_commands_checkbox.setChecked(True)
         panel_layout.addWidget(self.enable_panel_commands_checkbox)
         
         # 添加当前选择通道显示标签
-        self.current_channel_label = QLabel("面板当前控制通道: 未设置")
+        self.current_channel_label = QLabel(_("controller_tab.current_panel") + ": " + _("controller_tab.not_set"))
         panel_layout.addWidget(self.current_channel_label)
         
         # 将水平布局添加到主布局
@@ -109,17 +110,17 @@ class ControllerSettingsTab(QWidget):
         # 将交互命令拆分为A/B通道独立控制
         interaction_layout = QHBoxLayout()
         
-        self.enable_interaction_commands_a_checkbox = QCheckBox("A通道交互控制")
+        self.enable_interaction_commands_a_checkbox = QCheckBox(f"A {_('controller_tab.interaction_control')}")
         self.enable_interaction_commands_a_checkbox.setChecked(True)
         interaction_layout.addWidget(self.enable_interaction_commands_a_checkbox)
         
-        self.enable_interaction_commands_b_checkbox = QCheckBox("B通道交互控制")
+        self.enable_interaction_commands_b_checkbox = QCheckBox(f"B {_('controller_tab.interaction_control')}")
         self.enable_interaction_commands_b_checkbox.setChecked(True)
         interaction_layout.addWidget(self.enable_interaction_commands_b_checkbox)
         
-        self.command_types_form.addRow("启用交互方式控制:", interaction_layout)
+        self.command_types_form.addRow(_("controller_tab.enable_interaction") + ":", interaction_layout)
 
-        self.enable_ton_commands_checkbox = QCheckBox("启用游戏联动控制")
+        self.enable_ton_commands_checkbox = QCheckBox(_("controller_tab.enable_game_integration"))
         self.enable_ton_commands_checkbox.setChecked(True)
         self.command_types_form.addRow(self.enable_ton_commands_checkbox)
 
@@ -317,8 +318,11 @@ class ControllerSettingsTab(QWidget):
         QToolTip.showText(QPoint(tooltip_x, tooltip_y), f"{value}", slider)
 
     def update_current_channel_display(self, channel_name):
-        """更新当前选择通道显示"""
-        self.current_channel_label.setText(f"面板当前控制通道: {channel_name}")
+        """Update the current panel channel display"""
+        if channel_name:
+            self.current_channel_label.setText(_("controller_tab.current_panel") + f": {channel_name}")
+        else:
+            self.current_channel_label.setText(_("controller_tab.current_panel") + ": " + _("controller_tab.not_set"))
 
     def update_channel_strength_labels(self, strength_data):
         logger.info(f"通道状态已更新 - A通道强度: {strength_data.a}, B通道强度: {strength_data.b}")
@@ -330,7 +334,7 @@ class ControllerSettingsTab(QWidget):
                 self.a_channel_slider.setValue(self.main_window.controller.last_strength.a)
                 self.a_channel_slider.blockSignals(False)
                 self.a_channel_label.setText(
-                    f"A 通道强度: {self.main_window.controller.last_strength.a} 强度上限: {self.main_window.controller.last_strength.a_limit}  波形: {PULSE_NAME[self.main_window.controller.pulse_mode_a]}")
+                    f"A {_('controller_tab.channel_intensity')}: {self.main_window.controller.last_strength.a} {_('controller_tab.intensity_limit')}: {self.main_window.controller.last_strength.a_limit}  {_('controller_tab.waveform')}: {PULSE_NAME[self.main_window.controller.pulse_mode_a]}")
 
             # 仅当允许外部更新时更新 B 通道滑动条
             if self.allow_b_channel_update:
@@ -339,7 +343,8 @@ class ControllerSettingsTab(QWidget):
                 self.b_channel_slider.setValue(self.main_window.controller.last_strength.b)
                 self.b_channel_slider.blockSignals(False)
                 self.b_channel_label.setText(
-                    f"B 通道强度: {self.main_window.controller.last_strength.b} 强度上限: {self.main_window.controller.last_strength.b_limit}  波形: {PULSE_NAME[self.main_window.controller.pulse_mode_b]}")
+                    f"B {_('controller_tab.channel_intensity')}: {self.main_window.controller.last_strength.b} {_('controller_tab.intensity_limit')}: {self.main_window.controller.last_strength.b_limit}  {_('controller_tab.waveform')}: {PULSE_NAME[self.main_window.controller.pulse_mode_b]}")
+
 
     # 命令类型控制方法
     def update_gui_commands_state(self, state):
@@ -396,3 +401,60 @@ class ControllerSettingsTab(QWidget):
             controller = self.main_window.controller
             controller.adjust_strength_step = value
             logger.info(f"更新调节强度步进为 {value}")
+
+    def update_ui_texts(self):
+        """更新所有UI文本为当前语言"""
+        # 更新分组框标题
+        self.controller_group.setTitle(_("controller_tab.title"))
+        self.command_types_group.setTitle(_("controller_tab.command_sources"))
+        
+        # 更新标签和复选框文本
+        self.a_channel_label.setText(f"A {_('controller_tab.intensity')}: {self.a_channel_slider.value() if self.a_channel_slider else 0} / 100")
+        self.b_channel_label.setText(f"B {_('controller_tab.intensity')}: {self.b_channel_slider.value() if self.b_channel_slider else 0} / 100")
+        
+        self.enable_chatbox_status_checkbox.setText(_("controller_tab.enable_chatbox"))
+        
+        # 更新步长标签
+        for i in range(self.controller_form.rowCount()):
+            label_item = self.controller_form.itemAt(i, QFormLayout.LabelRole)
+            if label_item and label_item.widget():
+                label_widget = label_item.widget()
+                if isinstance(label_widget, QLabel):
+                    if label_widget.text().startswith("强度步长"):
+                        label_widget.setText(_("controller_tab.strength_step") + ":")
+                    elif label_widget.text().startswith("调节步长"):
+                        label_widget.setText(_("controller_tab.adjust_step") + ":")
+        
+        # 更新命令控制复选框文本
+        self.enable_gui_commands_checkbox.setText(_("controller_tab.enable_gui_control"))
+        self.enable_panel_commands_checkbox.setText(_("controller_tab.enable_soundpad"))
+        
+        # 更新当前通道显示
+        current_text = self.current_channel_label.text()
+        if ":" in current_text:
+            channel_name = current_text.split(":", 1)[1].strip()
+            if channel_name and channel_name != _("controller_tab.not_set"):
+                self.current_channel_label.setText(_("controller_tab.current_panel") + f": {channel_name}")
+            else:
+                self.current_channel_label.setText(_("controller_tab.current_panel") + ": " + _("controller_tab.not_set"))
+        
+        # 更新交互控制标签和复选框
+        self.enable_interaction_commands_a_checkbox.setText(f"A {_('controller_tab.interaction_control')}")
+        self.enable_interaction_commands_b_checkbox.setText(f"B {_('controller_tab.interaction_control')}")
+        
+        # 更新交互控制标签
+        for i in range(self.command_types_form.rowCount()):
+            label_item = self.command_types_form.itemAt(i, QFormLayout.LabelRole)
+            if label_item and label_item.widget():
+                label_widget = label_item.widget()
+                if isinstance(label_widget, QLabel) and label_widget.text().startswith("启用交互"):
+                    # 创建新的水平布局
+                    interaction_layout = QHBoxLayout()
+                    interaction_layout.addWidget(self.enable_interaction_commands_a_checkbox)
+                    interaction_layout.addWidget(self.enable_interaction_commands_b_checkbox)
+                    
+                    self.command_types_form.removeRow(i)
+                    self.command_types_form.insertRow(i, _("controller_tab.enable_interaction") + ":", interaction_layout)
+                    break
+        
+        self.enable_ton_commands_checkbox.setText(_("controller_tab.enable_game_integration"))
