@@ -208,8 +208,9 @@ class OSCParametersTab(QWidget):
         """返回默认的OSC地址配置"""
         logger.info("加载默认OSC地址")
         return [
-            {'address': '/avatar/parameters/DG-LAB/*', 'channels': {'A': True, 'B': False}},
-            {'address': '/avatar/parameters/Tail_Stretch', 'channels': {'A': False, 'B': True}},
+            {'address': '/avatar/parameters/DG-LAB/UpperLeg_L', 'channels': {'A': True, 'B': False}},
+            {'address': '/avatar/parameters/DG-LAB/UpperLeg_R', 'channels': {'A': False, 'B': True}},
+            {'address': '/avatar/parameters/Tail_Stretch', 'channels': {'A': False, 'B': False}},
         ]
 
     def populate_address_list(self):
