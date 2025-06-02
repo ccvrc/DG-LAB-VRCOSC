@@ -7,6 +7,7 @@ import os
 import asyncio
 
 from i18n import translate as _
+from config import get_config_file_path
 
 logger = logging.getLogger(__name__)
 
@@ -168,16 +169,20 @@ class OSCParametersTab(QWidget):
             asyncio.create_task(self.main_window.network_config_tab._update_osc_mappings(self.main_window.controller))
 
     def save_addresses(self):
-        # Save addresses to a YAML file
-        with open('osc_addresses.yml', 'w', encoding='utf-8') as f:
-            yaml.dump(self.addresses, f, allow_unicode=True)
-        logger.info("OSC addresses saved.")
+        # Save addresses to a YAML file using unified config path
+        config_path = get_config_file_path('osc_addresses.yml')
+        try:
+            with open(config_path, 'w', encoding='utf-8') as f:
+                yaml.dump(self.addresses, f, allow_unicode=True)
+            logger.info(f"OSC addresses saved to {config_path}")
+        except Exception as e:
+            logger.error(f"保存OSC地址配置时出错: {str(e)}")
 
     def load_addresses(self):
-        # 获取绝对路径
-        config_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', 'osc_addresses.yml')
+        # 使用统一的配置文件路径处理函数
+        config_path = get_config_file_path('osc_addresses.yml')
         logger.info(f"尝试从 {config_path} 加载OSC地址配置")
-        
+
         try:
             if os.path.exists(config_path):
                 with open(config_path, 'r', encoding='utf-8') as f:
@@ -191,7 +196,7 @@ class OSCParametersTab(QWidget):
             else:
                 logger.info("配置文件不存在，使用默认地址")
                 self.addresses = self.get_default_addresses()
-            
+
             # 将加载的地址更新到UI
             self.populate_address_list()
         except Exception as e:
@@ -203,8 +208,9 @@ class OSCParametersTab(QWidget):
         """返回默认的OSC地址配置"""
         logger.info("加载默认OSC地址")
         return [
-            {'address': '/avatar/parameters/DG-LAB/*', 'channels': {'A': True, 'B': False}},
-            {'address': '/avatar/parameters/Tail_Stretch', 'channels': {'A': False, 'B': True}},
+            {'address': '/avatar/parameters/DG-LAB/UpperLeg_L', 'channels': {'A': True, 'B': False}},
+            {'address': '/avatar/parameters/DG-LAB/UpperLeg_R', 'channels': {'A': False, 'B': True}},
+            {'address': '/avatar/parameters/Tail_Stretch', 'channels': {'A': False, 'B': False}},
         ]
 
     def populate_address_list(self):
