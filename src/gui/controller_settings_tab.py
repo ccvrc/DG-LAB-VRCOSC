@@ -325,24 +325,26 @@ class ControllerSettingsTab(QWidget):
             self.current_channel_label.setText(_("controller_tab.current_panel") + ": " + _("controller_tab.not_set"))
 
     def update_channel_strength_labels(self, strength_data):
-        """Update the channel strength labels based on received data"""
-        if strength_data:
-            # 只有当允许更新时才更新滑动条值
+        logger.info(f"通道状态已更新 - A通道强度: {strength_data.a}, B通道强度: {strength_data.b}")
+        if self.main_window.controller and self.main_window.controller.last_strength:
+            # 仅当允许外部更新时更新 A 通道滑动条
             if self.allow_a_channel_update:
-                if self.a_channel_slider.value() != strength_data.a:
-                    self.a_channel_slider.setValue(strength_data.a)
-                self.a_channel_label.setText(f"A {_('controller_tab.intensity')}: {strength_data.a} / 100")
-            else:
-                # 只更新标签，不更新滑动条
-                self.a_channel_label.setText(f"A {_('controller_tab.intensity')}: {strength_data.a} / 100")
-                
+                self.a_channel_slider.blockSignals(True)
+                self.a_channel_slider.setRange(0, self.main_window.controller.last_strength.a_limit)  # 根据限制更新范围
+                self.a_channel_slider.setValue(self.main_window.controller.last_strength.a)
+                self.a_channel_slider.blockSignals(False)
+                self.a_channel_label.setText(
+                    f"A {_('controller_tab.channel_intensity')}: {self.main_window.controller.last_strength.a} {_('controller_tab.intensity_limit')}: {self.main_window.controller.last_strength.a_limit}  {_('controller_tab.waveform')}: {PULSE_NAME[self.main_window.controller.pulse_mode_a]}")
+
+            # 仅当允许外部更新时更新 B 通道滑动条
             if self.allow_b_channel_update:
-                if self.b_channel_slider.value() != strength_data.b:
-                    self.b_channel_slider.setValue(strength_data.b)
-                self.b_channel_label.setText(f"B {_('controller_tab.intensity')}: {strength_data.b} / 100")
-            else:
-                # 只更新标签，不更新滑动条
-                self.b_channel_label.setText(f"B {_('controller_tab.intensity')}: {strength_data.b} / 100")
+                self.b_channel_slider.blockSignals(True)
+                self.b_channel_slider.setRange(0, self.main_window.controller.last_strength.b_limit)  # 根据限制更新范围
+                self.b_channel_slider.setValue(self.main_window.controller.last_strength.b)
+                self.b_channel_slider.blockSignals(False)
+                self.b_channel_label.setText(
+                    f"B {_('controller_tab.channel_intensity')}: {self.main_window.controller.last_strength.b} {_('controller_tab.intensity_limit')}: {self.main_window.controller.last_strength.b_limit}  {_('controller_tab.waveform')}: {PULSE_NAME[self.main_window.controller.pulse_mode_b]}")
+
 
     # 命令类型控制方法
     def update_gui_commands_state(self, state):

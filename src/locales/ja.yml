@@ -27,6 +27,8 @@ controller_tab:
   title: "コントローラー設定"
   current_channel: "現在のチャンネル"
   intensity: "チャンネル強度"
+  channel_intensity: "チャンネル強度"
+  intensity_limit: "強度上限"
   target_strength: "目標強度"
   mode: "制御モード"
   pulse_mode: "パルスモード"

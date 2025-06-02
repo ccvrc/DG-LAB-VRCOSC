@@ -27,6 +27,8 @@ controller_tab:
   title: "Controller Settings"
   current_channel: "Current Channel"
   intensity: "Channel Intensity"
+  channel_intensity: "Channel Intensity"
+  intensity_limit: "Intensity Limit"
   target_strength: "Target Strength"
   mode: "Control Mode"
   pulse_mode: "Pulse Mode"

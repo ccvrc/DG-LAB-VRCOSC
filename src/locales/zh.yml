@@ -27,6 +27,8 @@ controller_tab:
   title: "控制器设置"
   current_channel: "当前通道"
   intensity: "通道强度"
+  channel_intensity: "通道强度"
+  intensity_limit: "强度上限"
   target_strength: "目标强度"
   mode: "控制模式"
   pulse_mode: "脉冲模式"
