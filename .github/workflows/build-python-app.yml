@@ -50,7 +50,7 @@ jobs:
 
     - name: Build with PyInstaller
       run: |
-        pyinstaller -F --windowed -i docs/images/fish-cake.ico --name DG-LAB-VRCOSC --add-data "docs/images/fish-cake.ico;docs/images" --paths=./src src/app.py
+        pyinstaller DG-LAB-VRCOSC.spec
       shell: pwsh
 
     - name: Generate commit hash and timestamp file

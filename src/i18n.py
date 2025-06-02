@@ -1,10 +1,18 @@
 import os
+import sys
 import yaml
 import logging
 from typing import Dict, Any
 from PySide6.QtCore import QObject, Signal
 
 logger = logging.getLogger(__name__)
+
+def resource_path(relative_path):
+    """获取资源的绝对路径，确保开发和打包后都能正常使用"""
+    if hasattr(sys, '_MEIPASS'):  # PyInstaller 打包后的路径
+        return os.path.join(sys._MEIPASS, relative_path)
+    # 开发环境下的路径
+    return os.path.join(os.path.dirname(os.path.abspath(__file__)), relative_path)
 
 # 语言变更信号类
 class LanguageSignals(QObject):
@@ -28,20 +36,18 @@ _translations: Dict[str, Dict[str, Any]] = {}
 def load_translations():
     """加载所有可用语言的翻译文件"""
     global _translations
-    
+
     logger.info(f"当前工作目录: {os.getcwd()}")
     logger.info(f"当前文件目录: {os.path.dirname(os.path.abspath(__file__))}")
-    
+
     for lang_code in LANGUAGES.keys():
-        translation_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'locales', f'{lang_code}.yml')
-        
+        # 使用 resource_path 函数来获取翻译文件路径
+        translation_file = resource_path(f'locales/{lang_code}.yml')
+
         # 输出调试信息
         logger.info(f"尝试加载翻译文件: {translation_file}")
         logger.info(f"文件是否存在: {os.path.exists(translation_file)}")
-        
-        # 如果语言文件不存在，则创建默认语言文件
-        os.makedirs(os.path.dirname(translation_file), exist_ok=True)
-        
+
         if not os.path.exists(translation_file):
             logger.warning(f"Translation file {translation_file} not found, creating default one")
             _translations[lang_code] = {}
