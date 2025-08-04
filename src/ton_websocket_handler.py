@@ -4,8 +4,27 @@ import websockets
 import json
 import logging
 from PySide6.QtCore import Signal, QObject
+import qrcode
+import io
+from PySide6.QtGui import QPixmap
 
 logger = logging.getLogger(__name__)
+
+def generate_qrcode(data: str):
+    """生成二维码并转换为PySide6可显示的QPixmap"""
+    qr = qrcode.QRCode(version=1, error_correction=qrcode.constants.ERROR_CORRECT_L, box_size=6, border=2)
+    qr.add_data(data)
+    qr.make(fit=True)
+    img = qrcode.make_image(fill='black', back_color='white')
+
+    buffer = io.BytesIO()
+    img.save(buffer, format='PNG')
+    buffer.seek(0)
+
+    qimage = QPixmap()
+    qimage.loadFromData(buffer.read(), 'PNG')
+
+    return qimage
 
 class WebSocketClient(QObject):
     status_update_signal = Signal(str)

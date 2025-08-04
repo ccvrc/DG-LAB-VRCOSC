@@ -1,8 +1,10 @@
 from PySide6.QtWidgets import (QWidget, QGroupBox, QFormLayout, QComboBox, QSpinBox,
-                               QLabel, QPushButton, QHBoxLayout, QVBoxLayout)
+                               QLabel, QPushButton, QHBoxLayout, QVBoxLayout, QLineEdit, 
+                               QCheckBox)
 from PySide6.QtCore import Qt
 import logging
 import asyncio
+import requests
 
 from config import get_active_ip_addresses, save_settings
 from pydglab_ws import DGLabWSServer, RetCode, StrengthData, FeedbackButton
@@ -10,6 +12,7 @@ from dglab_controller import DGLabController
 from qasync import asyncio
 from pythonosc import osc_server, dispatcher, udp_client
 from i18n import translate as _, language_signals, LANGUAGES, get_current_language, set_language
+from ton_websocket_handler import generate_qrcode # 导入新的二维码生成函数
 
 import functools # Use the built-in functools module
 import sys
@@ -58,6 +61,31 @@ class NetworkConfigTab(QWidget):
         self.osc_port_spinbox.setRange(1024, 65535)
         self.osc_port_spinbox.setValue(self.main_window.settings['osc_port'])  # Set the default or loaded value
         self.form_layout.addRow(str(_("network_tab.osc_port")) + ":", self.osc_port_spinbox)
+
+        # 创建远程地址控制布局
+        remote_address_layout = QHBoxLayout()
+        
+        # 创建开启异地复选框
+        self.enable_remote_checkbox = QCheckBox(str(_("network_tab.enable_remote")))
+        self.enable_remote_checkbox.setChecked(self.main_window.settings.get('enable_remote', False))
+        self.enable_remote_checkbox.stateChanged.connect(self.on_remote_enabled_changed)
+        
+        # 远程地址输入框
+        self.remote_address_edit = QLineEdit()
+        self.remote_address_edit.setText(self.main_window.settings.get('remote_address', ''))
+        self.remote_address_edit.setEnabled(self.enable_remote_checkbox.isChecked())
+        
+        # 获取公网地址按钮
+        self.get_public_ip_button = QPushButton(str(_("network_tab.get_public_ip")))
+        self.get_public_ip_button.clicked.connect(self.get_public_ip)
+        self.get_public_ip_button.setEnabled(self.enable_remote_checkbox.isChecked())
+        
+        # 将控件添加到布局
+        remote_address_layout.addWidget(self.enable_remote_checkbox)
+        remote_address_layout.addWidget(self.remote_address_edit)
+        remote_address_layout.addWidget(self.get_public_ip_button)
+        
+        self.form_layout.addRow(str(_("network_tab.remote_address")) + ":", remote_address_layout)
 
         # 创建 dispatcher 和地址处理器字典
         self.dispatcher = dispatcher.Dispatcher()
@@ -130,6 +158,7 @@ class NetworkConfigTab(QWidget):
         self.ip_combobox.currentTextChanged.connect(self.save_network_settings)
         self.port_spinbox.valueChanged.connect(self.save_network_settings)
         self.osc_port_spinbox.valueChanged.connect(self.save_network_settings)
+        self.remote_address_edit.textChanged.connect(self.save_network_settings) # 新增远程地址保存
 
         # 监听语言变更信号以更新UI
         language_signals.language_changed.connect(self.update_ui_texts)
@@ -153,10 +182,14 @@ class NetworkConfigTab(QWidget):
             selected_interface, selected_ip = selected_interface_ip
             selected_port = self.port_spinbox.value()
             osc_port = self.osc_port_spinbox.value()
+            remote_address = self.remote_address_edit.text()
+            enable_remote = self.enable_remote_checkbox.isChecked()  # 添加这行
             self.main_window.settings['interface'] = selected_interface
             self.main_window.settings['ip'] = selected_ip
             self.main_window.settings['port'] = selected_port
             self.main_window.settings['osc_port'] = osc_port
+            self.main_window.settings['remote_address'] = remote_address
+            self.main_window.settings['enable_remote'] = enable_remote  # 添加这行
 
             save_settings(self.main_window.settings)
             logger.info("Network settings saved.")
@@ -219,10 +252,16 @@ class NetworkConfigTab(QWidget):
                 logger.info("WebSocket 客户端已初始化")
 
                 # Generate QR code
-                url = client.get_qrcode(f"ws://{ip}:{port}")
+                remote_address = self.remote_address_edit.text()
+                if remote_address:
+                    url = client.get_qrcode(f"ws://{remote_address}:{port}")
+                    logger.info(f"使用远程地址生成二维码: ws://{remote_address}:{port}")
+                else:
+                    url = client.get_qrcode(f"ws://{ip}:{port}")
+                    logger.info(f"使用本地地址生成二维码: ws://{ip}:{port}")
+                
                 qrcode_image = self.generate_qrcode(url)
                 self.update_qrcode(qrcode_image)
-                logger.info(f"二维码已生成，WebSocket URL: ws://{ip}:{port}")
 
                 osc_client = udp_client.SimpleUDPClient("127.0.0.1", 9000)
                 # Initialize controller
@@ -294,6 +333,7 @@ class NetworkConfigTab(QWidget):
         qr = qrcode.QRCode(version=1, error_correction=qrcode.constants.ERROR_CORRECT_L, box_size=6, border=2)
         qr.add_data(data)
         qr.make(fit=True)
+        # 修复：应该在 qr 对象上调用 make_image
         img = qr.make_image(fill='black', back_color='white')
 
         buffer = io.BytesIO()
@@ -456,3 +496,33 @@ class NetworkConfigTab(QWidget):
 
         # 更新语言标签
         self.language_label.setText(str(_("main.settings.language")) + ":")
+
+        # 更新复选框和按钮文本
+        self.enable_remote_checkbox.setText(str(_("network_tab.enable_remote")))
+        self.get_public_ip_button.setText(str(_("network_tab.get_public_ip")))
+
+    def on_remote_enabled_changed(self, state):
+        """处理开启异地复选框状态变化"""
+        is_enabled = bool(state)
+        self.remote_address_edit.setEnabled(is_enabled)
+        self.get_public_ip_button.setEnabled(is_enabled)
+        # 保存设置
+        self.main_window.settings['enable_remote'] = is_enabled
+        self.save_network_settings()
+        
+    def get_public_ip(self):
+        """获取公网IP地址"""
+        try:
+            response = requests.get('http://myip.ipip.net', timeout=5)
+            # 解析返回的文本,通常格式为: "当前 IP：xxx.xxx.xxx.xxx 来自于：xxx"
+            public_ip = response.text.split('：')[1].split(' ')[0]
+            self.remote_address_edit.setText(public_ip)
+            logger.info(f"获取到公网IP: {public_ip}")
+            # 保存设置
+            self.save_network_settings()
+        except Exception as e:
+            error_msg = f"获取公网IP失败: {str(e)}"
+            logger.error(error_msg)
+            # 可以添加错误提示框
+            from PySide6.QtWidgets import QMessageBox
+            QMessageBox.warning(self, "错误", error_msg)

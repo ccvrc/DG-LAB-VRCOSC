@@ -22,6 +22,9 @@ network_tab:
   online: "在线"
   offline: "未连接，请点击连接后扫描二维码"
   start: "启动"
+  remote_address: "远程地址"
+  enable_remote: "开启异地模式"
+  get_public_ip: "获取公网IP"
 
 controller_tab:
   title: "控制器设置"
@@ -101,4 +104,4 @@ log_tab:
   game_commands: "游戏联动命令"
   command_queue: "命令队列状态"
   queue_size: "当前队列大小"
-  controller_not_initialized: "控制器未初始化" 
+  controller_not_initialized: "控制器未初始化"
