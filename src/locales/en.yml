@@ -22,6 +22,9 @@ network_tab:
   online: "Online"
   offline: "Offline, scan QR code after connecting"
   start: "Start"
+  remote_address: "Remote Address"
+  enable_remote: "Remote Mode"
+  get_public_ip: "Get Public IP"
 
 controller_tab:
   title: "Controller Settings"
@@ -101,4 +104,4 @@ log_tab:
   game_commands: "Game Integration Commands"
   command_queue: "Command Queue Status"
   queue_size: "Current Queue Size"
-  controller_not_initialized: "Controller not initialized" 
+  controller_not_initialized: "Controller not initialized"

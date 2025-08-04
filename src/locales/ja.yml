@@ -22,6 +22,9 @@ network_tab:
   online: "オンライン"
   offline: "オフライン、接続後にQRコードをスキャンしてください"
   start: "開始"
+  remote_address: "リモートアドレス"
+  enable_remote: "遠隔モードを開始する"
+  get_public_ip: "パブリックIPを取得する"
 
 controller_tab:
   title: "コントローラー設定"

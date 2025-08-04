@@ -29,6 +29,7 @@ DEFAULT_SETTINGS = {
     'ip': '',
     'port': 5678,
     'osc_port': 9001,
+    'remote_address': '',
     'language': 'zh'  # 添加默认语言设置
 }
 
