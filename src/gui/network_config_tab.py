@@ -74,6 +74,9 @@ class NetworkConfigTab(QWidget):
         self.remote_address_edit = QLineEdit()
         self.remote_address_edit.setText(self.main_window.settings.get('remote_address', ''))
         self.remote_address_edit.setEnabled(self.enable_remote_checkbox.isChecked())
+        self.remote_address_edit.textChanged.connect(self.on_remote_address_changed)
+        # 添加提示文本
+        self.remote_address_edit.setPlaceholderText("请输入有效的IP地址")
         
         # 获取公网地址按钮
         self.get_public_ip_button = QPushButton(str(_("network_tab.get_public_ip")))
@@ -183,13 +186,19 @@ class NetworkConfigTab(QWidget):
             selected_port = self.port_spinbox.value()
             osc_port = self.osc_port_spinbox.value()
             remote_address = self.remote_address_edit.text()
-            enable_remote = self.enable_remote_checkbox.isChecked()  # 添加这行
+            
+            # 验证远程地址格式
+            if remote_address and not self.validate_ip_address(remote_address):
+                logger.warning(f"无效的远程IP地址格式: {remote_address}")
+                return
+                
+            enable_remote = self.enable_remote_checkbox.isChecked()
             self.main_window.settings['interface'] = selected_interface
             self.main_window.settings['ip'] = selected_ip
             self.main_window.settings['port'] = selected_port
             self.main_window.settings['osc_port'] = osc_port
             self.main_window.settings['remote_address'] = remote_address
-            self.main_window.settings['enable_remote'] = enable_remote  # 添加这行
+            self.main_window.settings['enable_remote'] = enable_remote
 
             save_settings(self.main_window.settings)
             logger.info("Network settings saved.")
@@ -526,3 +535,43 @@ class NetworkConfigTab(QWidget):
             # 可以添加错误提示框
             from PySide6.QtWidgets import QMessageBox
             QMessageBox.warning(self, "错误", error_msg)
+
+    def validate_ip_address(self, ip_str: str) -> bool:
+        """验证IP地址格式是否正确"""
+        try:
+            # 分割IP地址
+            parts = ip_str.split('.')
+            # 检查是否为4段
+            if len(parts) != 4:
+                return False
+            # 检查每段是否为0-255的整数
+            for part in parts:
+                if not part.isdigit():
+                    return False
+                num = int(part)
+                if num < 0 or num > 255:
+                    return False
+            return True
+        except (AttributeError, TypeError):
+            return False
+
+    def on_remote_address_changed(self, text: str):
+        """处理远程地址输入变化"""
+        if text and not self.validate_ip_address(text):
+            # IP地址格式无效时显示红色边框
+            self.remote_address_edit.setStyleSheet("""
+                QLineEdit {
+                    border: 1px solid red;
+                    padding: 2px;
+                }
+            """)
+            # 禁用保存
+            self.save_button.setEnabled(False) if hasattr(self, 'save_button') else None
+        else:
+            # IP地址格式有效或为空时恢复正常边框
+            self.remote_address_edit.setStyleSheet("")
+            # 启用保存
+            self.save_button.setEnabled(True) if hasattr(self, 'save_button') else None
+            # 保存设置
+            if text:
+                self.save_network_settings()
