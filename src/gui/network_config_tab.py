@@ -12,7 +12,6 @@ from dglab_controller import DGLabController
 from qasync import asyncio
 from pythonosc import osc_server, dispatcher, udp_client
 from i18n import translate as _, language_signals, LANGUAGES, get_current_language, set_language
-from ton_websocket_handler import generate_qrcode # 导入新的二维码生成函数
 
 import functools # Use the built-in functools module
 import sys
@@ -342,7 +341,6 @@ class NetworkConfigTab(QWidget):
         qr = qrcode.QRCode(version=1, error_correction=qrcode.constants.ERROR_CORRECT_L, box_size=6, border=2)
         qr.add_data(data)
         qr.make(fit=True)
-        # 修复：应该在 qr 对象上调用 make_image
         img = qr.make_image(fill='black', back_color='white')
 
         buffer = io.BytesIO()
