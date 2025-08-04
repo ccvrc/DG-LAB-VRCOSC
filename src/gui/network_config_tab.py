@@ -226,6 +226,16 @@ class NetworkConfigTab(QWidget):
 
     def start_server(self):
         """启动 WebSocket 服务器"""
+        # 验证远程地址（如果启用）
+        if self.enable_remote_checkbox.isChecked():
+            remote_address = self.remote_address_edit.text()
+            if remote_address and not self.validate_ip_address(remote_address):
+                error_msg = "远程地址格式无效，无法启动服务器"
+                logger.error(error_msg)
+                from PySide6.QtWidgets import QMessageBox
+                QMessageBox.warning(self, "错误", error_msg)
+                return
+    
         selected_ip = self.ip_combobox.currentText().split(": ")[-1]
         selected_port = self.port_spinbox.value()
         osc_port = self.osc_port_spinbox.value()
@@ -513,10 +523,27 @@ class NetworkConfigTab(QWidget):
         is_enabled = bool(state)
         self.remote_address_edit.setEnabled(is_enabled)
         self.get_public_ip_button.setEnabled(is_enabled)
+        
+        # 检查远程地址的有效性
+        if is_enabled:
+            remote_address = self.remote_address_edit.text()
+            if remote_address and not self.validate_ip_address(remote_address):
+                # 如果远程地址无效，禁用启动按钮
+                self.start_button.setEnabled(False)
+                self.start_button.setStyleSheet("background-color: grey; color: white;")
+            else:
+                # 远程地址有效或为空，启用启动按钮
+                self.start_button.setEnabled(True)
+                self.start_button.setStyleSheet("background-color: green; color: white;")
+        else:
+            # 未启用远程连接时恢复启动按钮状态
+            self.start_button.setEnabled(True)
+            self.start_button.setStyleSheet("background-color: green; color: white;")
+        
         # 保存设置
         self.main_window.settings['enable_remote'] = is_enabled
         self.save_network_settings()
-        
+
     def get_public_ip(self):
         """获取公网IP地址"""
         try:
@@ -555,21 +582,32 @@ class NetworkConfigTab(QWidget):
 
     def on_remote_address_changed(self, text: str):
         """处理远程地址输入变化"""
-        if text and not self.validate_ip_address(text):
+        enable_remote = self.enable_remote_checkbox.isChecked()
+        
+        # 当启用远程连接时才进行验证
+        if enable_remote and text:
+            is_valid = self.validate_ip_address(text)
             # IP地址格式无效时显示红色边框
-            self.remote_address_edit.setStyleSheet("""
-                QLineEdit {
-                    border: 1px solid red;
-                    padding: 2px;
-                }
-            """)
-            # 禁用保存
-            self.save_button.setEnabled(False) if hasattr(self, 'save_button') else None
-        else:
-            # IP地址格式有效或为空时恢复正常边框
-            self.remote_address_edit.setStyleSheet("")
-            # 启用保存
-            self.save_button.setEnabled(True) if hasattr(self, 'save_button') else None
-            # 保存设置
-            if text:
+            if not is_valid:
+                self.remote_address_edit.setStyleSheet("""
+                    QLineEdit {
+                        border: 1px solid red;
+                        padding: 2px;
+                    }
+                """)
+                # 禁用启动按钮
+                self.start_button.setEnabled(False)
+                self.start_button.setStyleSheet("background-color: grey; color: white;")
+            else:
+                # IP地址格式有效时恢复正常边框
+                self.remote_address_edit.setStyleSheet("")
+                # 启用启动按钮
+                self.start_button.setEnabled(True)
+                self.start_button.setStyleSheet("background-color: green; color: white;")
+                # 保存设置
                 self.save_network_settings()
+        else:
+            # 未启用远程连接或地址为空时恢复正常状态
+            self.remote_address_edit.setStyleSheet("")
+            self.start_button.setEnabled(True)
+            self.start_button.setStyleSheet("background-color: green; color: white;")
