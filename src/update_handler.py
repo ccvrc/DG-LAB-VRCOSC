@@ -1,16 +1,11 @@
 # src/update_handler.py
 import sys
-import json
 import os
 import aiohttp
-import asyncio
 import logging
-import zipfile
 import subprocess
-from pathlib import Path
 from packaging import version
-from PySide6.QtWidgets import QDialog, QVBoxLayout, QLabel, QProgressBar, QPushButton, QHBoxLayout, QMessageBox, QApplication
-from qasync import asyncSlot
+from PySide6.QtWidgets import QDialog, QVBoxLayout, QLabel, QPushButton, QHBoxLayout
 
 logger = logging.getLogger(__name__)
 
@@ -55,139 +50,186 @@ class UpdateHandler:
             logger.error(f"检查更新失败: {str(e)}")
             if manual_check:
                 return {"available": False, "message": f"检查更新失败: {str(e)}"}
-    def handle_update_package(self, zip_path):
-        try:
-            exe_dir = os.path.dirname(sys.executable)
-            
-            # 解压文件
-            with zipfile.ZipFile(zip_path, 'r') as zip_ref:
-                # 验证压缩包结构
-                if 'DG-LAB-VRCOSC.exe' not in zip_ref.namelist():
-                    raise ValueError("无效的更新包")
-                
-                # 清空临时文件
-                temp_dir = os.path.join(exe_dir, "update_temp")
-                if os.path.exists(temp_dir):
-                    shutil.rmtree(temp_dir)
-                os.makedirs(temp_dir)
-                
-                zip_ref.extractall(temp_dir)
-            
-            # 移动文件
-            src_exe = os.path.join(temp_dir, 'DG-LAB-VRCOSC.exe')
-            dst_exe = os.path.join(exe_dir, 'update.exe')
-            if os.path.exists(dst_exe):
-                os.remove(dst_exe)
-            shutil.move(src_exe, dst_exe)
-            
-            # 创建更新脚本
-            self.create_update_script(exe_dir)
-            
-            # 提示重启
-            dialog = QMessageBox(
-                QMessageBox.Information,
-                "更新完成",
-                "需要重启应用完成更新，是否立即重启？",
-                QMessageBox.Yes | QMessageBox.No,
-                self
-            )
-            if dialog.exec() == QMessageBox.Yes:
-                self.launch_updater()
-                
-        except Exception as e:
-            logger.error(f"更新处理失败: {str(e)}")
-            QMessageBox.critical(None, "错误", f"更新处理失败: {str(e)}")
-        
-    async def start_download(self, release_info, parent_window):
-        """开始下载更新包"""
-        try:
-            print("开始下载更新包")
-            # 更安全的下载链接获取
-            download_url = next(
-                (asset["browser_download_url"] 
-                for asset in release_info["assets"] 
-                if asset["name"] == "DG-LAB-VRCOSC.zip"), 
-                None
-            )
-            if not download_url:
-                raise ValueError("未找到 DG-LAB-VRCOSC.zip 资源")
 
-            # 创建对话框
-            dialog = UpdateDialog(parent_window, release_info)
-            dialog.show()
-            
-            # 连接取消信号
-            dialog.cancelled = False
-
-            # 生成保存路径
-            exe_path = os.path.dirname(sys.executable)
-            zip_path = os.path.join(exe_path, "update.zip")
-            
-            last_progress = -1
-            async with aiohttp.ClientSession() as session:
-                async with session.get(download_url) as response:
-                    # 安全获取文件大小
-                    total_size = max(int(response.headers.get('content-length', 1)), 1)
-                    downloaded = 0
-
-                    with open(zip_path, "wb") as f:
-                        async for chunk in response.content.iter_chunked(4096):  # 增大块大小
-                            # 通过信号获取取消状态
-                            if await asyncio.get_event_loop().run_in_executor(
-                                None, dialog.is_cancelled
-                            ):
-                                f.close()
-                                os.remove(zip_path)
-                                return
-
-                            f.write(chunk)
-                            downloaded += len(chunk)
-                            progress = min(int((downloaded / total_size) * 100), 100)
-                            
-            while not dialog.cancelled:
-                # 更新进度条
-                parent_window.progress.setValue(progress)
-                await asyncio.sleep(0.1)
-            # 下载完成处理
-            if not dialog.cancelled:
-                self.handle_update_package(zip_path)
-
-        except asyncio.CancelledError:
-            logger.info("下载已取消")
-
-        except (aiohttp.ClientError, IOError, ValueError) as e:
-            logger.error(f"下载失败: {str(e)}")
-            QMessageBox.critical(self, "错误", f"下载更新失败: {str(e)}")
-        except Exception as e:
-            logger.exception("未处理的异常:")
-            QMessageBox.critical(self, "错误", f"发生未知错误: {str(e)}")
-
-
-    def create_update_script(self, exe_dir):
-        """创建更新脚本"""
-        bat_content = f"""@echo off
-    :loop
-    tasklist | find "DG-LAB-VRCOSC.exe" > nul
-    if %errorlevel% == 0 (
-        timeout /t 1 > nul
-        goto loop
+def get_download_url(release_info):
+    """开始下载更新包"""
+    # try:
+    print("开始下载更新包")
+    # 更安全的下载链接获取
+    download_url = next(
+        (asset["browser_download_url"] 
+        for asset in release_info["assets"] 
+        if asset["name"] == "DG-LAB-VRCOSC.zip"), 
+        None
     )
-    move /Y "{exe_dir}\\update.exe" "{exe_dir}\\DG-LAB-VRCOSC.exe"
-    start "" "{exe_dir}\\DG-LAB-VRCOSC.exe"
-    del "{exe_dir}\\update.bat"
-    """
-        bat_path = os.path.join(exe_dir, "update.bat")
-        with open(bat_path, "w") as f:
-            f.write(bat_content)
-
-    def launch_updater(self):
-        """启动更新程序"""
-        exe_dir = os.path.dirname(sys.executable)
-        bat_path = os.path.join(exe_dir, "update.bat")
-        subprocess.Popen(bat_path, shell=True)
-        QApplication.quit()
+    if not download_url:
+        raise ValueError("未找到 DG-LAB-VRCOSC.zip 资源")
+    return download_url
 
 
+def run_powershell_in_new_window(download_url):
+    # 获取当前脚本所在目录，适配打包后路径
+    if hasattr(sys, '_MEIPASS'):
+        base_path = sys._MEIPASS
+    else:
+        base_path = os.path.dirname(os.path.abspath(__file__))
+    
+        # 获取当前exe文件路径
+    if getattr(sys, 'frozen', False):
+        # 打包后的exe路径
+        exe_path = os.path.dirname(sys.executable)
+    else:
+        # 开发环境路径
+        exe_path = os.path.dirname(os.path.abspath(__file__))
+
+    script_path = os.path.join(base_path, "download.ps1")
+    url = download_url
+    output_path = r"C:\temp"
+    extract_path = r"D:\python"
+
+    # 构建 PowerShell 命令参数列表
+    command = [
+        "powershell.exe",
+        # "-NoExit",  # 保持窗口不关闭（可选）
+        "-Command",
+        f"& '{script_path}' -Url '{url}' -OutputPath '{output_path}' -ExtractPath '{exe_path}'"
+    ]
+
+    try:
+        subprocess.Popen(
+            command,
+            creationflags=subprocess.CREATE_NEW_CONSOLE
+        )
+        print("已打开 PowerShell 窗口执行命令")
+    except Exception as e:
+        print(f"执行失败: {e}")
+        sys.exit(1)
+    finally:
+        sys.exit(0)   
+
+def write_download_ps1_file():
+    """将指定的PowerShell脚本写入当前exe路径下的download.ps1文件"""
+    # 获取当前脚本所在目录，适配打包后路径
+    if hasattr(sys, '_MEIPASS'):
+        base_path = sys._MEIPASS
+    else:
+        base_path = os.path.dirname(os.path.abspath(__file__))
+    
+    # 构造目标文件路径
+    file_path = os.path.join(base_path, 'download.ps1')
+    
+    # 要写入的PowerShell脚本内容
+    ps1_content = '''param (
+    [string]$Url = "https://github.com/ccvrc/DG-LAB-VRCOSC/releases/download/v0.3.0/DG-LAB-VRCOSC.zip",
+    [string]$OutputPath = $env:TEMP,
+    [string]$ExtractPath = $env:TEMP
+)
+# 确保路径存在
+foreach ($path in ($OutputPath, $ExtractPath)) {
+    if (-not (Test-Path $path)) {
+        New-Item -ItemType Directory -Path $path -Force | Out-Null
+    }
+}
+# 使用 HttpClient 实现带进度条的下载
+function Download-File {
+    param (
+        [string]$Url,
+        [string]$OutputFile
+    )
+    try {
+    Add-Type -AssemblyName System.Net.Http -ErrorAction SilentlyContinue
+        # 创建 HttpClient 实例（推荐使用 using 语句管理生命周期）
+        $httpClient = New-Object System.Net.Http.HttpClient
+        $httpClient.Timeout = [System.Threading.Timeout]::InfiniteTimeSpan
+        # 发送 HEAD 请求获取文件大小
+        $headRequest = New-Object System.Net.Http.HttpRequestMessage -ArgumentList ([System.Net.Http.HttpMethod]::Head, $Url)
+        $headResponse = $httpClient.SendAsync($headRequest).GetAwaiter().GetResult()
+        $totalBytes = [double]$headResponse.Content.Headers.ContentLength
+        # 验证文件大小
+        if ($totalBytes -le 0) {
+            throw "无法获取文件大小，请检查URL是否有效"
+        }
+        # 创建文件流
+        $fileStream = [System.IO.File]::Create($OutputFile)
+        # 发送 GET 请求
+        $getRequest = New-Object System.Net.Http.HttpRequestMessage -ArgumentList ([System.Net.Http.HttpMethod]::Get, $Url)
+        $response = $httpClient.SendAsync($getRequest, [System.Net.Http.HttpCompletionOption]::ResponseHeadersRead).GetAwaiter().GetResult()
+        # 获取响应流
+        $responseStream = $response.Content.ReadAsStreamAsync().GetAwaiter().GetResult()
+        # 创建缓冲区
+        $buffer = New-Object byte[] 8192
+        $downloadedBytes = 0
+        $stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
+        $lastUpdate = [System.DateTime]::MinValue
+        # 读取流并写入文件
+        while ($true) {
+            $bytesRead = $responseStream.Read($buffer, 0, $buffer.Length)
+            if ($bytesRead -eq 0) { break }
+            $fileStream.Write($buffer, 0, $bytesRead)
+            $downloadedBytes += $bytesRead
+            # 限制进度更新频率（每500ms更新一次）
+            $currentTime = [System.DateTime]::Now
+            if (($currentTime - $lastUpdate).TotalMilliseconds -gt 500) {
+                $percentComplete = [math]::Min(100, [math]::Round(($downloadedBytes / $totalBytes) * 100, 2))
+                $speed = ($downloadedBytes / 1MB) / [math]::Max(0.001, $stopwatch.Elapsed.TotalSeconds)
+                Write-Progress -Activity "正在下载文件..." `
+                    -Status ("进度: {0}% | 速度: {1:N2} MB/s | {2:N1}MB / {3:N1}MB" -f `
+                        $percentComplete, `
+                        $speed, `
+                        ($downloadedBytes / 1MB), `
+                        ($totalBytes / 1MB)) `
+                    -PercentComplete $percentComplete
+                $lastUpdate = $currentTime
+            }
+        }
+        # 确保显示100%完成
+        Write-Progress -Activity "正在下载文件..." -Status "下载完成" -Completed
+    }
+    finally {
+        # 清理资源
+        if ($null -ne $fileStream) { $fileStream.Dispose() }
+        if ($null -ne $responseStream) { $responseStream.Dispose() }
+        if ($null -ne $response) { $response.Dispose() }
+        if ($null -ne $httpClient) { $httpClient.Dispose() }
+    }
+}
+# 解压 ZIP 文件（保持不变）
+# 修改后的解压函数，使用 Expand-Archive 并添加 -Force 参数
+function Extract-Zip {
+    param (
+        [string]$ZipFile,
+        [string]$Destination
+    )
+    Expand-Archive -Path $ZipFile -DestinationPath $Destination -Force
+}
+# 主执行流程
+try {
+    $outputFile = Join-Path $OutputPath "DG-LAB-VRCOSC.zip"
+    Write-Host "开始下载安装包..."
+    Download-File -Url $Url -OutputFile $outputFile
+    Write-Host "下载完成，开始安装..."
+    Extract-Zip -ZipFile $outputFile -Destination $ExtractPath
+    Write-Host "安装完成！安装位置: $ExtractPath"
+    # 运行解压后的 EXE
+    # $exePath = Join-Path $ExtractPath "DG-LAB-VRCOSC.exe"
+    # if (Test-Path $exePath) {
+    #     Start-Process -FilePath $exePath
+    # } else {
+    #     Write-Host "未找到 DG-LAB-VRCOSC.exe"
+    # }
+    # 关闭 PowerShell 窗口
+    Write-Host "\n安装已完成，按任意键关闭此窗口..."
+    $null = $Host.UI.RawUI.ReadKey('NoEcho,IncludeKeyDown')
+    exit
+}
+catch {
+    Write-Error "操作失败: $_"
+    exit 1
+}'''
+
+    # 以GBK编码写入文件
+    with open(file_path, 'w', encoding='gbk') as file:
+        file.write(ps1_content)
 
 class UpdateDialog(QDialog):
     """更新对话框实现"""
@@ -204,7 +246,6 @@ class UpdateDialog(QDialog):
         content = QLabel(release_info['body'].replace('\r\n', '\n'))
         layout.addWidget(content)
         
-
         # 按钮区域
         btn_layout = QHBoxLayout()
         self.update_btn = QPushButton("立即更新")
@@ -213,29 +254,20 @@ class UpdateDialog(QDialog):
         btn_layout.addWidget(self.cancel_btn)
         layout.addLayout(btn_layout)
 
-                # 进度条
-        self.progress = QProgressBar()
-        self.progress.setRange(0, 100)
-        self.progress.setVisible(False)
-        
         # 取消标志
         self.cancelled = False
         
         # 信号连接
-        # self.update_btn.clicked.connect(self.start_download)
+        self.update_btn.clicked.connect(lambda: self.start_download(release_info))
         self.cancel_btn.clicked.connect(self.cancel_download)
-
-        # 修改信号连接方式
-        # self.update_btn.clicked.connect(self._handle_update_clicked)
-
-        # 添加中间处理层
-
-        
+       
         self.setLayout(layout)
 
-    def start_download(self):
-        self.progress.setVisible(True)
-        self.update_btn.setEnabled(False)
+    def start_download(self, release_info):
+        print("开始更新。。。。。。。。。。。。。。。。。。。。。。。。。。。。。")
+        download_url = get_download_url(release_info)
+        write_download_ps1_file()
+        run_powershell_in_new_window(download_url)
         
     def cancel_download(self):
         self.cancelled = True
@@ -243,19 +275,5 @@ class UpdateDialog(QDialog):
         
     def is_cancelled(self):
         return self.cancelled
-        
-    def update_progress(self, value):
-        self.progress.setValue(value)
 
-    # def _handle_update_clicked(self):
-    #     asyncio.create_task(self.on_update_clicked())
-
-    # # 使用正确的异步处理
-    # @asyncSlot()
-    # async def on_update_clicked(self):
-    #     try:
-    #         # 原有的下载逻辑
-    #         await self.start_download(self)
-    #     except Exception as e:
-    #         QMessageBox.critical(self, "错误", str(e))
         

@@ -54,6 +54,7 @@ cover/
 qrcode.png
 settings.yml
 osc_addresses.yml
+download.ps1
 
 # Translations
 *.mo

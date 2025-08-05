@@ -6,7 +6,6 @@ from PySide6.QtGui import QIcon
 from qasync import QEventLoop
 import logging
 
-from functools import partial
 from config import load_settings
 from logger_config import setup_logging
 from i18n import set_language, translate as _, language_signals
@@ -19,7 +18,6 @@ from gui.log_viewer_tab import LogViewerTab
 from gui.osc_parameters import OSCParametersTab
 from gui.about_tab import AboutTab
 
-from qasync import asyncSlot
 
 setup_logging()
 # Configure the logger
@@ -62,7 +60,7 @@ class MainWindow(QMainWindow):
             self.settings.setdefault(key, value)
         # Load settings from file or use defaults
 
-                # 初始化更新处理器
+        # 初始化更新处理器
         self.update_handler = UpdateHandler(
             current_version="v0.1.0",  # 需要从配置读取
             config=self.settings
@@ -91,13 +89,6 @@ class MainWindow(QMainWindow):
         self.tab_widget.addTab(self.ton_damage_system_tab, _("main.tabs.ton"))
         self.tab_widget.addTab(self.log_viewer_tab, _("main.tabs.log"))
         self.tab_widget.addTab(self.about_tab, "关于")
-
-
-        
-        if self.settings.get('auto_update', False):
-            asyncio.create_task(self.auto_update_check())
-
-
 
         # Setup logging to the log viewer
         self.app_setup_logging()
@@ -154,23 +145,9 @@ class MainWindow(QMainWindow):
                 QMessageBox.information(self, "检查更新", result["message"])
 
 
-
     def show_update_dialog(self, release_info):
             print("更新信息:", release_info)
             dialog = UpdateDialog(self, release_info)
-
-            async def on_update_clicked():
-                try:
-                    print("开始更新")
-                    
-                    await self.update_handler.start_download(release_info, dialog)
-                except Exception as e:
-                    QMessageBox.critical(self, "错误", str(e))
-
-            def __on_update_clicked():
-                asyncio.create_task(on_update_clicked())
-            
-            dialog.update_btn.clicked.connect(__on_update_clicked)
             dialog.exec()
 
     def save_settings(self):
@@ -214,6 +191,12 @@ if __name__ == "__main__":
 
     window = MainWindow()
     window.show()
+
+    # 在事件循环启动后安排 auto_update_check
+    async def start_auto_update():
+        if window.settings.get('auto_update', False):
+            await window.auto_update_check()
+    loop.create_task(start_auto_update())
 
     with loop:
         loop.run_forever()
