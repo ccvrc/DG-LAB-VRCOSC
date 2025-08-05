@@ -18,6 +18,8 @@ from gui.log_viewer_tab import LogViewerTab
 from gui.osc_parameters import OSCParametersTab
 from gui.about_tab import AboutTab
 
+#软件版本，硬编码
+software_version = "v0.3.1"
 
 setup_logging()
 # Configure the logger
@@ -52,7 +54,7 @@ class MainWindow(QMainWindow):
             'ip': '',
             'port': 5678,
             'osc_port': 9001,
-            'auto_update': False
+            'auto_update': True
         }
 
         self.settings = load_settings() or {}
@@ -62,8 +64,8 @@ class MainWindow(QMainWindow):
 
         # 初始化更新处理器
         self.update_handler = UpdateHandler(
-            current_version="v0.1.0",  # 需要从配置读取
-            config=self.settings
+            current_version = software_version,  
+            config = self.settings
         )
 
         # Set initial controller to None
