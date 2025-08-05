@@ -120,7 +120,7 @@ class NetworkConfigTab(QWidget):
 
         self.network_config_group.setLayout(self.form_layout)
 
-        # 将网络配置组添加到左侧配置布局
+        # 将网络配置组添加到左侧配置布局, 设置stretch=0
         self.config_layout.addWidget(self.network_config_group, 0)
 
         # 创建语言设置区域
@@ -150,8 +150,6 @@ class NetworkConfigTab(QWidget):
         # 将配置布局添加到内容布局
         self.content_layout.addLayout(self.config_layout)
         
-        # 将网络配置组添加到布局，设置stretch=0
-        # self.layout.addWidget(self.network_config_group, 0)  # stretch=0保持固定宽度
 
         # 二维码显示（右侧伸缩部分）
         self.qrcode_label = QLabel(self)
@@ -168,7 +166,7 @@ class NetworkConfigTab(QWidget):
             QSizePolicy.Expanding,  # 水平策略：尽可能扩展
             QSizePolicy.Expanding  # 垂直策略
         )
-        self.qrcode_label.setMinimumSize(100, 100)  # 设置最小可显示尺寸
+        self.qrcode_label.setMinimumSize(300, 300)  # 设置最小可显示尺寸
 
         # Apply loaded settings to the UI components
         self.apply_settings_to_ui()
