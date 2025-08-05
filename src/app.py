@@ -19,7 +19,7 @@ from gui.osc_parameters import OSCParametersTab
 from gui.about_tab import AboutTab
 
 #软件版本，硬编码
-software_version = "v0.3.1"
+software_version = "v0.4.0"
 
 setup_logging()
 # Configure the logger
