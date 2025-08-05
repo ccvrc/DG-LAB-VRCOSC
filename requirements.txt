@@ -8,3 +8,5 @@ psutil
 PySide6
 qasync
 websockets
+aiohttp
+requests
