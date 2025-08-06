@@ -4,6 +4,8 @@
 name: Python application
 on:
   push:
+    tags:
+      - 'v*'
     branches:
       - "master"
       - "action-test"
