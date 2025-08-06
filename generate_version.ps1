@@ -3,38 +3,38 @@ param (
     [string]$OutputFile = "src/version.py"
 )
 
-# æ£€æŸ¥å½“å‰æäº¤æ˜¯å¦æ˜¯ Git æ ‡ç­¾
+# ¼ì²éµ±Ç°Ìá½»ÊÇ·ñÊÇ Git ±êÇ©
 $tag = git describe --tags --exact-match 2>$null
 
 if ($tag) {
     $version = $tag
 } else {
-        # 2. å¦‚æœæ²¡æœ‰æ ‡ç­¾ï¼Œå°è¯•ä» version.py è¯»å–ç‰ˆæœ¬å·
-    $version = "v0.0.0"  # é»˜è®¤ç‰ˆæœ¬å·
+        # 2. Èç¹ûÃ»ÓĞ±êÇ©£¬³¢ÊÔ´Ó version.py ¶ÁÈ¡°æ±¾ºÅ
+    $version = "v0.0.0"  # Ä¬ÈÏ°æ±¾ºÅ
 
-    # æ£€æŸ¥ version.py æ˜¯å¦å­˜åœ¨
+    # ¼ì²é version.py ÊÇ·ñ´æÔÚ
     if (Test-Path $OutputFile) {
         try {
-            # è¯»å–æ–‡ä»¶å†…å®¹
+            # ¶ÁÈ¡ÎÄ¼şÄÚÈİ
             $content = Get-Content -Path $OutputFile -Raw
 
-            # ä½¿ç”¨æ­£åˆ™è¡¨è¾¾å¼æå– VERSION çš„å€¼
+            # Ê¹ÓÃÕıÔò±í´ïÊ½ÌáÈ¡ VERSION µÄÖµ
             if ($content -match 'VERSION\s*=\s*"([^"-]*)') {
                 $version = $matches[1]
                 Write-Host "Using version from version.py: $version"
             } else {
-                Write-Host "version.py ä¸­æœªæ‰¾åˆ° VERSION å˜é‡ï¼Œä½¿ç”¨é»˜è®¤ç‰ˆæœ¬ v0.0.0"
+                Write-Host "version.py ÖĞÎ´ÕÒµ½ VERSION ±äÁ¿£¬Ê¹ÓÃÄ¬ÈÏ°æ±¾ v0.0.0"
             }
         } catch {
-            Write-Host "è¯»å– version.py æ—¶å‘ç”Ÿé”™è¯¯ï¼Œä½¿ç”¨é»˜è®¤ç‰ˆæœ¬ v0.0.0"
+            Write-Host "¶ÁÈ¡ version.py Ê±·¢Éú´íÎó£¬Ê¹ÓÃÄ¬ÈÏ°æ±¾ v0.0.0"
         }
     } else {
-        Write-Host "version.py ä¸å­˜åœ¨ï¼Œä½¿ç”¨é»˜è®¤ç‰ˆæœ¬ v0.0.0"
+        Write-Host "version.py ²»´æÔÚ£¬Ê¹ÓÃÄ¬ÈÏ°æ±¾ v0.0.0"
     }
     $commitHash = (git rev-parse --short HEAD)
     $timestamp = Get-Date -Format "yyyyMMdd-HHmm"
     $version = "$version-$timestamp-$commitHash"
 }
 
-# å†™å…¥ç‰ˆæœ¬å·åˆ°æŒ‡å®šæ–‡ä»¶ï¼ˆé»˜è®¤ä¸º version.pyï¼‰
+# Ğ´Èë°æ±¾ºÅµ½Ö¸¶¨ÎÄ¼ş£¨Ä¬ÈÏÎª version.py£©
 Set-Content -Path $OutputFile -Value "VERSION = `"$version`""
