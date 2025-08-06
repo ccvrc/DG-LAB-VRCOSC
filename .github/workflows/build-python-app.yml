@@ -10,6 +10,7 @@ on:
       - "feature/*"
       - "feat-*"
       - "dev*"
+      - "release/*"
   pull_request:
     branches:
       - "master"
