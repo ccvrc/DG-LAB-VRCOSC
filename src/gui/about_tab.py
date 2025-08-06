@@ -1,6 +1,8 @@
 # src/gui/about_tab.py
 import asyncio
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QLabel, QPushButton, QCheckBox, QTextEdit, QMessageBox
+# from i18n import translate, language_signals
+from i18n import translate as _, language_signals
 
 class AboutTab(QWidget):
     def __init__(self, main_window):
@@ -10,19 +12,20 @@ class AboutTab(QWidget):
         layout = QVBoxLayout()
         
         # 版本信息
-        version_layout = QVBoxLayout()
-        version_layout.addWidget(QLabel(f"当前版本: {self.main_window.update_handler.current_version}"))
+        self.version_layout = QVBoxLayout()
+        self.version_layout_label = QLabel(_('about_tab.current_version') + ": " + self.main_window.update_handler.current_version)
+        self.version_layout.addWidget(self.version_layout_label)
         
         # 检查更新按钮
-        self.check_update_btn = QPushButton("检查更新")
+        self.check_update_btn = QPushButton(_('about_tab.check_update'))
         self.check_update_btn.clicked.connect(self.check_update)
-        version_layout.addWidget(self.check_update_btn)
+        self.version_layout.addWidget(self.check_update_btn)
         
         # 自动更新选项
-        self.auto_check = QCheckBox("启用自动检查更新")
+        self.auto_check = QCheckBox(_('about_tab.automatic_update_check'))
         self.auto_check.setChecked(self.main_window.settings.get('auto_update', False))
         self.auto_check.stateChanged.connect(self.toggle_auto_update)
-        version_layout.addWidget(self.auto_check)
+        self.version_layout.addWidget(self.auto_check)
         
         # 贡献信息
         contributors = QTextEdit()
@@ -39,7 +42,7 @@ class AboutTab(QWidget):
             "- qasync (MIT)"
         )
         
-        layout.addLayout(version_layout)
+        layout.addLayout(self.version_layout)
         layout.addWidget(contributors)
         self.setLayout(layout)
     
@@ -58,3 +61,10 @@ class AboutTab(QWidget):
             finally:
                 self.check_update_btn.setEnabled(True)
         asyncio.create_task(do_check())
+
+    def update_ui_texts(self):
+        """更新UI上的所有文本为当前语言"""
+        self.check_update_btn.setText(_('about_tab.check_update'))
+        # 更新标签文本
+        self.auto_check.setText(_('about_tab.automatic_update_check'))
+        self.version_layout_label.setText(_('about_tab.current_version') + ": " + self.main_window.update_handler.current_version)

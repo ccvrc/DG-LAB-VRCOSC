@@ -11,6 +11,7 @@ import re
 from urllib.parse import urlparse, urlunparse
 from packaging import version
 from PySide6.QtWidgets import QDialog, QVBoxLayout, QLabel, QPushButton, QHBoxLayout
+from i18n import translate as _
 
 logger = logging.getLogger(__name__)
 
@@ -111,7 +112,9 @@ class UpdateHandler:
                         "latest_version": latest_release['tag_name']
                     }
                 elif manual_check:
-                    return {"available": False, "message": "当前已是最新版本"}
+                    # 导入翻译函数
+
+                    return {"available": False, "message": _('about_tab.already_latest_version')}
                     
         except Exception as e:
             logger.error(f"检查更新过程中出现未预期错误: {str(e)}")
@@ -419,11 +422,11 @@ class UpdateDialog(QDialog):
     """更新对话框实现"""
     def __init__(self, parent, release_info):
         super().__init__(parent)
-        self.setWindowTitle("发现新版本")
+        self.setWindowTitle(_('about_tab.discover_new_version'))
         layout = QVBoxLayout()
         
         # 版本信息
-        version_label = QLabel(f"新版本 {release_info['tag_name']}\n更新内容：")
+        version_label = QLabel(f"{_('about_tab.new_version')} {release_info['tag_name']}\n{_('about_tab.update')}：")
         layout.addWidget(version_label)
         
         # 更新内容
@@ -432,8 +435,8 @@ class UpdateDialog(QDialog):
         
         # 按钮区域
         btn_layout = QHBoxLayout()
-        self.update_btn = QPushButton("立即更新")
-        self.cancel_btn = QPushButton("取消")
+        self.update_btn = QPushButton(_('about_tab.update_now'))
+        self.cancel_btn = QPushButton(_('about_tab.cancel'))
         btn_layout.addWidget(self.update_btn)
         btn_layout.addWidget(self.cancel_btn)
         layout.addLayout(btn_layout)

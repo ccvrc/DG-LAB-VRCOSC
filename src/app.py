@@ -91,7 +91,7 @@ class MainWindow(QMainWindow):
         self.tab_widget.addTab(self.osc_parameters_tab, _("main.tabs.osc"))
         self.tab_widget.addTab(self.ton_damage_system_tab, _("main.tabs.ton"))
         self.tab_widget.addTab(self.log_viewer_tab, _("main.tabs.log"))
-        self.tab_widget.addTab(self.about_tab, "关于")
+        self.tab_widget.addTab(self.about_tab, _('about_tab.title'))
 
         # Setup logging to the log viewer
         self.app_setup_logging()
@@ -145,7 +145,7 @@ class MainWindow(QMainWindow):
                 self.show_update_dialog(result["release_info"])
                 
             else:
-                QMessageBox.information(self, "检查更新", result["message"])
+                QMessageBox.information(self, _('about_tab.check_update'), result["message"])
 
 
     def show_update_dialog(self, release_info):
@@ -173,6 +173,7 @@ class MainWindow(QMainWindow):
         self.tab_widget.setTabText(2, _("main.tabs.osc"))
         self.tab_widget.setTabText(3, _("main.tabs.ton"))
         self.tab_widget.setTabText(4, _("main.tabs.log"))
+        self.tab_widget.setTabText(5, _('about_tab.title'))
         
         # 通知各个选项卡更新其UI
         # 通过发送信号或调用各选项卡的更新方法来实现
@@ -186,6 +187,8 @@ class MainWindow(QMainWindow):
             self.log_viewer_tab.update_ui_texts()
         if hasattr(self.osc_parameters_tab, 'update_ui_texts'):
             self.osc_parameters_tab.update_ui_texts()
+        if hasattr(self.about_tab, 'update_ui_texts'):
+            self.about_tab.update_ui_texts()
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)

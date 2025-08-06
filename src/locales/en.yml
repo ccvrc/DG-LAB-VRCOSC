@@ -105,3 +105,15 @@ log_tab:
   command_queue: "Command Queue Status"
   queue_size: "Current Queue Size"
   controller_not_initialized: "Controller not initialized"
+
+about_tab:
+  title: "About"
+  current_version: "Current Version"
+  check_update: "Check for Updates"
+  automatic_update_check: "Enable Automatic Update Check"
+  already_latest_version: "Already the latest version"
+  discover_new_version: "New version available"
+  new_version: "New Version"
+  update: "Update Content"
+  update_now: "Update Now"
+  cancel: "Cancel"
