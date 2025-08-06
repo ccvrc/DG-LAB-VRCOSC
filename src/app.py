@@ -140,7 +140,7 @@ class MainWindow(QMainWindow):
 
         if result:
             if result["available"]:
-                print("更新可用")
+                logger.info("更新可用")
                 self.show_update_dialog(result["release_info"])
                 
             else:
