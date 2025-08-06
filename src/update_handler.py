@@ -7,6 +7,7 @@ import logging
 import subprocess
 import requests
 import time
+import re
 from urllib.parse import urlparse, urlunparse
 from packaging import version
 from PySide6.QtWidgets import QDialog, QVBoxLayout, QLabel, QPushButton, QHBoxLayout
@@ -95,9 +96,14 @@ class UpdateHandler:
                     valid_releases,
                     key=lambda x: version.parse(x['tag_name'])
                 )
-                
+                # match = extract_version(self.current_version)
+                # if match:
+                # #     version1 = 'v' + match.group(1)
+                #     print(f"Using version from version.py: {match}")
+                # else:
+                #     print("Failed to extract version from version.py")
                 # 比较版本
-                if version.parse(latest_release['tag_name']) > version.parse(self.current_version):
+                if version.parse(extract_version(latest_release['tag_name'])) > version.parse(extract_version(self.current_version)):
                     return {
                         "available": True,
                         "release_info": latest_release,
@@ -111,6 +117,21 @@ class UpdateHandler:
             logger.error(f"检查更新过程中出现未预期错误: {str(e)}")
             if manual_check:
                 return {"available": False, "message": f"检查更新失败: {str(e)}"}
+
+
+def extract_version(s):
+    """
+    从字符串中提取版本号部分，格式为 vX.X.X。
+    
+    Args:
+        s (str): 输入字符串，例如 "v0.4.1-20250806-1827-8f0b6c8"。
+    
+    Returns:
+        str: 提取的版本号，如 "v0.4.1"。如果未匹配到，返回 None。
+    """
+    match = re.match(r'^v\d+\.\d+\.\d+', s)
+    return match.group(0) if match else None
+
 
 def CheckLocationUsingHttp():
     """

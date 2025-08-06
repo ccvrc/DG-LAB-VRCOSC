@@ -5,6 +5,7 @@ from PySide6.QtWidgets import QApplication, QMainWindow, QTabWidget, QMessageBox
 from PySide6.QtGui import QIcon
 from qasync import QEventLoop
 import logging
+import version
 
 from config import load_settings
 from logger_config import setup_logging
@@ -19,7 +20,7 @@ from gui.osc_parameters import OSCParametersTab
 from gui.about_tab import AboutTab
 
 #软件版本，硬编码
-software_version = "v0.3.1"
+software_version = version.VERSION
 
 setup_logging()
 # Configure the logger
