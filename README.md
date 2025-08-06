@@ -68,3 +68,35 @@ VRChat 游戏内轮盘菜单：
     <img src="docs/images/misaka-h.png" alt="misaka-h" style="height: 450px;">
 </div>
 Artworks by Wanlin
+
+## 编译与构建
+
+### 环境准备
+```bash
+# 1. 安装 Python 3.12
+# 下载并安装 Python 3.12: https://www.python.org/downloads/
+
+# 2. 安装项目依赖
+pip install -r requirements.txt
+```
+
+### 构建步骤
+```bash
+# 3. 生成版本文件
+./generate_version.ps1
+
+# 4. 构建可执行文件
+pyinstaller DG-LAB-VRCOSC.spec
+```
+
+## 构建发布版本
+
+### 创建发布标签
+```bash
+# 1. 创建版本标签 (格式: v0.0.0)
+git tag v0.0.0
+
+# 2. 推送标签到远程仓库
+git push origin v0.0.0
+```
+
