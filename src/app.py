@@ -19,7 +19,7 @@ from gui.log_viewer_tab import LogViewerTab
 from gui.osc_parameters import OSCParametersTab
 from gui.about_tab import AboutTab
 
-#软件版本，硬编码
+#软件版本
 software_version = version.VERSION
 
 setup_logging()
