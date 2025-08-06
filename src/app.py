@@ -5,6 +5,7 @@ from PySide6.QtWidgets import QApplication, QMainWindow, QTabWidget, QMessageBox
 from PySide6.QtGui import QIcon
 from qasync import QEventLoop
 import logging
+import version
 
 from config import load_settings
 from logger_config import setup_logging
@@ -18,8 +19,8 @@ from gui.log_viewer_tab import LogViewerTab
 from gui.osc_parameters import OSCParametersTab
 from gui.about_tab import AboutTab
 
-#软件版本，硬编码
-software_version = "v0.4.0"
+#软件版本
+software_version = version.VERSION
 
 setup_logging()
 # Configure the logger
@@ -140,7 +141,7 @@ class MainWindow(QMainWindow):
 
         if result:
             if result["available"]:
-                print("更新可用")
+                logger.info("更新可用")
                 self.show_update_dialog(result["release_info"])
                 
             else:

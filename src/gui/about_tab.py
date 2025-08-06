@@ -48,5 +48,13 @@ class AboutTab(QWidget):
         self.main_window.save_settings()
 
     def check_update(self):
-        # 这里调用的是MainWindow的实例方法
-        asyncio.create_task(self.main_window.check_update_manual())
+        # 防止多次点击
+        if not self.check_update_btn.isEnabled():
+            return
+        self.check_update_btn.setEnabled(False)
+        async def do_check():
+            try:
+                await self.main_window.check_update_manual()
+            finally:
+                self.check_update_btn.setEnabled(True)
+        asyncio.create_task(do_check())
