@@ -105,7 +105,7 @@ class NetworkConfigTab(QWidget):
             QLabel {
                 background-color: red;
                 color: white;
-                border-radius: 5px;  # 圆角
+                border-radius: 5px;  /* 圆角 */
                 padding: 5px;
             }
         """)
@@ -410,7 +410,7 @@ class NetworkConfigTab(QWidget):
                 QLabel {
                     background-color: green;
                     color: white;
-                    border-radius: 5px;
+                    border-radius: 5px;  /* 圆角 */
                     padding: 5px;
                 }
             """)
@@ -426,7 +426,7 @@ class NetworkConfigTab(QWidget):
                 QLabel {
                     background-color: red;
                     color: white;
-                    border-radius: 5px;
+                    border-radius: 5px;  /* 圆角 */
                     padding: 5px;
                 }
             """)
