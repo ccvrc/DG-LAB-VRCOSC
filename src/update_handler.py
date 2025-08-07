@@ -243,15 +243,17 @@ def ReplaceDomain(original_url, new_domain):
 def get_download_url(release_info):
     """开始获取更新包链接"""
     logger.info("开始获取更新包链接")
-    # 更安全的下载链接获取
+    # 更安全的下载链接获取，支持DG-LAB-VRCOSC.zip和DG-LAB-VRCOSC-版本号.zip
     download_url = next(
-        (asset["browser_download_url"] 
-        for asset in release_info["assets"] 
-        if asset["name"] == "DG-LAB-VRCOSC.zip"), 
+        (
+            asset["browser_download_url"]
+            for asset in release_info["assets"]
+            if asset["name"].startswith("DG-LAB-VRCOSC") and asset["name"].endswith(".zip")
+        ),
         None
     )
     if not download_url:
-        raise ValueError("未找到 DG-LAB-VRCOSC.zip 资源")
+        raise ValueError("未找到 DG-LAB-VRCOSC*.zip 资源")
     return download_url
 
 
