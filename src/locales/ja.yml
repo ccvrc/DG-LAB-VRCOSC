@@ -25,6 +25,7 @@ network_tab:
   remote_address: "リモートアドレス"
   enable_remote: "遠隔モードを開始する"
   get_public_ip: "パブリックIPを取得する"
+  please_enter_valid_ip: "有効なIPを入力してください"
 
 controller_tab:
   title: "コントローラー設定"

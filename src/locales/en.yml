@@ -25,6 +25,7 @@ network_tab:
   remote_address: "Remote Address"
   enable_remote: "Remote Mode"
   get_public_ip: "Get Public IP"
+  please_enter_valid_ip: "Please enter a valid IP address"
 
 controller_tab:
   title: "Controller Settings"
