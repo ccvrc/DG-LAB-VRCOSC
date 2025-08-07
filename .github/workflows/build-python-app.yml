@@ -58,13 +58,9 @@ jobs:
         Set-Content -Path dist/build-info.txt -Value $fileContent
       shell: pwsh
 
-    - name: Zip dist folder
-      run: |
-        Compress-Archive -Path dist\* -DestinationPath "DG-LAB-VRCOSC-$env:VERSION.zip"
-      shell: pwsh
 
     - name: Upload artifact
       uses: actions/upload-artifact@v4
       with:
         name: DG-LAB-VRCOSC-${{ env.VERSION }}
-        path: DG-LAB-VRCOSC-${{ env.VERSION }}.zip
+        path: dist/
