@@ -38,7 +38,7 @@
 
 如果在使用过程中遇到问题，欢迎在 [Issues](https://github.com/ccvrc/DG-LAB-VRCOSC/issues) 中提出。
 
-此软件暂未内置更新检查，可以加入VRChat的游戏内群组 [DG-LAB-VRCOSC](https://vrc.group/CCVRC.1997) 来接收软件的更新消息。
+可以加入VRChat的游戏内群组 [DG-LAB-VRCOSC](https://vrc.group/CCVRC.1997) 来接收软件的更新动态。
 
 ## 注意事项
 

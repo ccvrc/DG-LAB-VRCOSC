@@ -66,7 +66,7 @@ class NetworkConfigTab(QWidget):
         self.form_layout.addRow(str(_("network_tab.osc_port")) + ":", self.osc_port_spinbox)
 
         # 创建远程地址控制布局
-        remote_address_layout = QHBoxLayout()
+        self.remote_address_layout = QHBoxLayout()
         
         # 创建开启异地复选框
         self.enable_remote_checkbox = QCheckBox(str(_("network_tab.enable_remote")))
@@ -79,7 +79,7 @@ class NetworkConfigTab(QWidget):
         self.remote_address_edit.setEnabled(self.enable_remote_checkbox.isChecked())
         self.remote_address_edit.textChanged.connect(self.on_remote_address_changed)
         # 添加提示文本
-        self.remote_address_edit.setPlaceholderText("请输入有效的IP地址")
+        self.remote_address_edit.setPlaceholderText(_("network_tab.please_enter_valid_ip"))
         
         # 获取公网地址按钮
         self.get_public_ip_button = QPushButton(str(_("network_tab.get_public_ip")))
@@ -87,11 +87,11 @@ class NetworkConfigTab(QWidget):
         self.get_public_ip_button.setEnabled(self.enable_remote_checkbox.isChecked())
         
         # 将控件添加到布局
-        remote_address_layout.addWidget(self.enable_remote_checkbox)
-        remote_address_layout.addWidget(self.remote_address_edit)
-        remote_address_layout.addWidget(self.get_public_ip_button)
+        self.remote_address_layout.addWidget(self.enable_remote_checkbox)
+        self.remote_address_layout.addWidget(self.remote_address_edit)
+        self.remote_address_layout.addWidget(self.get_public_ip_button)
         
-        self.form_layout.addRow(str(_("network_tab.remote_address")) + ":", remote_address_layout)
+        self.form_layout.addRow(str(_("network_tab.remote_address")) + ":", self.remote_address_layout)
 
         # 创建 dispatcher 和地址处理器字典
         self.dispatcher = dispatcher.Dispatcher()
@@ -105,7 +105,7 @@ class NetworkConfigTab(QWidget):
             QLabel {
                 background-color: red;
                 color: white;
-                border-radius: 5px;  # 圆角
+                border-radius: 5px;  /* 圆角 */
                 padding: 5px;
             }
         """)
@@ -410,7 +410,7 @@ class NetworkConfigTab(QWidget):
                 QLabel {
                     background-color: green;
                     color: white;
-                    border-radius: 5px;
+                    border-radius: 5px;  /* 圆角 */
                     padding: 5px;
                 }
             """)
@@ -426,7 +426,7 @@ class NetworkConfigTab(QWidget):
                 QLabel {
                     background-color: red;
                     color: white;
-                    border-radius: 5px;
+                    border-radius: 5px;  /* 圆角 */
                     padding: 5px;
                 }
             """)
@@ -516,21 +516,26 @@ class NetworkConfigTab(QWidget):
             label_item = self.form_layout.itemAt(i, QFormLayout.LabelRole)
             field_item = self.form_layout.itemAt(i, QFormLayout.FieldRole)
 
-            if label_item and label_item.widget() and field_item and field_item.widget():
+            if label_item and label_item.widget():
                 label_widget = label_item.widget()
-                field_widget = field_item.widget()
 
                 if isinstance(label_widget, QLabel):
                     # 通过字段类型来识别标签，而不是依赖文本内容
-                    if field_widget == self.ip_combobox:
-                        label_widget.setText(str(_("network_tab.interface")) + ":")
-                    elif field_widget == self.port_spinbox:
-                        label_widget.setText(str(_("network_tab.websocket_port")) + ":")
-                    elif field_widget == self.osc_port_spinbox:
-                        label_widget.setText(str(_("network_tab.osc_port")) + ":")
-                    elif field_widget == self.connection_status_label:
-                        label_widget.setText(str(_("network_tab.status")) + ":")
-
+                    if field_item and field_item.widget():
+                        field_widget = field_item.widget()
+                        if field_widget == self.ip_combobox:
+                            label_widget.setText(str(_("network_tab.interface")) + ":")
+                        elif field_widget == self.port_spinbox:
+                            label_widget.setText(str(_("network_tab.websocket_port")) + ":")
+                        elif field_widget == self.osc_port_spinbox:
+                            label_widget.setText(str(_("network_tab.osc_port")) + ":")
+                        elif field_widget == self.connection_status_label:
+                            label_widget.setText(str(_("network_tab.status")) + ":")
+                    # 处理布局类型的字段（如remote_address_layout）
+                    elif field_item and field_item.layout():
+                        field_layout = field_item.layout()
+                        if field_layout == self.remote_address_layout:
+                            label_widget.setText(str(_("network_tab.remote_address")) + ":")
 
         # 更新状态标签 - 直接根据当前状态更新，不依赖现有文本
         if hasattr(self.main_window, 'app_status_online') and self.main_window.app_status_online:
@@ -550,6 +555,7 @@ class NetworkConfigTab(QWidget):
         # 更新复选框和按钮文本
         self.enable_remote_checkbox.setText(str(_("network_tab.enable_remote")))
         self.get_public_ip_button.setText(str(_("network_tab.get_public_ip")))
+        self.remote_address_edit.setPlaceholderText(_("network_tab.please_enter_valid_ip"))
 
     def on_remote_enabled_changed(self, state):
         """处理开启异地复选框状态变化"""

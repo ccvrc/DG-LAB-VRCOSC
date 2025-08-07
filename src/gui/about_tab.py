@@ -31,15 +31,32 @@ class AboutTab(QWidget):
         contributors = QTextEdit()
         contributors.setReadOnly(True)
         contributors.setText(
-            "开发者: ccvrc\n\n"
+            "开发组织: ccvrc\n\n"
+            "贡献者: \n"
+            "- icrazt\n"
+            "- 光水\n"
+            "- icelly_QAQ\n\n"
             "特别感谢:\n"
             "- ChrisFeline (ToNSaveManager)\n"
-            "- VRChat OSC 社区\n\n"
-            "开源项目地址: https://github.com/ccvrc/DG-LAB-VRCOSC\n\n"
-            "使用开源项目:\n"
+            "- VRChat OSC 社区\n"
+            "- VRSuya SoundPad\n"
+            "- WastingMisaka(鱼板)\n"
+            "- Wanlin\n"
+            "- 所有参与测试、使用本项目及贡献问题反馈的用户\n\n"
+            "项目地址: https://github.com/ccvrc/DG-LAB-VRCOSC\n\n"
+            "使用的开源项目:\n"
             "- PySide6 (LGPL)\n"
             "- websockets (BSD)\n"
-            "- qasync (MIT)"
+            "- qasync (MIT)\n"
+            "- pydglab-ws (BSD)\n"
+            "- qrcode (LGPL)\n"
+            "- python-osc (MIT)\n"
+            "- colorlog (MIT)\n"
+            "- pillow (HPND)\n"
+            "- pyyaml (MIT)\n"
+            "- psutil (BSD)\n"
+            "- aiohttp (Apache 2.0)\n"
+            "- requests (Apache 2.0)"
         )
         
         layout.addLayout(self.version_layout)

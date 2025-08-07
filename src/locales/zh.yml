@@ -25,6 +25,7 @@ network_tab:
   remote_address: "远程地址"
   enable_remote: "开启异地模式"
   get_public_ip: "获取公网IP"
+  please_enter_valid_ip: "请输入有效的IP地址"
 
 controller_tab:
   title: "控制器设置"
