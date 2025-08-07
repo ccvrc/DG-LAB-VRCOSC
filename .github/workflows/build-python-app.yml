@@ -42,6 +42,12 @@ jobs:
       run: |
         powershell -Command "Set-ExecutionPolicy Bypass -Scope CurrentUser; .\generate_version.ps1"
       shell:  pwsh
+    - name: Get version from version.py
+      id: get_version
+      run: |
+        $version = (Select-String -Path src/version.py -Pattern 'VERSION\s*=\s*"(.*)"').Matches.Groups[1].Value
+        echo "VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Append
+      shell: pwsh
     - name: Build with PyInstaller
       run: |
         pyinstaller DG-LAB-VRCOSC.spec
@@ -55,8 +61,9 @@ jobs:
         Set-Content -Path dist/build-info.txt -Value $fileContent
       shell: pwsh
 
+
     - name: Upload artifact
       uses: actions/upload-artifact@v4
       with:
-        name: DG-LAB-VRCOSC
+        name: DG-LAB-VRCOSC-${{ env.VERSION }}
         path: dist/
