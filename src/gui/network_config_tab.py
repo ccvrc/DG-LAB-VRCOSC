@@ -1,7 +1,7 @@
 from PySide6.QtWidgets import (QWidget, QGroupBox, QFormLayout, QComboBox, QSpinBox,
                                QLabel, QPushButton, QHBoxLayout, QVBoxLayout, QLineEdit, 
                                QCheckBox, QSizePolicy)
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QLocale
 from PySide6.QtGui import QPixmap
 from PySide6.QtCore import QTimer
 import logging
@@ -48,6 +48,8 @@ class NetworkConfigTab(QWidget):
 
         # 网卡选择
         self.ip_combobox = QComboBox()
+        # 强制使用英文区域设置，避免数字显示为繁体中文
+        self.ip_combobox.setLocale(QLocale(QLocale.Language.English, QLocale.Country.UnitedStates))
         active_ips = get_active_ip_addresses()
         for interface, ip in active_ips.items():
             self.ip_combobox.addItem(f"{interface}: {ip}")
@@ -55,12 +57,16 @@ class NetworkConfigTab(QWidget):
 
         # 端口选择
         self.port_spinbox = QSpinBox()
+        # 强制使用英文区域设置，避免数字显示为繁体中文
+        self.port_spinbox.setLocale(QLocale(QLocale.Language.English, QLocale.Country.UnitedStates))
         self.port_spinbox.setRange(1024, 65535)
         self.port_spinbox.setValue(self.main_window.settings['port'])  # Set the default or loaded value
         self.form_layout.addRow(str(_("network_tab.websocket_port")) + ":", self.port_spinbox)
 
         # OSC端口选择
         self.osc_port_spinbox = QSpinBox()
+        # 强制使用英文区域设置，避免数字显示为繁体中文
+        self.osc_port_spinbox.setLocale(QLocale(QLocale.Language.English, QLocale.Country.UnitedStates))
         self.osc_port_spinbox.setRange(1024, 65535)
         self.osc_port_spinbox.setValue(self.main_window.settings['osc_port'])  # Set the default or loaded value
         self.form_layout.addRow(str(_("network_tab.osc_port")) + ":", self.osc_port_spinbox)
@@ -75,6 +81,8 @@ class NetworkConfigTab(QWidget):
         
         # 远程地址输入框
         self.remote_address_edit = QLineEdit()
+        # 强制使用英文区域设置，避免数字显示为繁体中文
+        self.remote_address_edit.setLocale(QLocale(QLocale.Language.English, QLocale.Country.UnitedStates))
         self.remote_address_edit.setText(self.main_window.settings.get('remote_address', ''))
         self.remote_address_edit.setEnabled(self.enable_remote_checkbox.isChecked())
         self.remote_address_edit.textChanged.connect(self.on_remote_address_changed)
@@ -127,6 +135,8 @@ class NetworkConfigTab(QWidget):
         self.language_layout = QHBoxLayout()
         self.language_label = QLabel(str(_("main.settings.language")) + ":")
         self.language_combo = QComboBox()
+        # 强制使用英文区域设置，避免数字显示为繁体中文
+        self.language_combo.setLocale(QLocale(QLocale.Language.English, QLocale.Country.UnitedStates))
         for lang_code, lang_name in LANGUAGES.items():
             self.language_combo.addItem(lang_name, lang_code)
 

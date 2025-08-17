@@ -1,10 +1,11 @@
 from PySide6.QtWidgets import (QWidget, QGroupBox, QFormLayout, QCheckBox, QLabel,
                                QProgressBar, QSlider, QSpinBox, QHBoxLayout, QToolTip)
-from PySide6.QtCore import Qt, QTimer, QPoint
+from PySide6.QtCore import Qt, QTimer, QPoint, QLocale
+import math
 import math
 import asyncio
-import logging
 import json
+import logging
 
 from pydglab_ws import Channel, StrengthOperationType
 from command_types import CommandType
@@ -46,6 +47,8 @@ class TonDamageSystemTab(QWidget):
 
         # Damage Progress Bar
         self.damage_progress_bar = QProgressBar()
+        # 强制使用英文区域设置，避免数字显示为繁体中文
+        self.damage_progress_bar.setLocale(QLocale(QLocale.Language.English, QLocale.Country.UnitedStates))
         self.damage_progress_bar.setRange(0, 100)
         self.damage_progress_bar.setValue(0)  # Initial damage is 0%
         self.damage_layout.addRow(_("ton_tab.accumulated_damage") + ":", self.damage_progress_bar)
@@ -57,6 +60,8 @@ class TonDamageSystemTab(QWidget):
         self.damage_reduction_layout = QHBoxLayout()
         self.damage_reduction_label = QLabel(_("ton_tab.damage_reduction") + ": 2 / 10")  # 默认显示
         self.damage_reduction_slider = QSlider(Qt.Horizontal)
+        # 强制使用英文区域设置，避免数字显示为繁体中文
+        self.damage_reduction_slider.setLocale(QLocale(QLocale.Language.English, QLocale.Country.UnitedStates))
         self.damage_reduction_slider.setRange(0, 10)
         self.damage_reduction_slider.setValue(2)  # Default reduction strength per second
         self.damage_reduction_slider.setMaximumWidth(slider_max_width)  # 设置滑动条的最大宽度
@@ -89,6 +94,8 @@ class TonDamageSystemTab(QWidget):
         self.death_penalty_strength_layout = QHBoxLayout()
         self.death_penalty_strength_label = QLabel(_("ton_tab.death_penalty") + ": 30 / 100")  # 默认显示
         self.death_penalty_strength_slider = QSlider(Qt.Horizontal)
+        # 强制使用英文区域设置，避免数字显示为繁体中文
+        self.death_penalty_strength_slider.setLocale(QLocale(QLocale.Language.English, QLocale.Country.UnitedStates))
         self.death_penalty_strength_slider.setRange(0, 100)
         self.death_penalty_strength_slider.setValue(30)  # Default death penalty strength is 100%
         self.death_penalty_strength_slider.setMaximumWidth(slider_max_width)  # 设置滑动条的最大宽度
@@ -103,10 +110,11 @@ class TonDamageSystemTab(QWidget):
 
         # 死亡惩罚持续时间
         self.death_penalty_time_spinbox = QSpinBox()
+        # 强制使用英文区域设置，避免数字显示为繁体中文
+        self.death_penalty_time_spinbox.setLocale(QLocale(QLocale.Language.English, QLocale.Country.UnitedStates))
         self.death_penalty_time_spinbox.setRange(0, 60)
         self.death_penalty_time_spinbox.setValue(5)  # Default penalty time is 10 seconds
         self.damage_layout.addRow(_("ton_tab.death_penalty_time") + ":", self.death_penalty_time_spinbox)
-
         self.damage_group.setLayout(self.damage_layout)
         self.layout.addRow(self.damage_group)
 
@@ -316,3 +324,4 @@ class TonDamageSystemTab(QWidget):
         
         # 更新死亡惩罚持续时间标签
         self.damage_layout.itemAt(5, QFormLayout.LabelRole).widget().setText(_("ton_tab.death_penalty_time") + ":")
+
