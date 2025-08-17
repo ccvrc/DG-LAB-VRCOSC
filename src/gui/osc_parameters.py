@@ -1,6 +1,6 @@
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
                                QLineEdit, QCheckBox, QLabel, QListWidget, QListWidgetItem, QAbstractItemView, QSlider)
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import Qt, Signal, QLocale
 import logging
 import yaml
 import os
@@ -23,6 +23,8 @@ class OSCParametersTab(QWidget):
 
         # List to display OSC addresses
         self.address_list_widget = QListWidget()
+        # 强制使用英文区域设置，避免数字显示为繁体中文
+        self.address_list_widget.setLocale(QLocale(QLocale.Language.English, QLocale.Country.UnitedStates))
         self.address_list_widget.setSelectionMode(QAbstractItemView.SingleSelection)
         self.layout.addWidget(self.address_list_widget)
 
@@ -297,6 +299,8 @@ class OSCAddressWidget(QWidget):
         self.layout.addLayout(self.address_row)
 
         self.address_edit = QLineEdit()
+        # 强制使用英文区域设置，避免数字显示为繁体中文
+        self.address_edit.setLocale(QLocale(QLocale.Language.English, QLocale.Country.UnitedStates))
         self.address_edit.setPlaceholderText(_("osc_tab.address_placeholder"))
         self.address_row.addWidget(self.address_edit)
 
@@ -315,6 +319,8 @@ class OSCAddressWidget(QWidget):
         
         # A通道最小值和最大值在同一行
         self.a_min_slider = QSlider(Qt.Horizontal)
+        # 强制使用英文区域设置，避免数字显示为繁体中文
+        self.a_min_slider.setLocale(QLocale(QLocale.Language.English, QLocale.Country.UnitedStates))
         self.a_min_slider.setRange(0, 100)
         self.a_min_slider.setValue(0)
         self.a_min_slider.setFixedWidth(120)
@@ -326,6 +332,8 @@ class OSCAddressWidget(QWidget):
         self.a_range_row.addSpacing(10)
         
         self.a_max_slider = QSlider(Qt.Horizontal)
+        # 强制使用英文区域设置，避免数字显示为繁体中文
+        self.a_max_slider.setLocale(QLocale(QLocale.Language.English, QLocale.Country.UnitedStates))
         self.a_max_slider.setRange(0, 100)
         self.a_max_slider.setValue(100)
         self.a_max_slider.setFixedWidth(120)
@@ -345,6 +353,8 @@ class OSCAddressWidget(QWidget):
         
         # B通道最小值和最大值在同一行
         self.b_min_slider = QSlider(Qt.Horizontal)
+        # 强制使用英文区域设置，避免数字显示为繁体中文
+        self.b_min_slider.setLocale(QLocale(QLocale.Language.English, QLocale.Country.UnitedStates))
         self.b_min_slider.setRange(0, 100)
         self.b_min_slider.setValue(0)
         self.b_min_slider.setFixedWidth(120)
@@ -356,6 +366,8 @@ class OSCAddressWidget(QWidget):
         self.b_range_row.addSpacing(10)
         
         self.b_max_slider = QSlider(Qt.Horizontal)
+        # 强制使用英文区域设置，避免数字显示为繁体中文
+        self.b_max_slider.setLocale(QLocale(QLocale.Language.English, QLocale.Country.UnitedStates))
         self.b_max_slider.setRange(0, 100)
         self.b_max_slider.setValue(100)
         self.b_max_slider.setFixedWidth(120)

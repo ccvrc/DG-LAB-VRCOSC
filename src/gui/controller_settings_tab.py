@@ -1,6 +1,6 @@
 from PySide6.QtWidgets import (QWidget, QGroupBox, QFormLayout, QLabel, QSlider,
                                QCheckBox, QComboBox, QSpinBox, QHBoxLayout, QToolTip)
-from PySide6.QtCore import Qt, QTimer, QPoint
+from PySide6.QtCore import Qt, QTimer, QPoint, QLocale
 import math
 import asyncio
 import logging
@@ -30,6 +30,8 @@ class ControllerSettingsTab(QWidget):
         # 添加 A 通道滑动条和标签
         self.a_channel_label = QLabel(f"A {_('controller_tab.intensity')}: 0 / 100")  # 默认显示
         self.a_channel_slider = QSlider(Qt.Horizontal)
+        # 强制使用英文区域设置，避免数字显示为繁体中文
+        self.a_channel_slider.setLocale(QLocale(QLocale.Language.English, QLocale.Country.UnitedStates))
         self.a_channel_slider.setRange(0, 100)  # 默认范围
         self.a_channel_slider.valueChanged.connect(self.set_a_channel_strength)
         self.a_channel_slider.sliderPressed.connect(self.disable_a_channel_updates)  # 用户开始拖动时禁用外部更新
@@ -41,6 +43,8 @@ class ControllerSettingsTab(QWidget):
         # 添加 B 通道滑动条和标签
         self.b_channel_label = QLabel(f"B {_('controller_tab.intensity')}: 0 / 100")  # 默认显示
         self.b_channel_slider = QSlider(Qt.Horizontal)
+        # 强制使用英文区域设置，避免数字显示为繁体中文
+        self.b_channel_slider.setLocale(QLocale(QLocale.Language.English, QLocale.Country.UnitedStates))
         self.b_channel_slider.setRange(0, 100)  # 默认范围
         self.b_channel_slider.valueChanged.connect(self.set_b_channel_strength)
         self.b_channel_slider.sliderPressed.connect(self.disable_b_channel_updates)  # 用户开始拖动时禁用外部更新
@@ -60,7 +64,11 @@ class ControllerSettingsTab(QWidget):
 
         # 波形模式选择
         self.pulse_mode_a_combobox = QComboBox()
+        # 强制使用英文区域设置，避免数字显示为繁体中文
+        self.pulse_mode_a_combobox.setLocale(QLocale(QLocale.Language.English, QLocale.Country.UnitedStates))
         self.pulse_mode_b_combobox = QComboBox()
+        # 强制使用英文区域设置，避免数字显示为繁体中文
+        self.pulse_mode_b_combobox.setLocale(QLocale(QLocale.Language.English, QLocale.Country.UnitedStates))
         for pulse_name in PULSE_NAME:
             self.pulse_mode_a_combobox.addItem(pulse_name)
             self.pulse_mode_b_combobox.addItem(pulse_name)
@@ -69,12 +77,16 @@ class ControllerSettingsTab(QWidget):
 
         # 强度步长
         self.strength_step_spinbox = QSpinBox()
+        # 强制使用英文区域设置，避免数字显示为繁体中文
+        self.strength_step_spinbox.setLocale(QLocale(QLocale.Language.English, QLocale.Country.UnitedStates))
         self.strength_step_spinbox.setRange(0, 100)
         self.strength_step_spinbox.setValue(30)
         self.controller_form.addRow(_("controller_tab.strength_step") + ":", self.strength_step_spinbox)
 
         # 调节强度步长
         self.adjust_strength_step_spinbox = QSpinBox()
+        # 强制使用英文区域设置，避免数字显示为繁体中文
+        self.adjust_strength_step_spinbox.setLocale(QLocale(QLocale.Language.English, QLocale.Country.UnitedStates))
         self.adjust_strength_step_spinbox.setRange(0, 100)
         self.adjust_strength_step_spinbox.setValue(5)
         self.controller_form.addRow(_("controller_tab.adjust_step") + ":", self.adjust_strength_step_spinbox)

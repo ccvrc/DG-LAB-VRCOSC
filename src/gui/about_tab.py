@@ -1,6 +1,7 @@
 # src/gui/about_tab.py
 import asyncio
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QLabel, QPushButton, QCheckBox, QTextEdit, QMessageBox
+from PySide6.QtCore import QLocale
 # from i18n import translate, language_signals
 from i18n import translate as _, language_signals
 
@@ -29,6 +30,8 @@ class AboutTab(QWidget):
         
         # 贡献信息
         contributors = QTextEdit()
+        # 强制使用英文区域设置，避免数字显示为繁体中文
+        contributors.setLocale(QLocale(QLocale.Language.English, QLocale.Country.UnitedStates))
         contributors.setReadOnly(True)
         contributors.setText(
             "开发组织: ccvrc\n\n"
