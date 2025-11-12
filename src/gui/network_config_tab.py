@@ -295,10 +295,24 @@ class NetworkConfigTab(QWidget):
                 logger.info("WebSocket 客户端已初始化")
 
                 # Generate QR code
-                remote_address = self.remote_address_edit.text()
+                remote_address = self.remote_address_edit.text().strip()
                 if remote_address:
-                    url = client.get_qrcode(f"ws://{remote_address}:{port}")
-                    logger.info(f"使用远程地址生成二维码: ws://{remote_address}:{port}")
+                    # 支持用户在远程地址中指定端口，例如 192.168.0.101:8888
+                    # 如果包含端口则优先使用用户指定的端口；否则使用 server 所在的监听端口
+                    if ':' in remote_address:
+                        # 使用 rsplit 以防地址里意外出现多个 ':'（保守处理）
+                        host, maybe_port = remote_address.rsplit(':', 1)
+                        if maybe_port.isdigit():
+                            user_port = int(maybe_port)
+                            url = client.get_qrcode(f"ws://{host}:{user_port}")
+                            logger.info(f"使用远程地址（含端口）生成二维码: ws://{host}:{user_port}")
+                        else:
+                            # 端口解析失败，退回为直接使用 remote_address（避免重复加端口）
+                            url = client.get_qrcode(f"ws://{remote_address}")
+                            logger.info(f"使用原始远程地址生成二维码（端口解析失败）: ws://{remote_address}")
+                    else:
+                        url = client.get_qrcode(f"ws://{remote_address}:{port}")
+                        logger.info(f"使用远程地址生成二维码: ws://{remote_address}:{port}")
                 else:
                     url = client.get_qrcode(f"ws://{ip}:{port}")
                     logger.info(f"使用本地地址生成二维码: ws://{ip}:{port}")
@@ -613,12 +627,24 @@ class NetworkConfigTab(QWidget):
     def validate_ip_address(self, ip_str: str) -> bool:
         """验证IP地址格式是否正确"""
         try:
-            # 分割IP地址
-            parts = ip_str.split('.')
-            # 检查是否为4段
+            # 支持两种格式: x.x.x.x 或 x.x.x.x:port
+            ip_str = ip_str.strip()
+            host = ip_str
+            port = None
+            if ':' in ip_str:
+                # 允许 host:port 的形式
+                host, port_str = ip_str.rsplit(':', 1)
+                port_str = port_str.strip()
+                if not port_str.isdigit():
+                    return False
+                port = int(port_str)
+                if port < 1 or port > 65535:
+                    return False
+
+            # 检查 host 是否为 IPv4 格式
+            parts = host.split('.')
             if len(parts) != 4:
                 return False
-            # 检查每段是否为0-255的整数
             for part in parts:
                 if not part.isdigit():
                     return False
