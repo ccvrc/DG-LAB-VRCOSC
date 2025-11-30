@@ -546,11 +546,11 @@ class DGLabController:
             mode_name_b = "交互" if self.enable_interaction_mode_b else "面板"
             channel_strength = f"[A]: {self.last_strength.a} B: {self.last_strength.b}" if self.current_select_channel == Channel.A else f"A: {self.last_strength.a} [B]: {self.last_strength.b}"
             self.send_message_to_vrchat_chatbox(
-                f"MAX A: {self.last_strength.a_limit} B: {self.last_strength.b_limit}\n"
+                f"Limit A: {self.last_strength.a_limit} B: {self.last_strength.b_limit}\n"
                 f"Mode A: {mode_name_a} B: {mode_name_b} \n"
-                f"Pulse A: {PULSE_NAME[self.pulse_mode_a]} B: {PULSE_NAME[self.pulse_mode_b]} \n"
-                f"Fire Step: {self.fire_mode_strength_step} Adjust Step: {self.adjust_strength_step}\n"
-                f"Current: {channel_strength} \n"
+                f"Pattern A: {PULSE_NAME[self.pulse_mode_a]} B: {PULSE_NAME[self.pulse_mode_b]} \n"
+                f"Fire: +{self.fire_mode_strength_step} Adjust Step: {self.adjust_strength_step}\n"
+                f"Intensity: {channel_strength} \n"
             )
         else:
             self.send_message_to_vrchat_chatbox("未连接")
