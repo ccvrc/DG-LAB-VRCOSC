@@ -296,7 +296,7 @@ class NetworkConfigTab(QWidget):
 
                 # Generate QR code
                 remote_address = self.remote_address_edit.text()
-                if remote_address:
+                if self.enable_remote_checkbox.isChecked():
                     url = client.get_qrcode(f"ws://{remote_address}:{port}")
                     logger.info(f"使用远程地址生成二维码: ws://{remote_address}:{port}")
                 else:
