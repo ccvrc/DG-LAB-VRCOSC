@@ -306,7 +306,9 @@ class NetworkConfigTab(QWidget):
                 qrcode_image = self.generate_qrcode(url)
                 self.update_qrcode(qrcode_image)
 
-                osc_client = udp_client.SimpleUDPClient("127.0.0.1", 9000)
+                # 使用 vrchat_oscquery 获取发送到 VRChat 的客户端
+                from vrchat_oscquery.common import vrc_client
+                osc_client = vrc_client()
                 # Initialize controller
                 controller = DGLabController(client, osc_client, self.main_window)
                 self.main_window.controller = controller
@@ -316,12 +318,24 @@ class NetworkConfigTab(QWidget):
                 # 确保UI状态与控制器状态同步
                 self.main_window.controller_settings_tab.sync_from_controller()
 
-                # 设置 OSC 服务器
-                osc_server_instance = osc_server.AsyncIOOSCUDPServer(
-                    ("0.0.0.0", osc_port), self.dispatcher, asyncio.get_event_loop()
-                )
-                osc_transport, osc_protocol = await osc_server_instance.create_serve_endpoint()
-                logger.info(f"OSC Server Listening on port {osc_port}")
+                # 尝试使用 OSCQuery (VRChat 自动发现)，失败时回退到固定端口
+                oscquery_success = False
+                try:
+                    from vrchat_oscquery.asyncio import vrc_osc
+                    await vrc_osc("DG-LAB-VRCOSC", self.dispatcher, foreground=False)
+                    logger.info("OSCQuery 服务已启动 - VRChat 将自动发现 OSC 端口")
+                    oscquery_success = True
+                except Exception as e:
+                    logger.warning(f"OSCQuery 启动失败: {e}，回退到固定端口 {osc_port}")
+                
+                if not oscquery_success:
+                    # 回退到固定端口模式
+                    osc_server_instance = osc_server.AsyncIOOSCUDPServer(
+                        ("0.0.0.0", osc_port), self.dispatcher, asyncio.get_event_loop()
+                    )
+                    osc_transport, osc_protocol = await osc_server_instance.create_serve_endpoint()
+                    logger.info(f"使用固定端口模式 - OSC 服务器监听端口 {osc_port}")
+                    self._osc_transport = osc_transport  # 保存引用以便清理
 
                 # 连接 addresses_updated 信号到 update_osc_mappings 方法
                 self.main_window.osc_parameters_tab.addresses_updated.connect(self.update_osc_mappings)
@@ -357,7 +371,7 @@ class NetworkConfigTab(QWidget):
                     else:
                         logger.info(f"获取到状态码：{RetCode}")
 
-                osc_transport.close()
+                # vrchat_oscquery 自动管理资源清理
         except OSError as e:
             # Handle specific errors and log them
             error_message = f"WebSocket 服务器启动失败: {str(e)}"
