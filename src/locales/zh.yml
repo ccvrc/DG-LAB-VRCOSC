@@ -5,6 +5,7 @@ main:
     network: "网络配置"
     controller: "控制器设置"
     osc: "OSC参数配置"
+    sps: "SPS自动绑定"
     ton: "ToN游戏联动"
     log: "日志查看"
   settings:
@@ -64,6 +65,17 @@ osc_tab:
   channel_range_b: "B通道范围"
   min_value: "最小"
   max_value: "最大"
+
+sps_tab:
+  title: "SPS自动绑定"
+  refresh: "自动探测当前Avatar"
+  not_scanned: "尚未探测到SPS区域"
+  scanning: "正在读取VRChat OSCQuery..."
+  found: "已从 {host} 探测到 {count} 个SPS区域"
+  scan_failed: "探测失败: {error}"
+  max_strength: "最高强度"
+  channel_range_a: "A通道范围"
+  channel_range_b: "B通道范围"
 
 ton_tab:
   title: "ToN游戏联动"
