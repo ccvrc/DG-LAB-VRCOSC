@@ -5,6 +5,7 @@ main:
     network: "Network Config"
     controller: "Controller Settings"
     osc: "OSC Parameters"
+    sps: "SPS Auto Bindings"
     ton: "ToN Game Integration"
     log: "Log Viewer"
   settings:
@@ -64,6 +65,17 @@ osc_tab:
   channel_range_b: "Channel B Range"
   min_value: "Min"
   max_value: "Max"
+
+sps_tab:
+  title: "SPS Auto Bindings"
+  refresh: "Detect Current Avatar"
+  not_scanned: "No SPS zones detected yet"
+  scanning: "Reading VRChat OSCQuery..."
+  found: "Detected {count} SPS zones from {host}"
+  scan_failed: "Detection failed: {error}"
+  max_strength: "Max Strength"
+  channel_range_a: "Channel A Range"
+  channel_range_b: "Channel B Range"
 
 ton_tab:
   title: "ToN Game Integration"
