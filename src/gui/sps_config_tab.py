@@ -12,6 +12,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
+import asyncio
 import logging
 import os
 import yaml
@@ -34,6 +35,7 @@ class SPSConfigTab(QWidget):
         self.legacy_bindings: list[dict] = []
         self.current_avatar_id: str | None = None
         self.visible_zone_keys: set[tuple[str, str]] | None = None
+        self.refresh_task: asyncio.Task | None = None
         self.auto_refresh_timer = QTimer(self)
         self.auto_refresh_timer.setSingleShot(True)
         self.auto_refresh_timer.timeout.connect(lambda: self.refresh_zones(manual=False))
@@ -190,11 +192,22 @@ class SPSConfigTab(QWidget):
         self.auto_refresh_timer.start(delay_ms)
 
     def refresh_zones(self, manual=True):
+        if self.refresh_task and not self.refresh_task.done():
+            logger.info("SPS 自动探测已在进行中，忽略重复触发")
+            if manual:
+                self.status_label.setText(_("sps_tab.scanning"))
+            return
+
         if manual:
             self.status_label.setText(_("sps_tab.scanning"))
             self.refresh_button.setEnabled(False)
+
+        self.refresh_task = asyncio.create_task(self.refresh_zones_async(manual=manual))
+        self.refresh_task.add_done_callback(self.on_refresh_task_done)
+
+    async def refresh_zones_async(self, manual=True):
         try:
-            nodes, host_info = fetch_vrchat_osc_nodes(timeout=2.0)
+            nodes, host_info = await asyncio.to_thread(fetch_vrchat_osc_nodes, timeout=2.0)
             self.switch_avatar(extract_avatar_id(nodes))
             self.zones = SPSProcessor.discover_zones_from_nodes(nodes)
             if not self.zones:
@@ -223,6 +236,14 @@ class SPSConfigTab(QWidget):
                 self.schedule_auto_refresh("retry_after_failure", delay_ms=5000)
         finally:
             self.refresh_button.setEnabled(True)
+
+    def on_refresh_task_done(self, task: asyncio.Task):
+        try:
+            task.result()
+        except asyncio.CancelledError:
+            logger.info("SPS 自动探测任务已取消")
+        except Exception as e:
+            logger.error(f"SPS 自动探测任务异常结束: {e}", exc_info=True)
 
     def merge_discovered_zones(self):
         self.bindings = self.normalize_bindings(self.bindings)
