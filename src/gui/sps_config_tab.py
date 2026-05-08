@@ -12,6 +12,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
+import asyncio
 import logging
 import os
 import yaml
@@ -19,7 +20,7 @@ import yaml
 from config import get_config_file_path
 from i18n import translate as _, language_signals
 from services.vrchat_oscquery_inspector import extract_avatar_id, fetch_vrchat_osc_nodes
-from sps_processor import SPSProcessor
+from sps_processor import PLUG_SOURCE_KEYS, SOCKET_SOURCE_KEYS, SPSProcessor
 
 logger = logging.getLogger(__name__)
 
@@ -34,6 +35,7 @@ class SPSConfigTab(QWidget):
         self.legacy_bindings: list[dict] = []
         self.current_avatar_id: str | None = None
         self.visible_zone_keys: set[tuple[str, str]] | None = None
+        self.refresh_task: asyncio.Task | None = None
         self.auto_refresh_timer = QTimer(self)
         self.auto_refresh_timer.setSingleShot(True)
         self.auto_refresh_timer.timeout.connect(lambda: self.refresh_zones(manual=False))
@@ -135,6 +137,7 @@ class SPSConfigTab(QWidget):
                         "A": int(binding.get("max_strength", {}).get("A", 100)),
                         "B": int(binding.get("max_strength", {}).get("B", 100)),
                     },
+                    "sources": SPSProcessor.normalize_sources(kind, binding.get("sources")),
                 }
             )
         return normalized_bindings
@@ -183,6 +186,7 @@ class SPSConfigTab(QWidget):
             "channels": {"A": False, "B": False},
             "min_strength": {"A": 0, "B": 0},
             "max_strength": {"A": 100, "B": 100},
+            "sources": SPSProcessor.normalize_sources(kind, None),
         }
 
     def schedule_auto_refresh(self, reason="auto", delay_ms=1000):
@@ -190,11 +194,22 @@ class SPSConfigTab(QWidget):
         self.auto_refresh_timer.start(delay_ms)
 
     def refresh_zones(self, manual=True):
+        if self.refresh_task and not self.refresh_task.done():
+            logger.info("SPS 自动探测已在进行中，忽略重复触发")
+            if manual:
+                self.status_label.setText(_("sps_tab.scanning"))
+            return
+
         if manual:
             self.status_label.setText(_("sps_tab.scanning"))
             self.refresh_button.setEnabled(False)
+
+        self.refresh_task = asyncio.create_task(self.refresh_zones_async(manual=manual))
+        self.refresh_task.add_done_callback(self.on_refresh_task_done)
+
+    async def refresh_zones_async(self, manual=True):
         try:
-            nodes, host_info = fetch_vrchat_osc_nodes(timeout=2.0)
+            nodes, host_info = await asyncio.to_thread(fetch_vrchat_osc_nodes, timeout=2.0)
             self.switch_avatar(extract_avatar_id(nodes))
             self.zones = SPSProcessor.discover_zones_from_nodes(nodes)
             if not self.zones:
@@ -223,6 +238,14 @@ class SPSConfigTab(QWidget):
                 self.schedule_auto_refresh("retry_after_failure", delay_ms=5000)
         finally:
             self.refresh_button.setEnabled(True)
+
+    def on_refresh_task_done(self, task: asyncio.Task):
+        try:
+            task.result()
+        except asyncio.CancelledError:
+            logger.info("SPS 自动探测任务已取消")
+        except Exception as e:
+            logger.error(f"SPS 自动探测任务异常结束: {e}", exc_info=True)
 
     def merge_discovered_zones(self):
         self.bindings = self.normalize_bindings(self.bindings)
@@ -360,11 +383,15 @@ class SPSZoneWidget(QWidget):
         )
         self.layout.addWidget(self.b_range_row)
 
+        self.sources_row = SourcesRowWidget(binding.get("kind", "Orf"), binding.get("sources", {}))
+        self.layout.addWidget(self.sources_row)
+
         self.kind_combo.currentIndexChanged.connect(lambda *_: self.changed.emit())
         self.channel_a_checkbox.stateChanged.connect(self.on_channel_changed)
         self.channel_b_checkbox.stateChanged.connect(self.on_channel_changed)
         self.a_range_row.changed.connect(lambda: self.changed.emit())
         self.b_range_row.changed.connect(lambda: self.changed.emit())
+        self.sources_row.changed.connect(lambda: self.changed.emit())
         self.update_range_visibility()
 
     def to_binding(self):
@@ -383,6 +410,7 @@ class SPSZoneWidget(QWidget):
                 "A": self.a_range_row.max_value(),
                 "B": self.b_range_row.max_value(),
             },
+            "sources": self.sources_row.sources(),
         }
 
     def on_channel_changed(self):
@@ -426,6 +454,45 @@ class SPSZoneWidget(QWidget):
     def update_ui_texts(self):
         self.a_range_row.set_title(_("sps_tab.channel_range_a"))
         self.b_range_row.set_title(_("sps_tab.channel_range_b"))
+        self.sources_row.update_ui_texts()
+
+
+class SourcesRowWidget(QWidget):
+    changed = Signal()
+
+    def __init__(self, kind: str, sources: dict):
+        super().__init__()
+        self.kind = kind
+        self.layout = QVBoxLayout(self)
+        self.setLayout(self.layout)
+
+        self.title_label = QLabel()
+        self.layout.addWidget(self.title_label)
+
+        self.checkbox_layout = QHBoxLayout()
+        self.layout.addLayout(self.checkbox_layout)
+
+        self.checkboxes: dict[str, QCheckBox] = {}
+        normalized_sources = SPSProcessor.normalize_sources(kind, sources)
+        for key in self.source_keys():
+            checkbox = QCheckBox()
+            checkbox.setChecked(bool(normalized_sources.get(key, False)))
+            checkbox.stateChanged.connect(lambda *_: self.changed.emit())
+            self.checkbox_layout.addWidget(checkbox)
+            self.checkboxes[key] = checkbox
+        self.checkbox_layout.addStretch()
+        self.update_ui_texts()
+
+    def source_keys(self):
+        return SOCKET_SOURCE_KEYS if self.kind == "Orf" else PLUG_SOURCE_KEYS
+
+    def sources(self):
+        return {key: checkbox.isChecked() for key, checkbox in self.checkboxes.items()}
+
+    def update_ui_texts(self):
+        self.title_label.setText(_("sps_tab.sources") + ":")
+        for key, checkbox in self.checkboxes.items():
+            checkbox.setText(_(f"sps_tab.source_{key}"))
 
 
 class RangeRowWidget(QWidget):
