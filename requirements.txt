@@ -10,3 +10,4 @@ qasync
 websockets
 aiohttp
 requests
+vrchat_oscquery @ git+https://github.com/theepicsnail/vrchat_oscquery@main
