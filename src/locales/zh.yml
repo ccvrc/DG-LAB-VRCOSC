@@ -5,7 +5,7 @@ main:
     network: "网络配置"
     controller: "控制器设置"
     osc: "OSC参数配置"
-    sps: "SPS自动绑定"
+    sps: "SPS联动"
     ton: "ToN游戏联动"
     log: "日志查看"
   settings:
@@ -67,7 +67,7 @@ osc_tab:
   max_value: "最大"
 
 sps_tab:
-  title: "SPS自动绑定"
+  title: "SPS联动"
   refresh: "自动探测当前Avatar"
   not_scanned: "尚未探测到SPS区域"
   scanning: "正在读取VRChat OSCQuery..."
@@ -76,6 +76,7 @@ sps_tab:
   max_strength: "最高强度"
   channel_range_a: "A通道范围"
   channel_range_b: "B通道范围"
+  bulk_sources: "全部来源"
   sources: "来源"
   source_own_hands: "自己的手"
   source_other_hands: "别人的手"

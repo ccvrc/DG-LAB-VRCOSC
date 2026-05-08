@@ -25,6 +25,14 @@ from sps_processor import PLUG_SOURCE_KEYS, SOCKET_SOURCE_KEYS, SPSProcessor
 logger = logging.getLogger(__name__)
 
 
+class BulkSourcesCheckBox(QCheckBox):
+    def nextCheckState(self):
+        if self.checkState() == Qt.CheckState.Checked:
+            self.setCheckState(Qt.CheckState.Unchecked)
+        else:
+            self.setCheckState(Qt.CheckState.Checked)
+
+
 class SPSConfigTab(QWidget):
     def __init__(self, main_window):
         super().__init__()
@@ -47,6 +55,12 @@ class SPSConfigTab(QWidget):
         self.refresh_button = QPushButton(_("sps_tab.refresh"))
         self.refresh_button.clicked.connect(lambda: self.refresh_zones(manual=True))
         self.toolbar_layout.addWidget(self.refresh_button)
+
+        self.bulk_sources_checkbox = BulkSourcesCheckBox(_("sps_tab.bulk_sources"))
+        self.bulk_sources_checkbox.setTristate(True)
+        self.bulk_sources_checkbox.stateChanged.connect(self.on_bulk_sources_state_changed)
+        self.updating_bulk_sources_checkbox = False
+        self.toolbar_layout.addWidget(self.bulk_sources_checkbox)
 
         self.status_label = QLabel(_("sps_tab.not_scanned"))
         self.toolbar_layout.addWidget(self.status_label)
@@ -295,12 +309,64 @@ class SPSConfigTab(QWidget):
             item = QListWidgetItem()
             self.zone_list_widget.addItem(item)
             widget = SPSZoneWidget(binding)
-            widget.changed.connect(self.save_bindings)
+            widget.changed.connect(self.on_zone_widget_changed)
             self.zone_list_widget.setItemWidget(item, widget)
             widget.refresh_list_item_size()
 
         if not visible_bindings:
             self.status_label.setText(_("sps_tab.not_scanned"))
+        self.update_bulk_sources_state()
+
+    def on_zone_widget_changed(self):
+        self.save_bindings()
+        self.update_bulk_sources_state()
+
+    def on_bulk_sources_state_changed(self, state):
+        if self.updating_bulk_sources_checkbox:
+            return
+
+        check_state = Qt.CheckState(state)
+        if check_state == Qt.CheckState.PartiallyChecked:
+            return
+
+        enabled = check_state == Qt.CheckState.Checked
+        changed = False
+        for i in range(self.zone_list_widget.count()):
+            widget = self.zone_list_widget.itemWidget(self.zone_list_widget.item(i))
+            if isinstance(widget, SPSZoneWidget):
+                changed = widget.set_sources_enabled(enabled, emit_changed=False) or changed
+
+        if changed:
+            self.save_bindings()
+        self.update_bulk_sources_state()
+
+    def update_bulk_sources_state(self):
+        checked_count = 0
+        total_count = 0
+        for i in range(self.zone_list_widget.count()):
+            widget = self.zone_list_widget.itemWidget(self.zone_list_widget.item(i))
+            if isinstance(widget, SPSZoneWidget):
+                checked, total = widget.source_state_counts()
+                checked_count += checked
+                total_count += total
+
+        if total_count == 0:
+            check_state = Qt.CheckState.Unchecked
+            enabled = False
+        elif checked_count == total_count:
+            check_state = Qt.CheckState.Checked
+            enabled = True
+        elif checked_count == 0:
+            check_state = Qt.CheckState.Unchecked
+            enabled = True
+        else:
+            check_state = Qt.CheckState.PartiallyChecked
+            enabled = True
+
+        self.updating_bulk_sources_checkbox = True
+        self.bulk_sources_checkbox.setEnabled(enabled)
+        self.bulk_sources_checkbox.setCheckState(check_state)
+        self.updating_bulk_sources_checkbox = False
 
     def sync_ui_to_model(self):
         visible_updates = []
@@ -327,6 +393,7 @@ class SPSConfigTab(QWidget):
 
     def update_ui_texts(self):
         self.refresh_button.setText(_("sps_tab.refresh"))
+        self.bulk_sources_checkbox.setText(_("sps_tab.bulk_sources"))
         if not self.bindings:
             self.status_label.setText(_("sps_tab.not_scanned"))
         for i in range(self.zone_list_widget.count()):
@@ -456,6 +523,12 @@ class SPSZoneWidget(QWidget):
         self.b_range_row.set_title(_("sps_tab.channel_range_b"))
         self.sources_row.update_ui_texts()
 
+    def source_state_counts(self):
+        return self.sources_row.source_state_counts()
+
+    def set_sources_enabled(self, enabled: bool, emit_changed: bool = True):
+        return self.sources_row.set_all_sources(enabled, emit_changed=emit_changed)
+
 
 class SourcesRowWidget(QWidget):
     changed = Signal()
@@ -488,6 +561,23 @@ class SourcesRowWidget(QWidget):
 
     def sources(self):
         return {key: checkbox.isChecked() for key, checkbox in self.checkboxes.items()}
+
+    def source_state_counts(self):
+        checked_count = sum(1 for checkbox in self.checkboxes.values() if checkbox.isChecked())
+        return checked_count, len(self.checkboxes)
+
+    def set_all_sources(self, enabled: bool, emit_changed: bool = True):
+        changed = False
+        for checkbox in self.checkboxes.values():
+            if checkbox.isChecked() == enabled:
+                continue
+            checkbox.blockSignals(True)
+            checkbox.setChecked(enabled)
+            checkbox.blockSignals(False)
+            changed = True
+        if changed and emit_changed:
+            self.changed.emit()
+        return changed
 
     def update_ui_texts(self):
         self.title_label.setText(_("sps_tab.sources") + ":")
