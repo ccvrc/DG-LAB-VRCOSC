@@ -17,6 +17,7 @@ from gui.controller_settings_tab import ControllerSettingsTab
 from gui.ton_damage_system_tab import TonDamageSystemTab
 from gui.log_viewer_tab import LogViewerTab
 from gui.osc_parameters import OSCParametersTab
+from gui.sps_config_tab import SPSConfigTab
 from gui.about_tab import AboutTab
 
 #软件版本
@@ -83,12 +84,14 @@ class MainWindow(QMainWindow):
         self.ton_damage_system_tab = TonDamageSystemTab(self)
         self.log_viewer_tab = LogViewerTab(self)
         self.osc_parameters_tab = OSCParametersTab(self)
+        self.sps_config_tab = SPSConfigTab(self)
         self.about_tab = AboutTab(self)
 
         # Add tabs to the tab widget
         self.tab_widget.addTab(self.network_config_tab, _("main.tabs.network"))
         self.tab_widget.addTab(self.controller_settings_tab, _("main.tabs.controller"))
         self.tab_widget.addTab(self.osc_parameters_tab, _("main.tabs.osc"))
+        self.tab_widget.addTab(self.sps_config_tab, _("main.tabs.sps"))
         self.tab_widget.addTab(self.ton_damage_system_tab, _("main.tabs.ton"))
         self.tab_widget.addTab(self.log_viewer_tab, _("main.tabs.log"))
         self.tab_widget.addTab(self.about_tab, _('about_tab.title'))
@@ -171,9 +174,10 @@ class MainWindow(QMainWindow):
         self.tab_widget.setTabText(0, _("main.tabs.network"))
         self.tab_widget.setTabText(1, _("main.tabs.controller"))
         self.tab_widget.setTabText(2, _("main.tabs.osc"))
-        self.tab_widget.setTabText(3, _("main.tabs.ton"))
-        self.tab_widget.setTabText(4, _("main.tabs.log"))
-        self.tab_widget.setTabText(5, _('about_tab.title'))
+        self.tab_widget.setTabText(3, _("main.tabs.sps"))
+        self.tab_widget.setTabText(4, _("main.tabs.ton"))
+        self.tab_widget.setTabText(5, _("main.tabs.log"))
+        self.tab_widget.setTabText(6, _('about_tab.title'))
         
         # 通知各个选项卡更新其UI
         # 通过发送信号或调用各选项卡的更新方法来实现
@@ -187,6 +191,8 @@ class MainWindow(QMainWindow):
             self.log_viewer_tab.update_ui_texts()
         if hasattr(self.osc_parameters_tab, 'update_ui_texts'):
             self.osc_parameters_tab.update_ui_texts()
+        if hasattr(self.sps_config_tab, 'update_ui_texts'):
+            self.sps_config_tab.update_ui_texts()
         if hasattr(self.about_tab, 'update_ui_texts'):
             self.about_tab.update_ui_texts()
 

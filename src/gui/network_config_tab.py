@@ -105,6 +105,7 @@ class NetworkConfigTab(QWidget):
         self.dispatcher = dispatcher.Dispatcher()
         self.osc_address_handlers = {}  # 自定义 OSC 地址的处理器
         self.panel_control_handlers = {}  # 面板控制 OSC 地址的处理器
+        self.sps_control_handlers = {}  # SPS/OGB OSC 地址的处理器
 
         # 添加客户端连接状态标签
         self.connection_status_label = QLabel(str(_("network_tab.offline")))
@@ -313,6 +314,7 @@ class NetworkConfigTab(QWidget):
                 logger.info("DGLabController 已初始化")
                 # After controller initialization, bind settings
                 self.main_window.controller_settings_tab.bind_controller_settings()
+                self.main_window.sps_config_tab.apply_bindings_to_controller()
                 # 确保UI状态与控制器状态同步
                 self.main_window.controller_settings_tab.sync_from_controller()
 
@@ -327,6 +329,7 @@ class NetworkConfigTab(QWidget):
                 self.main_window.osc_parameters_tab.addresses_updated.connect(self.update_osc_mappings)
                 # 初始化 OSC 映射，包括面板控制和自定义地址
                 self.update_osc_mappings(controller)
+                self.main_window.sps_config_tab.schedule_auto_refresh("osc_started", delay_ms=1000)
 
                 # Start the data processing loop
                 async for data in client.data_generator():
@@ -478,6 +481,8 @@ class NetworkConfigTab(QWidget):
         # 确保面板控制的 OSC 地址映射被添加（如果尚未添加）
         if not self.panel_control_handlers:
             self.add_panel_control_mappings(controller)
+        if not self.sps_control_handlers:
+            self.add_sps_control_mappings(controller)
 
     def add_panel_control_mappings(self, controller):
         # 添加面板控制功能的 OSC 地址映射
@@ -492,6 +497,20 @@ class NetworkConfigTab(QWidget):
             self.dispatcher.map(address, handler)
             self.panel_control_handlers[address] = handler
         logger.info("OSC dispatcher mappings updated with panel control addresses.")
+
+    def add_sps_control_mappings(self, controller):
+        sps_addresses = [
+            "/avatar/parameters/OGB/*/*/*",
+            "/avatar/change",
+        ]
+        for address in sps_addresses:
+            if address == "/avatar/change":
+                handler = functools.partial(self.handle_avatar_change_task, controller=controller)
+            else:
+                handler = functools.partial(self.handle_osc_message_task_sps, controller=controller)
+            self.dispatcher.map(address, handler)
+            self.sps_control_handlers[address] = handler
+        logger.info("OSC dispatcher mappings updated with SPS/OGB addresses.")
 
     def handle_osc_message_task_pad(self, address, *args, controller):
         """将OSC命令传递给控制器队列处理机制"""
@@ -514,6 +533,16 @@ class NetworkConfigTab(QWidget):
         
         logger.info(f"收到OSC消息 (参数绑定): {address} {args} 通道: {channel_list}")
         asyncio.create_task(controller.handle_osc_message_pb(address, *args, channels=channel_list, mapping_ranges=mapping_ranges))
+
+    def handle_osc_message_task_sps(self, address, *args, controller):
+        """将 OGB/SPS OSC 参数传递给控制器聚合处理。"""
+        logger.debug(f"收到OSC消息 (SPS): {address} {args}")
+        asyncio.create_task(controller.handle_osc_message_sps(address, *args))
+
+    def handle_avatar_change_task(self, address, *args, controller):
+        """Avatar 切换后延迟重新读取 OSCQuery 参数树。"""
+        logger.info("检测到 VRChat Avatar 变化，准备重新探测 SPS 区域")
+        self.main_window.sps_config_tab.schedule_auto_refresh("avatar_changed", delay_ms=1200)
 
     def update_ui_texts(self):
         """更新所有UI文本为当前语言"""

@@ -13,6 +13,7 @@ from pulse_data import PULSE_DATA, PULSE_NAME
 import logging
 
 from command_types import CommandType, ChannelCommand
+from sps_processor import SPSProcessor
 
 logger = logging.getLogger(__name__)
 
@@ -68,6 +69,8 @@ class DGLabController:
         # 回报速率设置为 1HZ，Updates every 0.1 to 1 seconds as needed based on parameter changes (1 to 10 updates per second), but you shouldn't rely on it for fast sync.
         self.pulse_update_lock = asyncio.Lock()  # 添加波形更新锁
         self.pulse_last_update_time = {}  # 记录每个通道最后波形更新时间
+        self.sps_processor = SPSProcessor()
+        self.last_sps_targets = {Channel.A: None, Channel.B: None}
         
         # 命令队列相关
         self.command_queue = asyncio.PriorityQueue()  # 优先级队列
@@ -319,6 +322,40 @@ class DGLabController:
                                              f"interaction_{address}")
         except Exception as e:
             logger.error(f"处理交互 OSC 消息出错: {e}", exc_info=True)
+
+    def set_sps_bindings(self, bindings):
+        """更新 SPS 自动探测区域到 A/B 通道的绑定关系。"""
+        self.sps_processor.set_bindings(bindings)
+
+    async def handle_osc_message_sps(self, address, *args):
+        """处理 OGB/SPS OSC 参数，并按绑定区域聚合到 A/B 通道。"""
+        try:
+            if not args:
+                return
+            if not self.sps_processor.update_value(address, args[0]):
+                return
+            if not self.last_strength:
+                return
+
+            levels = self.sps_processor.get_channel_levels()
+            channel_specs = (
+                (Channel.A, "A", self.last_strength.a_limit),
+                (Channel.B, "B", self.last_strength.b_limit),
+            )
+            for channel, channel_name, limit in channel_specs:
+                target = int(levels[channel_name] * limit)
+                if self.last_sps_targets.get(channel) == target:
+                    continue
+                self.last_sps_targets[channel] = target
+                await self.add_command(
+                    CommandType.INTERACTION_COMMAND,
+                    channel,
+                    StrengthOperationType.SET_TO,
+                    target,
+                    f"sps_{channel_name}",
+                )
+        except Exception as e:
+            logger.error(f"处理 SPS OSC 消息出错: {e}", exc_info=True)
 
     async def set_pulse_data(self, value, channel, pulse_index):
         """
