@@ -76,6 +76,13 @@ sps_tab:
   max_strength: "最高强度"
   channel_range_a: "A通道范围"
   channel_range_b: "B通道范围"
+  sources: "来源"
+  source_own_hands: "自己的手"
+  source_other_hands: "别人的手"
+  source_my_plugs: "自己的Plug"
+  source_other_plugs: "别人的Plug"
+  source_other_sockets: "别人的Socket"
+  source_my_sockets: "自己的Socket"
 
 ton_tab:
   title: "ToN游戏联动"

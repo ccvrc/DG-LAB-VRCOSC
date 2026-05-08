@@ -20,7 +20,7 @@ import yaml
 from config import get_config_file_path
 from i18n import translate as _, language_signals
 from services.vrchat_oscquery_inspector import extract_avatar_id, fetch_vrchat_osc_nodes
-from sps_processor import SPSProcessor
+from sps_processor import PLUG_SOURCE_KEYS, SOCKET_SOURCE_KEYS, SPSProcessor
 
 logger = logging.getLogger(__name__)
 
@@ -137,6 +137,7 @@ class SPSConfigTab(QWidget):
                         "A": int(binding.get("max_strength", {}).get("A", 100)),
                         "B": int(binding.get("max_strength", {}).get("B", 100)),
                     },
+                    "sources": SPSProcessor.normalize_sources(kind, binding.get("sources")),
                 }
             )
         return normalized_bindings
@@ -185,6 +186,7 @@ class SPSConfigTab(QWidget):
             "channels": {"A": False, "B": False},
             "min_strength": {"A": 0, "B": 0},
             "max_strength": {"A": 100, "B": 100},
+            "sources": SPSProcessor.normalize_sources(kind, None),
         }
 
     def schedule_auto_refresh(self, reason="auto", delay_ms=1000):
@@ -381,11 +383,15 @@ class SPSZoneWidget(QWidget):
         )
         self.layout.addWidget(self.b_range_row)
 
+        self.sources_row = SourcesRowWidget(binding.get("kind", "Orf"), binding.get("sources", {}))
+        self.layout.addWidget(self.sources_row)
+
         self.kind_combo.currentIndexChanged.connect(lambda *_: self.changed.emit())
         self.channel_a_checkbox.stateChanged.connect(self.on_channel_changed)
         self.channel_b_checkbox.stateChanged.connect(self.on_channel_changed)
         self.a_range_row.changed.connect(lambda: self.changed.emit())
         self.b_range_row.changed.connect(lambda: self.changed.emit())
+        self.sources_row.changed.connect(lambda: self.changed.emit())
         self.update_range_visibility()
 
     def to_binding(self):
@@ -404,6 +410,7 @@ class SPSZoneWidget(QWidget):
                 "A": self.a_range_row.max_value(),
                 "B": self.b_range_row.max_value(),
             },
+            "sources": self.sources_row.sources(),
         }
 
     def on_channel_changed(self):
@@ -447,6 +454,45 @@ class SPSZoneWidget(QWidget):
     def update_ui_texts(self):
         self.a_range_row.set_title(_("sps_tab.channel_range_a"))
         self.b_range_row.set_title(_("sps_tab.channel_range_b"))
+        self.sources_row.update_ui_texts()
+
+
+class SourcesRowWidget(QWidget):
+    changed = Signal()
+
+    def __init__(self, kind: str, sources: dict):
+        super().__init__()
+        self.kind = kind
+        self.layout = QVBoxLayout(self)
+        self.setLayout(self.layout)
+
+        self.title_label = QLabel()
+        self.layout.addWidget(self.title_label)
+
+        self.checkbox_layout = QHBoxLayout()
+        self.layout.addLayout(self.checkbox_layout)
+
+        self.checkboxes: dict[str, QCheckBox] = {}
+        normalized_sources = SPSProcessor.normalize_sources(kind, sources)
+        for key in self.source_keys():
+            checkbox = QCheckBox()
+            checkbox.setChecked(bool(normalized_sources.get(key, False)))
+            checkbox.stateChanged.connect(lambda *_: self.changed.emit())
+            self.checkbox_layout.addWidget(checkbox)
+            self.checkboxes[key] = checkbox
+        self.checkbox_layout.addStretch()
+        self.update_ui_texts()
+
+    def source_keys(self):
+        return SOCKET_SOURCE_KEYS if self.kind == "Orf" else PLUG_SOURCE_KEYS
+
+    def sources(self):
+        return {key: checkbox.isChecked() for key, checkbox in self.checkboxes.items()}
+
+    def update_ui_texts(self):
+        self.title_label.setText(_("sps_tab.sources") + ":")
+        for key, checkbox in self.checkboxes.items():
+            checkbox.setText(_(f"sps_tab.source_{key}"))
 
 
 class RangeRowWidget(QWidget):

@@ -7,6 +7,29 @@ logger = logging.getLogger(__name__)
 
 OGB_PREFIX = "/avatar/parameters/OGB/"
 
+SOCKET_SOURCE_KEYS = ("own_hands", "other_hands", "my_plugs", "other_plugs", "other_sockets")
+PLUG_SOURCE_KEYS = ("own_hands", "other_hands", "my_sockets", "other_sockets", "other_plugs")
+
+
+def default_sources(kind: str) -> dict[str, bool]:
+    if kind == "Orf":
+        return {
+            "own_hands": False,
+            "other_hands": True,
+            "my_plugs": False,
+            "other_plugs": True,
+            "other_sockets": True,
+        }
+    if kind == "Pen":
+        return {
+            "own_hands": False,
+            "other_hands": True,
+            "my_sockets": False,
+            "other_sockets": True,
+            "other_plugs": True,
+        }
+    return {}
+
 
 @dataclass
 class SPSBinding:
@@ -15,6 +38,7 @@ class SPSBinding:
     channels: dict[str, bool] = field(default_factory=lambda: {"A": False, "B": False})
     min_strength: dict[str, int] = field(default_factory=lambda: {"A": 0, "B": 0})
     max_strength: dict[str, int] = field(default_factory=lambda: {"A": 100, "B": 100})
+    sources: dict[str, bool] = field(default_factory=dict)
 
 
 class SPSPenetrationDepthEstimator:
@@ -184,24 +208,40 @@ class SPSProcessor:
                         "A": int(item.get("max_strength", {}).get("A", 100)),
                         "B": int(item.get("max_strength", {}).get("B", 100)),
                     },
+                    sources=self.normalize_sources(kind, item.get("sources")),
                 )
             )
         self.bindings = parsed_bindings
         logger.info(f"SPS bindings updated: {len(self.bindings)}")
 
-    def get_zone_level(self, kind: str, zone_id: str) -> float:
+    @staticmethod
+    def normalize_sources(kind: str, sources: Any) -> dict[str, bool]:
+        normalized = default_sources(kind)
+        if not isinstance(sources, dict):
+            return normalized
+
+        allowed_keys = SOCKET_SOURCE_KEYS if kind == "Orf" else PLUG_SOURCE_KEYS if kind == "Pen" else ()
+        for key in allowed_keys:
+            if key in sources:
+                normalized[key] = bool(sources.get(key))
+        return normalized
+
+    def get_zone_level(self, kind: str, zone_id: str, sources: dict[str, bool] | None = None) -> float:
         values = self.zone_values.get((kind, zone_id), {})
         if not values:
             return 0.0
 
         levels: list[float] = []
+        enabled_sources = self.normalize_sources(kind, sources)
 
         def add_number(key: str):
             value = values.get(key)
             if isinstance(value, (int, float)):
                 levels.append(float(value))
 
-        def add_gated(close_key: str, value_key: str):
+        def add_gated(source_key: str, close_key: str, value_key: str):
+            if not enabled_sources.get(source_key, False):
+                return
             close_value = values.get(close_key)
             value = values.get(value_key)
             if close_value is False:
@@ -209,7 +249,9 @@ class SPSProcessor:
             if isinstance(value, (int, float)):
                 levels.append(float(value))
 
-        def add_new_penetration(owner: str, legacy_key: str, close_key: str | None = None):
+        def add_new_penetration(source_key: str, owner: str, legacy_key: str, close_key: str | None = None):
+            if not enabled_sources.get(source_key, False):
+                return
             if close_key and values.get(close_key) is False:
                 legacy_value = None
             else:
@@ -225,17 +267,20 @@ class SPSProcessor:
                 levels.append(float(legacy_value))
 
         if kind == "Orf":
-            add_gated("TouchOthersClose", "TouchOthers")
-            add_gated("TouchSelfClose", "TouchSelf")
-            add_new_penetration("self", "PenSelf")
-            add_new_penetration("others", "PenOthers", "PenOthersClose")
-            add_number("FrotOthers")
+            add_gated("other_hands", "TouchOthersClose", "TouchOthers")
+            add_gated("own_hands", "TouchSelfClose", "TouchSelf")
+            add_new_penetration("my_plugs", "self", "PenSelf")
+            add_new_penetration("other_plugs", "others", "PenOthers", "PenOthersClose")
+            if enabled_sources.get("other_sockets", False):
+                add_number("FrotOthers")
         elif kind == "Pen":
-            add_gated("TouchOthersClose", "TouchOthers")
-            add_gated("TouchSelfClose", "TouchSelf")
-            add_gated("FrotOthersClose", "FrotOthers")
-            add_number("PenOthers")
-            add_number("PenSelf")
+            add_gated("other_hands", "TouchOthersClose", "TouchOthers")
+            add_gated("own_hands", "TouchSelfClose", "TouchSelf")
+            add_gated("other_plugs", "FrotOthersClose", "FrotOthers")
+            if enabled_sources.get("other_sockets", False):
+                add_number("PenOthers")
+            if enabled_sources.get("my_sockets", False):
+                add_number("PenSelf")
 
         if not levels:
             return 0.0
@@ -244,7 +289,7 @@ class SPSProcessor:
     def get_channel_levels(self) -> dict[str, float]:
         levels = {"A": 0.0, "B": 0.0}
         for binding in self.bindings:
-            zone_level = self.get_zone_level(binding.kind, binding.zone_id)
+            zone_level = self.get_zone_level(binding.kind, binding.zone_id, binding.sources)
             for channel_name in ("A", "B"):
                 if not binding.channels.get(channel_name):
                     continue

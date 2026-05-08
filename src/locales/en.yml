@@ -76,6 +76,13 @@ sps_tab:
   max_strength: "Max Strength"
   channel_range_a: "Channel A Range"
   channel_range_b: "Channel B Range"
+  sources: "Sources"
+  source_own_hands: "Own Hands"
+  source_other_hands: "Other Hands"
+  source_my_plugs: "My Plugs"
+  source_other_plugs: "Other Plugs"
+  source_other_sockets: "Other Sockets"
+  source_my_sockets: "My Sockets"
 
 ton_tab:
   title: "ToN Game Integration"

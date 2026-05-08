@@ -76,6 +76,13 @@ sps_tab:
   max_strength: "最大強度"
   channel_range_a: "チャンネルAの範囲"
   channel_range_b: "チャンネルBの範囲"
+  sources: "入力元"
+  source_own_hands: "自分の手"
+  source_other_hands: "相手の手"
+  source_my_plugs: "自分のPlug"
+  source_other_plugs: "相手のPlug"
+  source_other_sockets: "相手のSocket"
+  source_my_sockets: "自分のSocket"
 
 ton_tab:
   title: "ToNゲーム連携"
