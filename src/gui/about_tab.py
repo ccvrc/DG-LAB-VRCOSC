@@ -51,11 +51,13 @@ class AboutTab(QWidget):
             "贡献者: \n"
             "- icrazt\n"
             "- 光水\n"
-            "- icelly_QAQ\n\n"
+            "- icelly_QAQ\n"
+            "- mdogwoop\n\n"
             "特别感谢:\n"
             "- ChrisFeline (ToNSaveManager)\n"
             "- VRChat OSC 社区\n"
             "- VRSuya SoundPad\n"
+            "- VRCFury\n"
             "- WastingMisaka(鱼板)\n"
             "- Wanlin\n"
             "- 所有参与测试、使用本项目及贡献问题反馈的用户\n\n"
@@ -72,7 +74,8 @@ class AboutTab(QWidget):
             "- pyyaml (MIT)\n"
             "- psutil (BSD)\n"
             "- aiohttp (Apache 2.0)\n"
-            "- requests (Apache 2.0)"
+            "- requests (Apache 2.0)\n"
+            "- vrchat_oscquery"
         )
         
         layout.addLayout(self.version_layout)

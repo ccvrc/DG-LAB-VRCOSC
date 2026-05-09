@@ -5,7 +5,7 @@ main:
     network: "Network Config"
     controller: "Controller Settings"
     osc: "OSC Parameters"
-    sps: "SPS Auto Bindings"
+    sps: "SPS Integration"
     ton: "ToN Game Integration"
     log: "Log Viewer"
   settings:
@@ -67,7 +67,7 @@ osc_tab:
   max_value: "Max"
 
 sps_tab:
-  title: "SPS Auto Bindings"
+  title: "SPS Integration"
   refresh: "Detect Current Avatar"
   not_scanned: "No SPS zones detected yet"
   scanning: "Reading VRChat OSCQuery..."
@@ -76,6 +76,8 @@ sps_tab:
   max_strength: "Max Strength"
   channel_range_a: "Channel A Range"
   channel_range_b: "Channel B Range"
+  bulk_sources: "Batch Sources"
+  bulk_source_my_parts: "My Plug/Socket"
   sources: "Sources"
   source_own_hands: "Own Hands"
   source_other_hands: "Other Hands"

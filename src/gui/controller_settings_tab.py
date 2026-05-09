@@ -378,6 +378,7 @@ class ControllerSettingsTab(QWidget):
         if self.main_window.controller:
             controller = self.main_window.controller
             controller.enable_interaction_mode_a = bool(state)  # 更新为新的交互模式状态变量
+            controller.invalidate_sps_target(Channel.A)
             # 更新总体交互命令状态
             controller.enable_interaction_commands = (bool(state) or self.enable_interaction_commands_b_checkbox.isChecked())
             
@@ -392,6 +393,7 @@ class ControllerSettingsTab(QWidget):
         if self.main_window.controller:
             controller = self.main_window.controller
             controller.enable_interaction_mode_b = bool(state)  # 更新为新的交互模式状态变量
+            controller.invalidate_sps_target(Channel.B)
             # 更新总体交互命令状态
             controller.enable_interaction_commands = (self.enable_interaction_commands_a_checkbox.isChecked() or bool(state))
             

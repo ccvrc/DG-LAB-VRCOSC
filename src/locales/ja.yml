@@ -5,7 +5,7 @@ main:
     network: "ネットワーク設定"
     controller: "コントローラー設定"
     osc: "OSCパラメータ"
-    sps: "SPS自動バインド"
+    sps: "SPS連動"
     ton: "ToNゲーム連携"
     log: "ログビューア"
   settings:
@@ -67,7 +67,7 @@ osc_tab:
   max_value: "最大"
 
 sps_tab:
-  title: "SPS自動バインド"
+  title: "SPS連動"
   refresh: "現在のAvatarを検出"
   not_scanned: "SPSゾーンはまだ検出されていません"
   scanning: "VRChat OSCQueryを読み込み中..."
@@ -76,6 +76,8 @@ sps_tab:
   max_strength: "最大強度"
   channel_range_a: "チャンネルAの範囲"
   channel_range_b: "チャンネルBの範囲"
+  bulk_sources: "入力元の一括切替"
+  bulk_source_my_parts: "自分のPlug/Socket"
   sources: "入力元"
   source_own_hands: "自分の手"
   source_other_hands: "相手の手"

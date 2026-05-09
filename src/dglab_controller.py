@@ -327,6 +327,15 @@ class DGLabController:
         """更新 SPS 自动探测区域到 A/B 通道的绑定关系。"""
         self.sps_processor.set_bindings(bindings)
 
+    def invalidate_sps_target(self, channel=None):
+        """清理 SPS 去重目标，确保重新启用交互控制后会再次下发当前值。"""
+        if channel is None:
+            for target_channel in self.last_sps_targets:
+                self.last_sps_targets[target_channel] = None
+            return
+        if channel in self.last_sps_targets:
+            self.last_sps_targets[channel] = None
+
     async def handle_osc_message_sps(self, address, *args):
         """处理 OGB/SPS OSC 参数，并按绑定区域聚合到 A/B 通道。"""
         try:
@@ -339,10 +348,13 @@ class DGLabController:
 
             levels = self.sps_processor.get_channel_levels()
             channel_specs = (
-                (Channel.A, "A", self.last_strength.a_limit),
-                (Channel.B, "B", self.last_strength.b_limit),
+                (Channel.A, "A", self.last_strength.a_limit, self.enable_interaction_mode_a),
+                (Channel.B, "B", self.last_strength.b_limit, self.enable_interaction_mode_b),
             )
-            for channel, channel_name, limit in channel_specs:
+            for channel, channel_name, limit, enabled in channel_specs:
+                if not enabled:
+                    self.invalidate_sps_target(channel)
+                    continue
                 target = int(levels[channel_name] * limit)
                 if self.last_sps_targets.get(channel) == target:
                     continue
@@ -463,6 +475,7 @@ class DGLabController:
 
         if channel == Channel.A:
             self.enable_interaction_mode_a = not self.enable_interaction_mode_a
+            self.invalidate_sps_target(Channel.A)
             mode_name = "可交互模式" if self.enable_interaction_mode_a else "面板设置模式"
             logger.info("通道 A 切换为" + mode_name)
             # 更新UI
@@ -472,6 +485,7 @@ class DGLabController:
                 self.main_window.controller_settings_tab.enable_interaction_commands_a_checkbox.blockSignals(False)
         elif channel == Channel.B:
             self.enable_interaction_mode_b = not self.enable_interaction_mode_b
+            self.invalidate_sps_target(Channel.B)
             mode_name = "可交互模式" if self.enable_interaction_mode_b else "面板设置模式"
             logger.info("通道 B 切换为" + mode_name)
             # 更新UI
