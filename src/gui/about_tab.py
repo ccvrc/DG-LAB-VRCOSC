@@ -75,7 +75,7 @@ class AboutTab(QWidget):
             "- psutil (BSD)\n"
             "- aiohttp (Apache 2.0)\n"
             "- requests (Apache 2.0)\n"
-            "- vrchat_oscquery"
+            "- zeroconf (LGPL)"
         )
         
         layout.addLayout(self.version_layout)
