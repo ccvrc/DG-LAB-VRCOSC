@@ -58,6 +58,7 @@ class AboutTab(QWidget):
             "- VRChat OSC 社区\n"
             "- VRSuya SoundPad\n"
             "- VRCFury\n"
+            "- vrchat_oscquery\n"
             "- WastingMisaka(鱼板)\n"
             "- Wanlin\n"
             "- 所有参与测试、使用本项目及贡献问题反馈的用户\n\n"
@@ -75,6 +76,7 @@ class AboutTab(QWidget):
             "- psutil (BSD)\n"
             "- aiohttp (Apache 2.0)\n"
             "- requests (Apache 2.0)\n"
+            "- Google Fonts Noto Emoji (OFL 1.1)\n"
             "- zeroconf (LGPL)"
         )
         
