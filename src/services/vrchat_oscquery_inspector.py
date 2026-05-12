@@ -80,7 +80,13 @@ def _ports_from_mdns(wait_seconds: float = 1.0) -> list[tuple[str, int]]:
             self.found: list[tuple[str, int]] = []
 
         def add_service(self, zc: Zeroconf, service_type: str, name: str):
-            info = zc.get_service_info(service_type, name)
+            if not name.startswith("VRChat-Client-"):
+                return
+            try:
+                info = zc.get_service_info(service_type, name)
+            except Exception as exc:
+                logger.debug(f"OSCQuery mDNS service info lookup failed for {name}: {exc}")
+                return
             if not info:
                 return
             for address in info.parsed_scoped_addresses() or ["127.0.0.1"]:
