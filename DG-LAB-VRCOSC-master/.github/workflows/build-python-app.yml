@@ -1,0 +1,71 @@
+# This workflow will install Python dependencies, run tests and lint with a single version of Python
+# For more information see: https://docs.github.com/en/actions/automating-builds-and-tests/building-and-testing-python
+
+name: Python application
+on:
+  push:
+    tags:
+      - 'v*'
+    branches:
+      - "master"
+      - "action-test"
+      - "feature/*"
+      - "feat-*"
+      - "dev*"
+      - "release/*"
+  pull_request:
+    branches:
+      - "master"
+      - "action-test"
+      - "feature/*"
+      - "dev*"
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+    - name: Set up Python 3.12
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.12"
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install flake8 pyinstaller
+        if (Test-Path requirements.txt) {
+          pip install -r requirements.txt
+        }
+      shell: pwsh
+    - name: Generate version
+      run: |
+        powershell -Command "Set-ExecutionPolicy Bypass -Scope CurrentUser; .\generate_version.ps1"
+      shell:  pwsh
+    - name: Get version from version.py
+      id: get_version
+      run: |
+        $version = (Select-String -Path src/version.py -Pattern 'VERSION\s*=\s*"(.*)"').Matches.Groups[1].Value
+        echo "VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Append
+      shell: pwsh
+    - name: Build with PyInstaller
+      run: |
+        pyinstaller DG-LAB-VRCOSC.spec
+      shell: pwsh
+
+    - name: Generate commit hash and timestamp file
+      run: |
+        $timestamp = Get-Date -Format "yyyyMMdd-HHmm"
+        $commitHash = (git rev-parse --short HEAD)
+        $fileContent = "Commit Hash: $commitHash`nTimestamp: $timestamp"
+        Set-Content -Path dist/build-info.txt -Value $fileContent
+      shell: pwsh
+
+
+    - name: Upload artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: DG-LAB-VRCOSC-${{ env.VERSION }}
+        path: dist/
