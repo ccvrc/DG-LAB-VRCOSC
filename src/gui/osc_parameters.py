@@ -206,6 +206,38 @@ class OSCParametersTab(QWidget):
             self.addresses = self.get_default_addresses()
             self.populate_address_list()
 
+    def add_sps_zone(self, kind: str, zone_id: str):
+        """添加 SPS 自动检测到的 OGB 区域到 OSC 地址列表（仅显示用途）"""
+        address = f"/avatar/parameters/OGB/{kind}/{zone_id}"
+        # 去重
+        for addr in self.addresses:
+            if addr.get('address') == address:
+                return
+        new_addr = {
+            'address': address,
+            'channels': {'A': False, 'B': False},
+            'mapping_ranges': {'A': {'min': 0, 'max': 100}, 'B': {'min': 0, 'max': 100}},
+            'source': 'sps_auto',  # 标记来源，便于识别
+        }
+        self.addresses.append(new_addr)
+        # 添加到 UI 列表
+        item = QListWidgetItem()
+        self.address_list_widget.addItem(item)
+        widget = OSCAddressWidget()
+        widget.address_edit.setText(address)
+        widget.addressChanged.connect(self.on_address_changed)
+        widget.channelChanged.connect(self.on_channel_changed)
+        widget.mapRangeChanged.connect(self.on_map_range_changed)
+        item.setSizeHint(widget.sizeHint())
+        self.address_list_widget.setItemWidget(item, widget)
+        logger.info(f"SPS 区域已添加到 OSC 地址列表: {address}")
+
+    def flush_sps_zones(self):
+        """批量保存 SPS 区域并触发地址更新（在批量添加完所有 SPS 区域后调用）"""
+        self.save_addresses()
+        self.addresses_updated.emit()
+        logger.info(f"SPS 区域已全部同步到 OSC 地址列表，共 {len(self.addresses)} 个地址")
+
     def get_default_addresses(self):
         """返回默认的OSC地址配置"""
         logger.info("加载默认OSC地址")

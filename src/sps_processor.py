@@ -112,9 +112,9 @@ class SPSPenetrationDepthEstimator:
         if not self.length or self.length <= 0:
             return 0.0
 
-        exposed_length = max(0.0, 1.0 - root)
-        inserted_ratio = 1.0 - (exposed_length / self.length)
-        return max(0.0, min(1.0, inserted_ratio))
+        inserted_penetration = max(0.0, root)
+        inserted_ratio = min(1.0, inserted_penetration / self.length)
+        return max(0.0, inserted_ratio)
 
 
 class SPSProcessor:
@@ -317,3 +317,11 @@ class SPSProcessor:
             {"kind": kind, "zone_id": zone_id}
             for kind, zone_id in sorted(zones, key=lambda item: (item[0], item[1]))
         ]
+
+    def has_any_activity(self) -> bool:
+        """检查是否有任意 zone 包含非零的 OGB 数据（不受 source 过滤影响）。"""
+        for values in self.zone_values.values():
+            for value in values.values():
+                if isinstance(value, (int, float)) and float(value) > 0:
+                    return True
+        return False

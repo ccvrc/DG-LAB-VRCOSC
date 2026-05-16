@@ -1,12 +1,15 @@
 from PySide6.QtCore import QLocale, Qt, QTimer, Signal
+from PySide6.QtGui import QTextOption
 from PySide6.QtWidgets import (
     QAbstractItemView,
+    QApplication,
     QCheckBox,
     QComboBox,
     QHBoxLayout,
     QLabel,
     QListWidget,
     QListWidgetItem,
+    QProgressBar,
     QPushButton,
     QSlider,
     QVBoxLayout,
@@ -83,6 +86,23 @@ class SPSConfigTab(QWidget):
         self.toolbar_layout.addWidget(self.status_label)
         self.toolbar_layout.addStretch()
         self.layout.addLayout(self.toolbar_layout)
+
+        # 进度显示区 — 扫描过程中显示每个步骤
+        self.progress_layout = QVBoxLayout()
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setRange(0, 100)
+        self.progress_bar.setValue(0)
+        self.progress_bar.setTextVisible(True)
+        self.progress_bar.setFixedHeight(22)
+        self.progress_layout.addWidget(self.progress_bar)
+
+        self.progress_step_label = QLabel("")
+        self.progress_step_label.setWordWrap(True)
+        self.progress_step_label.setFixedHeight(18)
+        self.progress_layout.addWidget(self.progress_step_label)
+
+        self.layout.addLayout(self.progress_layout)
+        self.set_progress_visible(False)
 
         self.zone_list_widget = QListWidget()
         self.zone_list_widget.setLocale(QLocale(QLocale.Language.English, QLocale.Country.UnitedStates))
@@ -220,47 +240,102 @@ class SPSConfigTab(QWidget):
             "sources": SPSProcessor.normalize_sources(kind, None),
         }
 
+    def set_progress_visible(self, visible: bool):
+        """显示/隐藏进度条和步骤文字"""
+        self.progress_bar.setVisible(visible)
+        self.progress_step_label.setVisible(visible)
+        # 强制立即处理所有待处理的 UI 事件（显示/布局）
+        QApplication.processEvents()
+
+    def update_progress(self, percent: int, step_text: str):
+        """更新进度条和当前步骤文字，并立即刷新 UI"""
+        self.progress_bar.setValue(percent)
+        self.progress_step_label.setText(step_text)
+        # 立即处理 UI 事件，确保界面实时更新
+        QApplication.processEvents()
+
+    def clear_progress(self):
+        """扫描结束后清除进度显示"""
+        self.progress_bar.setValue(0)
+        self.progress_step_label.setText("")
+        self.set_progress_visible(False)
+
     def schedule_auto_refresh(self, reason="auto", delay_ms=1000):
         logger.info(f"安排 SPS 自动探测: reason={reason}, delay={delay_ms}ms")
         self.auto_refresh_timer.start(delay_ms)
 
     def refresh_zones(self, manual=True):
+        # 如果已有任务在运行
         if self.refresh_task and not self.refresh_task.done():
-            logger.info("SPS 自动探测已在进行中，忽略重复触发")
             if manual:
-                self.status_label.setText(_("sps_tab.scanning"))
-            return
+                # 用户手动点击：取消旧任务，重新开始（带进度条）
+                logger.info("用户手动触发，取消正在运行的自动探测")
+                self.refresh_task.cancel()
+                self.refresh_task = None
+            else:
+                # 自动触发时已有任务在运行，忽略
+                logger.info("SPS 自动探测已在进行中，忽略重复触发")
+                return
 
         if manual:
             self.status_label.setText(_("sps_tab.scanning"))
             self.refresh_button.setEnabled(False)
+            self.set_progress_visible(True)
+            self.update_progress(0, _("sps_tab.progress_starting"))
 
         self.refresh_task = asyncio.create_task(self.refresh_zones_async(manual=manual))
         self.refresh_task.add_done_callback(self.on_refresh_task_done)
 
     async def refresh_zones_async(self, manual=True):
         try:
+            self.update_progress(5, _("sps_tab.progress_connecting"))
+
+            self.update_progress(10, _("sps_tab.progress_fetching_nodes"))
             nodes, host_info = await asyncio.to_thread(fetch_vrchat_osc_nodes, timeout=2.0)
+
+            self.update_progress(30, _("sps_tab.progress_parsing_avatar"))
             self.switch_avatar(extract_avatar_id(nodes))
+
+            self.update_progress(45, _("sps_tab.progress_scanning_zones"))
             self.zones = SPSProcessor.discover_zones_from_nodes(nodes)
+
             if not self.zones:
                 logger.info("当前 Avatar 未发现 OGB/SPS 参数")
                 self.visible_zone_keys = set()
                 self.update_zone_list()
+                self.clear_progress()
                 if manual:
                     self.status_label.setText(_("sps_tab.found").format(count=0, host=host_info.get("NAME", "VRChat")))
                 return
+
+            self.update_progress(60, _("sps_tab.progress_merging"))
             self.visible_zone_keys = {
                 (zone["kind"], SPSProcessor.normalize_zone_id(zone["zone_id"]))
                 for zone in self.zones
             }
             self.merge_discovered_zones()
+
+            self.update_progress(75, _("sps_tab.progress_updating_ui"))
             self.update_zone_list()
+
+            self.update_progress(85, _("sps_tab.progress_saving"))
             self.save_bindings()
+
+            self.update_progress(92, _("sps_tab.progress_syncing_osc"))
+            # 将 SPS 检测到的区域同步到 OSC 参数标签页
+            for zone in self.zones:
+                self.main_window.osc_parameters_tab.add_sps_zone(zone["kind"], zone["zone_id"])
+            self.main_window.osc_parameters_tab.flush_sps_zones()
+
+            self.update_progress(100, _("sps_tab.progress_done"))
             self.status_label.setText(
                 _("sps_tab.found").format(count=len(self.zones), host=host_info.get("NAME", "VRChat"))
             )
+            # 完成后短暂显示 100% 再清除
+            await asyncio.sleep(0.5)
+            self.clear_progress()
         except Exception as e:
+            self.clear_progress()
             if manual:
                 logger.error(f"SPS 自动探测失败: {e}", exc_info=True)
                 self.status_label.setText(_("sps_tab.scan_failed").format(error=e))
