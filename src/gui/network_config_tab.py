@@ -109,6 +109,7 @@ class NetworkConfigTab(QWidget):
         self.oscquery_service = None
         self._osc_transport = None
         self._osc_protocol = None
+        self._server_task = None  # 跟踪服务器异步任务
 
         # 添加客户端连接状态标签
         self.connection_status_label = QLabel(str(_("network_tab.offline")))
@@ -129,6 +130,15 @@ class NetworkConfigTab(QWidget):
         self.start_button.setStyleSheet("background-color: green; color: white;")  # 设置按钮初始为绿色
         self.start_button.clicked.connect(self.start_server_button_clicked)
         self.form_layout.addRow(self.start_button)
+
+        # 添加连接超时设置（秒）
+        self.bind_timeout_spinbox = QSpinBox()
+        self.bind_timeout_spinbox.setLocale(QLocale(QLocale.Language.English, QLocale.Country.UnitedStates))
+        self.bind_timeout_spinbox.setRange(30, 600)
+        self.bind_timeout_spinbox.setValue(120)
+        self.bind_timeout_spinbox.setSuffix(" 秒")
+        self.bind_timeout_spinbox.valueChanged.connect(self.save_network_settings)
+        self.form_layout.addRow("连接超时:", self.bind_timeout_spinbox)
 
         self.network_config_group.setLayout(self.form_layout)
 
@@ -195,7 +205,9 @@ class NetworkConfigTab(QWidget):
         language_signals.language_changed.connect(self.update_ui_texts)
 
     def apply_settings_to_ui(self):
-        """Apply the loaded settings to the UI elements."""
+        """Apply saved settings to UI elements."""
+        saved_timeout = self.main_window.settings.get('bind_timeout', 120)
+        self.bind_timeout_spinbox.setValue(saved_timeout)
         # Find the correct index for the loaded interface and IP
         for i in range(self.ip_combobox.count()):
             interface_ip = self.ip_combobox.itemText(i).split(": ")
@@ -227,6 +239,7 @@ class NetworkConfigTab(QWidget):
             self.main_window.settings['osc_port'] = osc_port
             self.main_window.settings['remote_address'] = remote_address
             self.main_window.settings['enable_remote'] = enable_remote
+            self.main_window.settings['bind_timeout'] = self.bind_timeout_spinbox.value()
 
             save_settings(self.main_window.settings)
             logger.info("Network settings saved.")
@@ -247,15 +260,55 @@ class NetworkConfigTab(QWidget):
             logger.info(f"Language changed to {LANGUAGES.get(selected_language, selected_language)} ({selected_language})")
 
     def start_server_button_clicked(self):
-        """启动按钮被点击后的处理逻辑"""
-        self.start_button.setText(str(_("network_tab.disconnect")))  # 修改按钮文本
-        self.start_button.setStyleSheet("background-color: grey; color: white;")  # 将按钮置灰
-        self.start_button.setEnabled(False)  # 禁用按钮
-        self.start_server()  # 调用现有的启动服务器逻辑
+        """启动/停止按钮被点击后的处理逻辑"""
+        if self._server_task and not self._server_task.done():
+            # 服务器正在运行 → 停止
+            self.stop_server()
+            return
+        # 未运行 → 启动
+        self.start_button.setText(str(_("network_tab.disconnect")))
+        self.start_button.setStyleSheet("background-color: grey; color: white;")
+        self.start_button.setEnabled(False)
+        self.start_server()
+
+    def stop_server(self):
+        """停止 WebSocket 服务器和所有相关服务"""
+        logger.info("正在停止服务器...")
+        if self._server_task and not self._server_task.done():
+            self._server_task.cancel()
+            self._server_task = None
+        if self.oscquery_service:
+            try:
+                loop = asyncio.get_running_loop()
+                loop.create_task(self.oscquery_service.stop())
+            except RuntimeError:
+                pass
+            self.oscquery_service = None
+        if self._osc_transport:
+            self._osc_transport.close()
+            self._osc_transport = None
+            self._osc_protocol = None
+        self.start_button.setText(str(_("network_tab.connect")))
+        self.start_button.setStyleSheet("background-color: green; color: white;")
+        self.start_button.setEnabled(True)
+        self.main_window.app_status_online = False
+        self.main_window.controller = None
+        self.update_connection_status(False)
+        self.connection_status_label.setText(str(_("network_tab.offline")))
+        self.connection_status_label.setStyleSheet("""
+            QLabel {
+                background-color: red;
+                color: white;
+                border-radius: 5px;
+                padding: 5px;
+            }
+        """)
+        self.original_qrcode_pixmap = None
+        self.qrcode_label.clear()
+        logger.info("服务器已停止")
 
     def start_server(self):
         """启动 WebSocket 服务器"""
-        # 验证远程地址（如果启用）
         if self.enable_remote_checkbox.isChecked():
             remote_address = self.remote_address_edit.text()
             if remote_address and not self.validate_ip_address(remote_address):
@@ -268,129 +321,117 @@ class NetworkConfigTab(QWidget):
         selected_ip = self.ip_combobox.currentText().split(": ")[-1]
         selected_port = self.port_spinbox.value()
         osc_port = self.osc_port_spinbox.value()
+        bind_timeout = self.bind_timeout_spinbox.value()
         logger.info(
-            f"正在启动 WebSocket 服务器，监听地址: {selected_ip}:{selected_port} 和 OSC 数据接收端口: {osc_port}")
+            f"正在启动 WebSocket 服务器，监听地址: {selected_ip}:{selected_port}，"
+            f"OSC 端口: {osc_port}，连接超时: {bind_timeout}秒")
         try:
             loop = asyncio.get_running_loop()
-            loop.create_task(self.run_server(selected_ip, selected_port, osc_port))
+            self._server_task = loop.create_task(
+                self.run_server(selected_ip, selected_port, osc_port, bind_timeout)
+            )
             logger.info('WebSocket 服务器已启动')
-            # After starting the server, connect the addresses_updated signal
             self.main_window.osc_parameters_tab.addresses_updated.connect(self.update_osc_mappings)
-            # 启动成功后，将按钮设为灰色并禁用
-            self.start_button.setText("已启动")
+            self.start_button.setText(_("network_tab.disconnect"))
             self.start_button.setStyleSheet("background-color: grey; color: white;")
-            self.start_button.setEnabled(False)
+            self.start_button.setEnabled(True)
         except OSError as e:
             error_message = f"启动服务器失败: {str(e)}"
-            # Log the error with error level
             logger.error(error_message)
-            # Update the UI to reflect the error
             self.start_button.setText("启动失败,请重试")
             self.start_button.setStyleSheet("background-color: red; color: white;")
             self.start_button.setEnabled(True)
-            # 记录异常日志
             logger.error(f"服务器启动过程中发生异常: {str(e)}")
 
-    async def run_server(self, ip: str, port: int, osc_port: int):
+    async def run_server(self, ip: str, port: int, osc_port: int, bind_timeout: int = 120):
         """运行服务器并启动OSC服务器"""
         try:
             async with DGLabWSServer(ip, port, 60) as server:
                 client = server.new_local_client()
                 logger.info("WebSocket 客户端已初始化")
 
-                # Generate QR code
                 remote_address = self.remote_address_edit.text()
                 if self.enable_remote_checkbox.isChecked():
-                    url = client.get_qrcode(f"ws://{remote_address}:{port}")
-                    logger.info(f"使用远程地址生成二维码: ws://{remote_address}:{port}")
+                    qr_uri = f"ws://{remote_address}:{port}"
+                    logger.info(f"使用远程地址生成二维码: {qr_uri}")
                 else:
-                    url = client.get_qrcode(f"ws://{ip}:{port}")
-                    logger.info(f"使用本地地址生成二维码: ws://{ip}:{port}")
+                    qr_uri = f"ws://{ip}:{port}"
+                    logger.info(f"使用本地地址生成二维码: {qr_uri}")
                 
+                url = client.get_qrcode(qr_uri)
+                logger.info(f"二维码 URL: {url}")
                 qrcode_image = self.generate_qrcode(url)
                 self.update_qrcode(qrcode_image)
 
-                # 启动本地 OSCQuery 服务；VRChat 不需要先启动，发现循环会持续等待。
                 osc_client = None
                 try:
                     from services.oscquery_service import OSCQueryService
                     self.oscquery_service = OSCQueryService("DG-LAB-VRCOSC")
                     dynamic_osc_port = await self.oscquery_service.start(self.dispatcher)
                     osc_client = self.oscquery_service.get_vrc_client()
-                    logger.info(f"OSCQuery 服务已启动 - 监听 127.0.0.1:{dynamic_osc_port}，等待 VRChat 自动发现")
+                    logger.info(f"OSCQuery 服务已启动 - 监听 127.0.0.1:{dynamic_osc_port}")
                 except Exception as e:
                     logger.warning(f"OSCQuery 启动失败: {e}，回退到固定端口 {osc_port}")
                     if self.oscquery_service:
                         await self.oscquery_service.stop()
                     self.oscquery_service = None
-
-                    # 回退到固定端口模式；仅允许本机 VRChat 访问。
                     osc_server_instance = osc_server.AsyncIOOSCUDPServer(
                         ("127.0.0.1", osc_port), self.dispatcher, asyncio.get_event_loop()
                     )
                     osc_transport, osc_protocol = await osc_server_instance.create_serve_endpoint()
                     logger.info(f"使用固定端口模式 - OSC 服务器监听 127.0.0.1:{osc_port}")
-                    self._osc_transport = osc_transport  # 保存引用以便清理
+                    self._osc_transport = osc_transport
                     self._osc_protocol = osc_protocol
                     osc_client = udp_client.SimpleUDPClient("127.0.0.1", 9000)
 
-                # Initialize controller
                 controller = DGLabController(client, osc_client, self.main_window)
                 self.main_window.controller = controller
                 logger.info("DGLabController 已初始化")
-                # After controller initialization, bind settings
                 self.main_window.controller_settings_tab.bind_controller_settings()
                 self.main_window.sps_config_tab.apply_bindings_to_controller()
-                # 确保UI状态与控制器状态同步
                 self.main_window.controller_settings_tab.sync_from_controller()
-
-                # 连接 addresses_updated 信号到 update_osc_mappings 方法
                 self.main_window.osc_parameters_tab.addresses_updated.connect(self.update_osc_mappings)
-                # 初始化 OSC 映射，包括面板控制和自定义地址
                 self.update_osc_mappings(controller)
                 self.main_window.sps_config_tab.schedule_auto_refresh("osc_started", delay_ms=1000)
 
-                # Start the data processing loop
-                async for data in client.data_generator():
-                    if isinstance(data, StrengthData):
-                        logger.info(f"接收到数据包 - A通道: {data.a}, B通道: {data.b}")
-                        controller.last_strength = data
-                        controller.data_updated_event.set()  # 数据更新，触发开火操作的后续事件
-                        controller.app_status_online = True
-                        self.main_window.app_status_online = True
-                        self.update_connection_status(controller.app_status_online)
-                        # Update UI components related to strength data
-                        self.main_window.controller_settings_tab.update_channel_strength_labels(data)
-                    elif isinstance(data, FeedbackButton):
-                        logger.info(f"App 触发了反馈按钮：{data.name}")
-                    elif data == RetCode.CLIENT_DISCONNECTED:
-                        logger.info("App 已断开连接，你可以尝试重新扫码进行连接绑定")
-                        controller.app_status_online = False
-                        self.main_window.app_status_online = False
-                        self.update_connection_status(controller.app_status_online)
-                        await client.rebind()
-                        logger.info("重新绑定成功")
-                        controller.app_status_online = True
-                        self.update_connection_status(controller.app_status_online)
-                        # 重连成功后重置波形更新时间，强制下一次循环重新发送波形
-                        controller.pulse_last_update_time = {} 
-                        # 同步UI状态到控制器
-                        self.main_window.controller_settings_tab.sync_from_controller()
-                    else:
-                        logger.info(f"获取到状态码：{RetCode}")
+                # 等待手机连接（带超时）
+                logger.info(f"等待手机 DG-LAB App 扫码连接（超时 {bind_timeout} 秒）...")
+                try:
+                    data_gen = client.data_generator()
+                    first_data = await asyncio.wait_for(
+                        data_gen.__anext__(),
+                        timeout=bind_timeout
+                    )
+                except asyncio.TimeoutError:
+                    logger.error(f"等待手机连接超时（{bind_timeout} 秒），请检查：")
+                    logger.error(f"  1. 手机和电脑是否在同一个 WiFi 网络下")
+                    logger.error(f"  2. Windows 防火墙是否阻止了端口 {port}")
+                    logger.error(f"  3. 二维码中的地址是否正确: {qr_uri}")
+                    self.start_button.setText(_("network_tab.connect"))
+                    self.start_button.setStyleSheet("background-color: green; color: white;")
+                    self.start_button.setEnabled(True)
+                    return
 
-                # OSCQuery/UDP 资源在 finally 中清理
+                # 连接成功，进入数据处理循环
+                await self._process_data(controller, data_gen, first_data, client)
+
+        except asyncio.CancelledError:
+            logger.info("服务器任务被用户取消")
+            raise
         except OSError as e:
-            # Handle specific errors and log them
             error_message = f"WebSocket 服务器启动失败: {str(e)}"
             logger.error(error_message)
-
-            # 启动过程中发生异常，恢复按钮状态为可点击的红色
             self.start_button.setText("启动失败，请重试")
             self.start_button.setStyleSheet("background-color: red; color: white;")
             self.start_button.setEnabled(True)
             self.main_window.log_viewer_tab.log_text_edit.append(f"ERROR: {error_message}")
+        except Exception as e:
+            logger.error(f"服务器运行异常: {e}", exc_info=True)
+            self.start_button.setText(_("network_tab.connect"))
+            self.start_button.setStyleSheet("background-color: green; color: white;")
+            self.start_button.setEnabled(True)
         finally:
+            self._server_task = None
             if self.oscquery_service:
                 await self.oscquery_service.stop()
                 self.oscquery_service = None
@@ -398,6 +439,48 @@ class NetworkConfigTab(QWidget):
                 self._osc_transport.close()
                 self._osc_transport = None
                 self._osc_protocol = None
+
+    async def _process_data(self, controller, data_gen, first_data, client):
+        """处理手机连接后的数据流"""
+        data = first_data
+        while True:
+            try:
+                if isinstance(data, StrengthData):
+                    logger.info(f"接收到数据包 - A通道: {data.a}, B通道: {data.b}")
+                    controller.last_strength = data
+                    controller.data_updated_event.set()
+                    controller.app_status_online = True
+                    self.main_window.app_status_online = True
+                    self.update_connection_status(controller.app_status_online)
+                    self.main_window.controller_settings_tab.update_channel_strength_labels(data)
+                elif isinstance(data, FeedbackButton):
+                    logger.info(f"App 触发了反馈按钮：{data.name}")
+                    controller.app_status_online = True
+                    self.main_window.app_status_online = True
+                    self.update_connection_status(controller.app_status_online)
+                elif data == RetCode.CLIENT_DISCONNECTED:
+                    logger.info("App 已断开连接，可以重新扫码连接")
+                    controller.app_status_online = False
+                    self.main_window.app_status_online = False
+                    self.update_connection_status(controller.app_status_online)
+                    await client.rebind()
+                    logger.info("重新绑定成功")
+                    controller.app_status_online = True
+                    self.update_connection_status(controller.app_status_online)
+                    controller.pulse_last_update_time = {}
+                    self.main_window.controller_settings_tab.sync_from_controller()
+                else:
+                    logger.info(f"获取到状态码：{data}")
+                    controller.app_status_online = True
+                    self.main_window.app_status_online = True
+                    self.update_connection_status(controller.app_status_online)
+                data = await data_gen.__anext__()
+            except asyncio.CancelledError:
+                logger.info("数据处理循环被取消")
+                break
+            except StopAsyncIteration:
+                logger.info("数据流已结束")
+                break
 
 
 

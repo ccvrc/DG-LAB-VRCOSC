@@ -63,6 +63,7 @@ class DGLabController:
         # 定时任务
         self.send_status_task = asyncio.create_task(self.periodic_status_update())  # 启动ChatBox发送任务
         self.send_pulse_task = asyncio.create_task(self.periodic_send_pulse_data())  # 启动设定波形发送任务
+        self.sps_staleness_task = asyncio.create_task(self.periodic_sps_staleness_check())  # 启动SPS过期检测
         # 按键延迟触发计时
         self.chatbox_toggle_timer = None
         self.mode_toggle_timer = None
@@ -71,7 +72,11 @@ class DGLabController:
         self.pulse_last_update_time = {}  # 记录每个通道最后波形更新时间
         self.sps_processor = SPSProcessor()
         self.last_sps_targets = {Channel.A: None, Channel.B: None}
-        
+        # SPS 状态追踪：拔出后恢复原始强度
+        self._last_sps_osc_time = 0.0
+        self._sps_was_active = {Channel.A: False, Channel.B: False}
+        self._pre_sps_strength = {Channel.A: 0, Channel.B: 0}
+
         # 命令队列相关
         self.command_queue = asyncio.PriorityQueue()  # 优先级队列
         self.command_processing_task = asyncio.create_task(self.process_commands())
@@ -337,7 +342,12 @@ class DGLabController:
             self.last_sps_targets[channel] = None
 
     async def handle_osc_message_sps(self, address, *args):
-        """处理 OGB/SPS OSC 参数，并按绑定区域聚合到 A/B 通道。"""
+        """处理 OGB/SPS OSC 参数，并按绑定区域聚合到 A/B 通道。
+
+        包含原始强度保存/恢复逻辑：
+        - target > 0 时保存插入前强度，发送 SPS 映射值
+        - target == 0 时归零，由过期检测任务负责恢复原始强度
+        """
         try:
             if not args:
                 return
@@ -346,6 +356,7 @@ class DGLabController:
             if not self.last_strength:
                 return
 
+            self._last_sps_osc_time = time.time()
             levels = self.sps_processor.get_channel_levels()
             channel_specs = (
                 (Channel.A, "A", self.last_strength.a_limit, self.enable_interaction_mode_a),
@@ -353,21 +364,75 @@ class DGLabController:
             )
             for channel, channel_name, limit, enabled in channel_specs:
                 if not enabled:
-                    self.invalidate_sps_target(channel)
+                    self._sps_was_active[channel] = False
                     continue
                 target = int(levels[channel_name] * limit)
-                if self.last_sps_targets.get(channel) == target:
-                    continue
-                self.last_sps_targets[channel] = target
-                await self.add_command(
-                    CommandType.INTERACTION_COMMAND,
-                    channel,
-                    StrengthOperationType.SET_TO,
-                    target,
-                    f"sps_{channel_name}",
-                )
+
+                if target > 0:
+                    # SPS 正在贡献强度：保存原始强度（仅首次）
+                    if not self._sps_was_active[channel]:
+                        self._pre_sps_strength[channel] = self.channel_states[channel]["current_strength"]
+                    self._sps_was_active[channel] = True
+
+                    # 去重：用 current_strength 而非 last_sps_targets
+                    if self.channel_states[channel]["current_strength"] != target:
+                        await self.add_command(
+                            CommandType.INTERACTION_COMMAND,
+                            channel,
+                            StrengthOperationType.SET_TO,
+                            target,
+                            f"sps_{channel_name}",
+                        )
+                else:
+                    # SPS 值为 0：归零（来源禁用 或 接触自然结束）
+                    if self._sps_was_active[channel] and self.channel_states[channel]["current_strength"] != 0:
+                        await self.add_command(
+                            CommandType.INTERACTION_COMMAND,
+                            channel,
+                            StrengthOperationType.SET_TO,
+                            0,
+                            f"sps_{channel_name}",
+                        )
+                    self._sps_was_active[channel] = False
         except Exception as e:
             logger.error(f"处理 SPS OSC 消息出错: {e}", exc_info=True)
+
+    async def periodic_sps_staleness_check(self):
+        """周期性检测 SPS 数据是否过期，恢复原始强度。
+
+        触发条件（任一满足）：
+        1. 超过 1.5 秒无 SPS OSC 消息（VRChat 停止发送）
+        2. 所有 zone 数据均为 0（即使 OSC 仍在发 0）
+        """
+        STALE_THRESHOLD = 1.5
+        while True:
+            try:
+                await asyncio.sleep(1.0)
+                if not self.last_strength:
+                    continue
+                if not self._sps_was_active.get(Channel.A) and not self._sps_was_active.get(Channel.B):
+                    continue
+
+                now = time.time()
+                time_expired = (now - self._last_sps_osc_time) >= STALE_THRESHOLD
+                data_inactive = not self.sps_processor.has_any_activity()
+
+                if not time_expired and not data_inactive:
+                    continue
+
+                for channel, _ in ((Channel.A, "A"), (Channel.B, "B")):
+                    if self._sps_was_active.get(channel):
+                        restore_target = self._pre_sps_strength[channel]
+                        await self.add_command(
+                            CommandType.INTERACTION_COMMAND,
+                            channel,
+                            StrengthOperationType.SET_TO,
+                            restore_target,
+                            "sps_stale_restore",
+                        )
+                        self._sps_was_active[channel] = False
+            except Exception as e:
+                logger.error(f"SPS 过期检测出错: {e}", exc_info=True)
 
     async def set_pulse_data(self, value, channel, pulse_index):
         """
