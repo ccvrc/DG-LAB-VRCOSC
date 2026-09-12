@@ -24,6 +24,22 @@ def package_bytes(entries=None):
     return buffer.getvalue()
 
 
+def windows_short_path(path):
+    """Use an actual filesystem 8.3 alias, never an invented short spelling."""
+    get_short_path = installer.ctypes.WinDLL('kernel32', use_last_error=True).GetShortPathNameW
+    get_short_path.argtypes = [installer.wintypes.LPCWSTR, installer.wintypes.LPWSTR, installer.wintypes.DWORD]
+    get_short_path.restype = installer.wintypes.DWORD
+    buffer = installer.ctypes.create_unicode_buffer(32768)
+    length = get_short_path(str(path), buffer, len(buffer))
+    if not length:
+        raise installer.ctypes.WinError(installer.ctypes.get_last_error())
+    if length >= len(buffer):
+        raise ValueError('Short path exceeds test buffer size')
+    if buffer.value.lower() == str(path).lower():
+        raise unittest.SkipTest('The filesystem does not provide a distinct 8.3 alias')
+    return Path(buffer.value)
+
+
 class PackageTests(unittest.TestCase):
     def test_extracts_only_application_files_and_leaves_config_out(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -60,6 +76,19 @@ class PackageTests(unittest.TestCase):
                 installer.discard_update(root / 'stage')
             self.assertTrue(root.is_dir())
 
+    @unittest.skipUnless(sys.platform == 'win32', 'Windows short path aliases')
+    def test_discard_update_accepts_short_aliases_for_stage_and_temp(self):
+        with tempfile.TemporaryDirectory(prefix='installer temporary alias ') as directory:
+            temp_root = Path(directory).resolve()
+            work = temp_root / 'dglab-update-alias-test'
+            stage = work / 'stage'
+            stage.mkdir(parents=True)
+            short_stage, short_temp = windows_short_path(stage), windows_short_path(temp_root)
+            with patch.object(installer.tempfile, 'gettempdir', return_value=str(short_temp)):
+                installer.discard_update(short_stage)
+            self.assertFalse(work.exists())
+            self.assertTrue(temp_root.exists())
+
     def test_installer_script_survives_frozen_temp_cleanup_and_quotes_paths(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -79,7 +108,7 @@ class PackageTests(unittest.TestCase):
                 self.assertEqual(os.environ['PYINSTALLER_RESET_ENVIRONMENT'], '0')
             args = launch.call_args.args[0]
             self.assertIn('-File', args)
-            self.assertIn(str(stage), args)
+            self.assertEqual(Path(args[args.index('-StagePath') + 1]).resolve(), stage.resolve())
             self.assertEqual(launch.call_args.kwargs['creationflags'], subprocess.CREATE_NO_WINDOW)
             child_environment = launch.call_args.kwargs['env']
             self.assertEqual(child_environment['PYINSTALLER_RESET_ENVIRONMENT'], '1')
@@ -87,7 +116,7 @@ class PackageTests(unittest.TestCase):
             self.assertEqual(child_environment['_PYI_APPLICATION_HOME_DIR'], str(frozen))
             copied = Path(args[args.index('-File') + 1])
             self.assertTrue(copied.is_file())
-            self.assertNotIn(frozen, copied.parents)
+            self.assertNotIn(frozen.resolve(), copied.resolve().parents)
 
 
 class DownloadTests(unittest.IsolatedAsyncioTestCase):
@@ -222,10 +251,46 @@ class FrozenInstallerLaunchTests(unittest.TestCase):
 class PowerShellInstallerTests(unittest.TestCase):
     script = Path(__file__).resolve().parents[1] / 'src' / 'resources' / 'install_update.ps1'
 
-    def run_installer(self, stage, target):
+    def run_installer(self, stage, target, env=None):
         return subprocess.run(['powershell.exe', '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass',
                                '-File', str(self.script), '-StagePath', str(stage), '-InstallPath', str(target), '-NoRestart'],
-                              capture_output=True, timeout=15, creationflags=subprocess.CREATE_NO_WINDOW)
+                              capture_output=True, timeout=15, creationflags=subprocess.CREATE_NO_WINDOW, env=env)
+
+    def test_real_short_paths_install_and_cleanup_with_short_temp_environment(self):
+        with tempfile.TemporaryDirectory(prefix='installer temporary alias ') as directory, \
+             tempfile.TemporaryDirectory(prefix='installer target alias ') as destination:
+            temp_root, target = Path(directory).resolve(), Path(destination).resolve()
+            work = temp_root / 'dglab-update-alias-test'
+            stage = work / 'stage'
+            stage.mkdir(parents=True)
+            (stage / 'DG-LAB-VRCOSC.exe').write_bytes(b'MZ-new')
+            (target / 'DG-LAB-VRCOSC.exe').write_bytes(b'MZ-old')
+            (target / 'settings.yml').write_text('keep: me')
+            short_temp, short_stage, short_target = map(windows_short_path, (temp_root, stage, target))
+            result = self.run_installer(short_stage, short_target,
+                                        {**os.environ, 'TEMP': str(short_temp), 'TMP': str(short_temp)})
+            error = (stage / 'update-error.txt').read_text(encoding='utf-8-sig') if (stage / 'update-error.txt').exists() else result.stderr
+            self.assertEqual(result.returncode, 0, error)
+            self.assertEqual((target / 'DG-LAB-VRCOSC.exe').read_bytes(), b'MZ-new')
+            self.assertEqual((target / 'settings.yml').read_text(), 'keep: me')
+            self.assertFalse(work.exists())
+            self.assertTrue(temp_root.exists())
+
+    def test_short_alias_cleanup_never_removes_an_installation_in_the_work_directory(self):
+        for target_name in ('', 'installed application'):
+            with self.subTest(target_name=target_name), tempfile.TemporaryDirectory(prefix='installer temporary alias ') as directory:
+                temp_root = Path(directory).resolve()
+                work = temp_root / 'dglab-update-alias-test'
+                stage, target = work / 'stage', work / target_name
+                stage.mkdir(parents=True)
+                target.mkdir(exist_ok=True)
+                (stage / 'DG-LAB-VRCOSC.exe').write_bytes(b'MZ-new')
+                (target / 'DG-LAB-VRCOSC.exe').write_bytes(b'MZ-old')
+                short_temp = windows_short_path(temp_root)
+                result = self.run_installer(windows_short_path(stage), target,
+                                            {**os.environ, 'TEMP': str(short_temp), 'TMP': str(short_temp)})
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual((target / 'DG-LAB-VRCOSC.exe').read_bytes(), b'MZ-new')
 
     def test_replace_preserves_settings_and_cleans_private_workdir(self):
         with tempfile.TemporaryDirectory(prefix='dglab-update-') as directory, tempfile.TemporaryDirectory() as destination:
