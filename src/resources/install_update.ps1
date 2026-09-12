@@ -40,6 +40,12 @@ try {
         $backup = Get-ChildFile $backupRoot $name
         if (Test-Path -LiteralPath $target) {
             Move-Item -LiteralPath $target -Destination $backup
+            # A cross-volume Windows move can report success after copying a
+            # locked file while leaving its source intact. It is not a completed
+            # backup move and must not be "restored" over the unchanged original.
+            if (Test-Path -LiteralPath $target) {
+                throw "The installed file is still in use and could not be moved: $target"
+            }
             $backedUp += $name
         }
         Move-Item -LiteralPath $source -Destination $target

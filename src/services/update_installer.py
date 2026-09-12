@@ -15,6 +15,7 @@ from urllib.parse import urlsplit
 import zipfile
 
 import aiohttp
+import psutil
 
 PACKAGE_FILES = {'DG-LAB-VRCOSC.exe', 'build-info.json', 'build-info.txt'}
 MAX_PACKAGE_SIZE = 512 * 1024 * 1024
@@ -152,13 +153,28 @@ def launch_installer(stage):
         'powershell.exe', '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass',
         '-File', str(script), '-StagePath', str(stage),
         '-InstallPath', str(Path(sys.executable).resolve().parent),
-        '-ParentProcessId', str(os.getpid()),
+        '-ParentProcessId', str(_installer_wait_process_id()),
     ]
     # The helper and replacement EXE inherit this environment. PyInstaller 6.9+
     # otherwise treats a same-path restart as a worker of the old instance and
     # tries to reuse its already-deleted onefile extraction directory.
     environment = {**os.environ, 'PYINSTALLER_RESET_ENVIRONMENT': '1'}
     return _spawn_installer(command, environment)
+
+
+def _installer_wait_process_id():
+    """Wait for the onefile bootloader too: it still maps the installed EXE."""
+    process_id = os.getpid()
+    if sys.platform != 'win32' or not getattr(sys, 'frozen', False):
+        return process_id
+    try:
+        parent = psutil.Process(process_id).parent()
+        if parent is not None and Path(parent.exe()).resolve() == Path(sys.executable).resolve():
+            return parent.pid
+    except psutil.NoSuchProcess:
+        # An already-exited parent no longer keeps the executable mapped.
+        pass
+    return process_id
 
 
 def _spawn_installer(command, environment):

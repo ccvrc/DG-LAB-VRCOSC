@@ -161,6 +161,27 @@ class FrozenInstallerLaunchTests(unittest.TestCase):
         library.SetDllDirectoryW.return_value = True
         return library
 
+    def test_waits_for_same_executable_bootloader_instead_of_only_python_child(self):
+        parent = MagicMock(pid=1234)
+        parent.exe.return_value = sys.executable
+        with patch.object(sys, 'frozen', True, create=True), \
+             patch.object(installer.psutil, 'Process') as process:
+            process.return_value.parent.return_value = parent
+            self.assertEqual(installer._installer_wait_process_id(), 1234)
+
+    def test_does_not_wait_for_an_unrelated_launcher(self):
+        parent = MagicMock(pid=1234)
+        parent.exe.return_value = str(Path(sys.executable).with_name('explorer.exe'))
+        with patch.object(sys, 'frozen', True, create=True), \
+             patch.object(installer.psutil, 'Process') as process:
+            process.return_value.parent.return_value = parent
+            self.assertEqual(installer._installer_wait_process_id(), os.getpid())
+
+    def test_already_exited_bootloader_does_not_block_update_launch(self):
+        with patch.object(sys, 'frozen', True, create=True), \
+             patch.object(installer.psutil, 'Process', side_effect=installer.psutil.NoSuchProcess(1234)):
+            self.assertEqual(installer._installer_wait_process_id(), os.getpid())
+
     def test_external_helper_does_not_inherit_bundle_dll_path_and_parent_is_restored(self):
         library = self.kernel32()
         events = []
@@ -234,3 +255,51 @@ class PowerShellInstallerTests(unittest.TestCase):
             self.assertEqual((target / 'DG-LAB-VRCOSC.exe').read_bytes(), b'MZ-old')
             self.assertEqual((target / 'build-info.json').read_text(), 'old')
             self.assertTrue((stage / 'update-error.txt').exists())
+
+    def test_locked_cross_volume_backup_does_not_claim_original_was_moved(self):
+        repository = Path(__file__).resolve().parents[1]
+        if Path(tempfile.gettempdir()).anchor.lower() == repository.anchor.lower():
+            self.skipTest('Requires different volumes for staging and installation')
+        with tempfile.TemporaryDirectory(prefix='dglab-update-') as directory, \
+             tempfile.TemporaryDirectory(prefix='installer-test-', dir=repository) as destination:
+            stage, target = Path(directory) / 'stage', Path(destination)
+            stage.mkdir()
+            (stage / 'DG-LAB-VRCOSC.exe').write_bytes(b'MZ-new')
+            installed = target / 'DG-LAB-VRCOSC.exe'
+            old_bytes = Path(sys.executable).read_bytes()
+            installed.write_bytes(old_bytes)
+            # Keep an executable image section open without running the EXE.
+            # This reproduces a bootloader's mapping: cross-volume MoveFileEx
+            # copies the file but can leave the undeletable source in place.
+            kernel32 = installer.ctypes.WinDLL('kernel32', use_last_error=True)
+            create_file = kernel32.CreateFileW
+            create_file.argtypes = [installer.wintypes.LPCWSTR, installer.wintypes.DWORD,
+                                   installer.wintypes.DWORD, installer.wintypes.LPVOID,
+                                   installer.wintypes.DWORD, installer.wintypes.DWORD,
+                                   installer.wintypes.HANDLE]
+            create_file.restype = installer.wintypes.HANDLE
+            create_mapping = kernel32.CreateFileMappingW
+            create_mapping.argtypes = [installer.wintypes.HANDLE, installer.wintypes.LPVOID,
+                                      installer.wintypes.DWORD, installer.wintypes.DWORD,
+                                      installer.wintypes.DWORD, installer.wintypes.LPCWSTR]
+            create_mapping.restype = installer.wintypes.HANDLE
+            close_handle = kernel32.CloseHandle
+            close_handle.argtypes = [installer.wintypes.HANDLE]
+            close_handle.restype = installer.wintypes.BOOL
+            handle = create_file(str(installed), 0x80000000, 7, None, 3, 0x80, None)
+            self.assertNotEqual(handle, installer.ctypes.c_void_p(-1).value)
+            try:
+                mapping = create_mapping(handle, None, 0x1000002, 0, 0, None)
+                self.assertTrue(mapping, installer.ctypes.get_last_error())
+            finally:
+                close_handle(handle)
+            try:
+                result = self.run_installer(stage, target)
+            finally:
+                close_handle(mapping)
+            self.assertEqual(result.returncode, 1)
+            self.assertEqual(installed.read_bytes(), old_bytes)
+            self.assertEqual((stage / 'DG-LAB-VRCOSC.exe').read_bytes(), b'MZ-new')
+            error = (stage / 'update-error.txt').read_text(encoding='utf-8-sig')
+            self.assertIn('still in use', error)
+            self.assertNotIn('Recovery incomplete', error)
