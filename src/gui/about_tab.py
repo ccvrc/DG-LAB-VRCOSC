@@ -1,11 +1,10 @@
 # src/gui/about_tab.py
 import asyncio
-from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QCheckBox, QTextEdit
+from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QCheckBox, QComboBox, QTextEdit
 from PySide6.QtCore import QLocale
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtCore import QUrl
-# from i18n import translate, language_signals
-from i18n import translate as _, language_signals
+from i18n import translate as _
 
 class AboutTab(QWidget):
     def __init__(self, main_window):
@@ -40,6 +39,25 @@ class AboutTab(QWidget):
         self.auto_check.setChecked(self.main_window.settings.get('auto_update', False))
         self.auto_check.stateChanged.connect(self.toggle_auto_update)
         self.version_layout.addWidget(self.auto_check)
+
+        self.update_channel_layout = QHBoxLayout()
+        self.update_channel_label = QLabel(_('about_tab.update_channel'))
+        self.update_channel_combo = QComboBox()
+        self.update_channel_combo.addItem(_('about_tab.release_channel'), 'release')
+        self.update_channel_combo.addItem(_('about_tab.actions_channel'), 'actions')
+        channel = self.main_window.settings.get('update_channel', 'release')
+        channel_index = self.update_channel_combo.findData(channel)
+        self.update_channel_combo.setCurrentIndex(max(channel_index, 0))
+        self.update_channel_combo.currentIndexChanged.connect(self.change_update_channel)
+        self.update_channel_label.setBuddy(self.update_channel_combo)
+        self.update_channel_layout.addWidget(self.update_channel_label)
+        self.update_channel_layout.addWidget(self.update_channel_combo, 1)
+        self.version_layout.addLayout(self.update_channel_layout)
+
+        self.update_channel_hint = QLabel(_('about_tab.actions_channel_hint'))
+        self.update_channel_hint.setWordWrap(True)
+        self.update_channel_hint.setVisible(self.update_channel_combo.currentData() == 'actions')
+        self.version_layout.addWidget(self.update_channel_hint)
         
         # 贡献信息
         contributors = QTextEdit()
@@ -88,6 +106,14 @@ class AboutTab(QWidget):
         self.main_window.settings['auto_update'] = state == 2  # Qt.Checked状态值为2
         self.main_window.save_settings()
 
+    def change_update_channel(self, index):
+        channel = self.update_channel_combo.itemData(index)
+        if channel not in ('release', 'actions'):
+            return
+        self.main_window.settings['update_channel'] = channel
+        self.update_channel_hint.setVisible(channel == 'actions')
+        self.main_window.save_settings()
+
     def check_update(self):
         # 防止多次点击
         if not self.check_update_btn.isEnabled():
@@ -110,4 +136,8 @@ class AboutTab(QWidget):
         self.feedback_btn.setText(_('about_tab.feedback'))
         # 更新标签文本
         self.auto_check.setText(_('about_tab.automatic_update_check'))
+        self.update_channel_label.setText(_('about_tab.update_channel'))
+        self.update_channel_combo.setItemText(0, _('about_tab.release_channel'))
+        self.update_channel_combo.setItemText(1, _('about_tab.actions_channel'))
+        self.update_channel_hint.setText(_('about_tab.actions_channel_hint'))
         self.version_layout_label.setText(_('about_tab.current_version') + ": " + self.main_window.update_handler.current_version)
