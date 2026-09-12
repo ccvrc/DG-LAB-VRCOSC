@@ -4,7 +4,6 @@ from PySide6.QtCore import Qt, Signal, QLocale
 import logging
 import yaml
 import os
-import asyncio
 
 from i18n import translate as _
 from config import get_config_file_path
@@ -136,39 +135,10 @@ class OSCParametersTab(QWidget):
 
     def update_address_list(self):
         """更新 OSC 地址列表"""
-        new_addresses = []
-        for i in range(self.address_list_widget.count()):
-            widget = self.address_list_widget.itemWidget(self.address_list_widget.item(i))
-            if isinstance(widget, OSCAddressWidget):
-                address = widget.address_edit.text().strip()
-                if address:  # 只添加非空地址
-                    channels = {
-                        'A': widget.channel_a_checkbox.isChecked(),
-                        'B': widget.channel_b_checkbox.isChecked()
-                    }
-                    # 添加映射范围设置
-                    mapping_ranges = {
-                        'A': {
-                            'min': widget.get_a_min_value(),
-                            'max': widget.get_a_max_value()
-                        },
-                        'B': {
-                            'min': widget.get_b_min_value(),
-                            'max': widget.get_b_max_value()
-                        }
-                    }
-                    if channels['A'] or channels['B']:  # 至少选择了一个通道
-                        new_addresses.append({
-                            'address': address,
-                            'channels': channels,
-                            'mapping_ranges': mapping_ranges
-                        })
-        self.addresses = new_addresses
-        logger.info(f"更新 OSC 地址列表: {len(new_addresses)} 个地址")
-        
-        # 如果控制器已初始化，更新 OSC 映射
-        if self.main_window.controller:
-            asyncio.create_task(self.main_window.network_config_tab._update_osc_mappings(self.main_window.controller))
+        # 编辑模型必须与可见行一一对应，否则删除未启用的行会错删或越界。
+        self.sync_ui_to_model()
+        logger.info(f"更新 OSC 地址列表: {len(self.addresses)} 个地址")
+        self.addresses_updated.emit()
 
     def save_addresses(self):
         # Save addresses to a YAML file using unified config path
@@ -269,8 +239,13 @@ class OSCParametersTab(QWidget):
         logger.info(f"UI已更新，显示 {len(self.addresses)} 个OSC地址")
 
     def get_addresses(self):
-        # Return the list of addresses
-        return self.addresses
+        # 仅向映射层提供有效条目，未启用和未填完的行仍保留在编辑器及配置中。
+        return [
+            {**entry, 'address': entry['address'].strip()}
+            for entry in self.addresses
+            if entry['address'].strip()
+            and (entry['channels'].get('A', False) or entry['channels'].get('B', False))
+        ]
 
     def update_ui_texts(self):
         """更新所有UI文本为当前语言"""
