@@ -1,6 +1,8 @@
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QTextEdit, QGroupBox, QLabel, QHBoxLayout, QFormLayout, QPushButton, QCheckBox
 from PySide6.QtGui import QTextCursor, QColor, QTextCharFormat
-from PySide6.QtCore import Qt, QTimer, Signal
+from PySide6.QtCore import QObject, Qt, QTimer, Signal, Slot
+import copy
+import html
 import logging
 import time
 import os
@@ -10,14 +12,30 @@ from i18n import translate as _
 
 logger = logging.getLogger(__name__)
 
+class _LogEmitter(QObject):
+    message_ready = Signal(str)
+
+    def __init__(self, text_edit):
+        super().__init__(text_edit)
+        self.text_edit = text_edit
+        self.message_ready.connect(self.append_message, Qt.ConnectionType.QueuedConnection)
+
+    @Slot(str)
+    def append_message(self, message):
+        self.text_edit.append(message)
+        self.text_edit.ensureCursorVisible()
+
+
 class QTextEditHandler(logging.Handler):
     """Custom log handler to output log messages to QTextEdit."""
     def __init__(self, text_edit):
         super().__init__()
         self.text_edit = text_edit
+        self._emitter = _LogEmitter(text_edit)
 
     def emit(self, record):
-        msg = self.format(record)
+        # 日志也可能来自发现服务等后台线程，控件更新必须交给 GUI 线程。
+        msg = html.escape(self.format(record)).replace('\n', '<br>')
         # Highlight error logs in red
         if record.levelno >= logging.ERROR:
             msg = f"<b style='color:red;'>{msg}</b>"  # Display error messages in red
@@ -25,29 +43,23 @@ class QTextEditHandler(logging.Handler):
             msg = f"<b style='color:orange;'>{msg}</b>"  # Display warnings in orange
         else:
             msg = f"<span>{msg}</span>"  # 默认使用普通字体
-        # Append the message to the text edit and reset the cursor position
-        self.text_edit.append(msg)
-        self.text_edit.ensureCursorVisible()  # Ensure the latest log is visible
+        self._emitter.message_ready.emit(msg)
 
 class SimpleFormatter(logging.Formatter):
     """自定义格式化器，将日志级别缩写并调整时间格式"""
 
     def format(self, record):
-        # 简化日志级别显示
-        levelname = record.levelname
-        if levelname == 'DEBUG':
-            levelname = 'D'
-        elif levelname == 'INFO':
-            levelname = 'I'
-        elif levelname == 'WARNING':
-            levelname = 'W'
-        elif levelname == 'ERROR':
-            levelname = 'E'
-        elif levelname == 'CRITICAL':
-            levelname = 'C'
-        
-        # 使用简化的格式
-        return f"{record.asctime}-{levelname}: {record.getMessage()}"
+        # 使用标准格式化流程生成时间和异常堆栈，不依赖其他 handler 修改 record。
+        # 复制记录，避免缩写影响文件和控制台日志。
+        record = copy.copy(record)
+        record.levelname = {
+            'DEBUG': 'D',
+            'INFO': 'I',
+            'WARNING': 'W',
+            'ERROR': 'E',
+            'CRITICAL': 'C',
+        }.get(record.levelname, record.levelname)
+        return super().format(record)
 
 class LogViewerTab(QWidget):
     def __init__(self, main_window):

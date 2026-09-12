@@ -29,6 +29,9 @@ class NetworkConfigTab(QWidget):
         super().__init__()
         self.main_window = main_window
         self.original_qrcode_pixmap = None  # 保存原始二维码图像
+        self._server_task = None
+        self._server_started = False
+        self._server_error = None
 
         # 主布局使用QHBoxLayout
         # 创建主布局（垂直布局）
@@ -63,6 +66,11 @@ class NetworkConfigTab(QWidget):
         self.port_spinbox.setValue(self.main_window.settings['port'])  # Set the default or loaded value
         self.form_layout.addRow(str(_("network_tab.websocket_port")) + ":", self.port_spinbox)
 
+        # 自动发现为默认模式；固定接收端口仅供显式选择的手动模式使用。
+        self.osc_auto_checkbox = QCheckBox(str(_("network_tab.osc_auto")))
+        self.osc_auto_checkbox.setChecked(self.main_window.settings.get('osc_auto', True))
+        self.form_layout.addRow(str(_("network_tab.osc_mode")) + ":", self.osc_auto_checkbox)
+
         # OSC端口选择
         self.osc_port_spinbox = QSpinBox()
         # 强制使用英文区域设置，避免数字显示为繁体中文
@@ -70,6 +78,10 @@ class NetworkConfigTab(QWidget):
         self.osc_port_spinbox.setRange(1024, 65535)
         self.osc_port_spinbox.setValue(self.main_window.settings['osc_port'])  # Set the default or loaded value
         self.form_layout.addRow(str(_("network_tab.osc_port")) + ":", self.osc_port_spinbox)
+        self.osc_status_label = QLabel()
+        self.osc_status_label.setTextFormat(Qt.PlainText)
+        self.osc_status_label.setWordWrap(True)
+        self.form_layout.addRow(str(_("network_tab.osc_status")) + ":", self.osc_status_label)
 
         # 创建远程地址控制布局
         self.remote_address_layout = QHBoxLayout()
@@ -109,6 +121,10 @@ class NetworkConfigTab(QWidget):
         self.oscquery_service = None
         self._osc_transport = None
         self._osc_protocol = None
+        self._mappings_connected = False
+        self._osc_status_timer = QTimer(self)
+        self._osc_status_timer.setInterval(1000)
+        self._osc_status_timer.timeout.connect(self.refresh_osc_status)
 
         # 添加客户端连接状态标签
         self.connection_status_label = QLabel(str(_("network_tab.offline")))
@@ -189,10 +205,14 @@ class NetworkConfigTab(QWidget):
         self.ip_combobox.currentTextChanged.connect(self.save_network_settings)
         self.port_spinbox.valueChanged.connect(self.save_network_settings)
         self.osc_port_spinbox.valueChanged.connect(self.save_network_settings)
+        self.osc_auto_checkbox.toggled.connect(self.on_osc_mode_changed)
         self.remote_address_edit.textChanged.connect(self.save_network_settings) # 新增远程地址保存
 
         # 监听语言变更信号以更新UI
         language_signals.language_changed.connect(self.update_ui_texts)
+        self._update_osc_mode_visibility()
+        self.refresh_osc_status()
+        self._update_start_button()
 
     def apply_settings_to_ui(self):
         """Apply the loaded settings to the UI elements."""
@@ -224,6 +244,7 @@ class NetworkConfigTab(QWidget):
             self.main_window.settings['interface'] = selected_interface
             self.main_window.settings['ip'] = selected_ip
             self.main_window.settings['port'] = selected_port
+            self.main_window.settings['osc_auto'] = self.osc_auto_checkbox.isChecked()
             self.main_window.settings['osc_port'] = osc_port
             self.main_window.settings['remote_address'] = remote_address
             self.main_window.settings['enable_remote'] = enable_remote
@@ -248,51 +269,122 @@ class NetworkConfigTab(QWidget):
 
     def start_server_button_clicked(self):
         """启动按钮被点击后的处理逻辑"""
-        self.start_button.setText(str(_("network_tab.disconnect")))  # 修改按钮文本
-        self.start_button.setStyleSheet("background-color: grey; color: white;")  # 将按钮置灰
-        self.start_button.setEnabled(False)  # 禁用按钮
-        self.start_server()  # 调用现有的启动服务器逻辑
+        self.start_server()
+
+    def _server_is_busy(self):
+        return self._server_task is not None and not self._server_task.done()
+
+    def _update_start_button(self):
+        busy = self._server_is_busy()
+        remote_enabled = self.enable_remote_checkbox.isChecked()
+        remote_address = self.remote_address_edit.text()
+        valid = bool(self.ip_combobox.currentText()) and (
+            not remote_enabled or self.validate_ip_address(remote_address)
+        )
+        self.start_button.setEnabled(not busy and valid)
+        if busy:
+            text_key = "network_tab.started" if self._server_started else "network_tab.starting"
+        else:
+            text_key = "network_tab.start_failed" if self._server_error else "network_tab.connect"
+        self.start_button.setText(str(_(text_key)))
+        color = "grey" if busy or not valid else "red" if self._server_error else "green"
+        self.start_button.setStyleSheet(f"background-color: {color}; color: white;")
+
+        for widget in (self.ip_combobox, self.port_spinbox, self.osc_auto_checkbox,
+                       self.osc_port_spinbox, self.enable_remote_checkbox):
+            widget.setEnabled(not busy)
+        self.remote_address_edit.setEnabled(not busy and remote_enabled)
+        self.get_public_ip_button.setEnabled(not busy and remote_enabled)
+
+    def _update_osc_mode_visibility(self):
+        manual = not self.osc_auto_checkbox.isChecked()
+        self.osc_port_spinbox.setVisible(manual)
+        self.form_layout.labelForField(self.osc_port_spinbox).setVisible(manual)
+
+    def on_osc_mode_changed(self, _checked):
+        self._update_osc_mode_visibility()
+        self.save_network_settings()
+        self.refresh_osc_status()
+
+    def refresh_osc_status(self):
+        service = self.oscquery_service
+        if service and service.is_running:
+            ports = str(_("network_tab.osc_auto_ports")).format(
+                http_port=service.http_port, osc_port=service.osc_port
+            )
+            if service.vrc_discovered:
+                host, port = service.get_vrc_client().endpoint
+                target = str(_("network_tab.osc_vrc_target")).format(host=host, port=port)
+            else:
+                target = str(_("network_tab.osc_waiting"))
+            text = f"{ports}\n{target}"
+        elif self._osc_transport:
+            host, port = self._osc_transport.get_extra_info("sockname")[:2]
+            text = str(_("network_tab.osc_manual_ports")).format(host=host, port=port)
+        elif self._server_error:
+            text = str(_("network_tab.server_error")).format(error=self._server_error)
+        elif self._server_is_busy():
+            text = str(_("network_tab.starting"))
+        else:
+            text = str(_("network_tab.osc_not_started"))
+        self.osc_status_label.setText(text)
+
+    def _report_server_error(self, error):
+        self._server_error = str(error)
+        error_message = str(_("network_tab.server_error")).format(error=error)
+        logger.error(error_message)
+        self.main_window.log_viewer_tab.log_text_edit.append(f"ERROR: {error_message}")
+
+    def _server_task_finished(self, task):
+        if task is not self._server_task:
+            return
+        try:
+            task.result()
+        except asyncio.CancelledError:
+            pass
+        except Exception as exc:
+            self._report_server_error(exc)
+        self._server_task = None
+        self._server_started = False
+        self._osc_status_timer.stop()
+        self._update_start_button()
+        self.refresh_osc_status()
 
     def start_server(self):
         """启动 WebSocket 服务器"""
+        if self._server_is_busy():
+            return
         # 验证远程地址（如果启用）
         if self.enable_remote_checkbox.isChecked():
             remote_address = self.remote_address_edit.text()
-            if remote_address and not self.validate_ip_address(remote_address):
-                error_msg = "远程地址格式无效，无法启动服务器"
-                logger.error(error_msg)
-                from PySide6.QtWidgets import QMessageBox
-                QMessageBox.warning(self, "错误", error_msg)
+            if not self.validate_ip_address(remote_address):
+                self._update_start_button()
                 return
+        if not self.ip_combobox.currentText():
+            self._update_start_button()
+            return
     
         selected_ip = self.ip_combobox.currentText().split(": ")[-1]
         selected_port = self.port_spinbox.value()
-        osc_port = self.osc_port_spinbox.value()
-        logger.info(
-            f"正在启动 WebSocket 服务器，监听地址: {selected_ip}:{selected_port} 和 OSC 数据接收端口: {osc_port}")
+        osc_port = None if self.osc_auto_checkbox.isChecked() else self.osc_port_spinbox.value()
+        self._server_error = None
+        self._server_started = False
+        logger.info("正在启动 WebSocket 服务器，监听地址: %s:%s，OSC 模式: %s",
+                    selected_ip, selected_port, "自动发现" if osc_port is None else f"手动 {osc_port}")
         try:
             loop = asyncio.get_running_loop()
-            loop.create_task(self.run_server(selected_ip, selected_port, osc_port))
-            logger.info('WebSocket 服务器已启动')
-            # After starting the server, connect the addresses_updated signal
-            self.main_window.osc_parameters_tab.addresses_updated.connect(self.update_osc_mappings)
-            # 启动成功后，将按钮设为灰色并禁用
-            self.start_button.setText("已启动")
-            self.start_button.setStyleSheet("background-color: grey; color: white;")
-            self.start_button.setEnabled(False)
-        except OSError as e:
-            error_message = f"启动服务器失败: {str(e)}"
-            # Log the error with error level
-            logger.error(error_message)
-            # Update the UI to reflect the error
-            self.start_button.setText("启动失败,请重试")
-            self.start_button.setStyleSheet("background-color: red; color: white;")
-            self.start_button.setEnabled(True)
-            # 记录异常日志
-            logger.error(f"服务器启动过程中发生异常: {str(e)}")
+            self._server_task = loop.create_task(self.run_server(selected_ip, selected_port, osc_port))
+            self._server_task.add_done_callback(self._server_task_finished)
+            self._osc_status_timer.start()
+        except Exception as exc:
+            self._report_server_error(exc)
+        self._update_start_button()
+        self.refresh_osc_status()
 
-    async def run_server(self, ip: str, port: int, osc_port: int):
+    async def run_server(self, ip: str, port: int, osc_port: int | None):
         """运行服务器并启动OSC服务器"""
+        controller = None
+        osc_client = None
         try:
             async with DGLabWSServer(ip, port, 60) as server:
                 client = server.new_local_client()
@@ -310,23 +402,17 @@ class NetworkConfigTab(QWidget):
                 qrcode_image = self.generate_qrcode(url)
                 self.update_qrcode(qrcode_image)
 
-                # 启动本地 OSCQuery 服务；VRChat 不需要先启动，发现循环会持续等待。
-                osc_client = None
-                try:
+                # 自动模式持续等待 VRChat；启动失败时报告错误，由用户决定是否使用手动模式。
+                if osc_port is None:
                     from services.oscquery_service import OSCQueryService
                     self.oscquery_service = OSCQueryService("DG-LAB-VRCOSC")
                     dynamic_osc_port = await self.oscquery_service.start(self.dispatcher)
                     osc_client = self.oscquery_service.get_vrc_client()
                     logger.info(f"OSCQuery 服务已启动 - 监听 127.0.0.1:{dynamic_osc_port}，等待 VRChat 自动发现")
-                except Exception as e:
-                    logger.warning(f"OSCQuery 启动失败: {e}，回退到固定端口 {osc_port}")
-                    if self.oscquery_service:
-                        await self.oscquery_service.stop()
-                    self.oscquery_service = None
-
-                    # 回退到固定端口模式；仅允许本机 VRChat 访问。
+                else:
+                    # 显式手动模式；仅允许本机 VRChat 访问。
                     osc_server_instance = osc_server.AsyncIOOSCUDPServer(
-                        ("127.0.0.1", osc_port), self.dispatcher, asyncio.get_event_loop()
+                        ("127.0.0.1", osc_port), self.dispatcher, asyncio.get_running_loop()
                     )
                     osc_transport, osc_protocol = await osc_server_instance.create_serve_endpoint()
                     logger.info(f"使用固定端口模式 - OSC 服务器监听 127.0.0.1:{osc_port}")
@@ -345,10 +431,16 @@ class NetworkConfigTab(QWidget):
                 self.main_window.controller_settings_tab.sync_from_controller()
 
                 # 连接 addresses_updated 信号到 update_osc_mappings 方法
-                self.main_window.osc_parameters_tab.addresses_updated.connect(self.update_osc_mappings)
+                if not self._mappings_connected:
+                    self.main_window.osc_parameters_tab.addresses_updated.connect(self.update_osc_mappings)
+                    self._mappings_connected = True
                 # 初始化 OSC 映射，包括面板控制和自定义地址
+                self._clear_osc_mappings()
                 self.update_osc_mappings(controller)
                 self.main_window.sps_config_tab.schedule_auto_refresh("osc_started", delay_ms=1000)
+                self._server_started = True
+                self._update_start_button()
+                self.refresh_osc_status()
 
                 # Start the data processing loop
                 async for data in client.data_generator():
@@ -380,24 +472,35 @@ class NetworkConfigTab(QWidget):
                         logger.info(f"获取到状态码：{RetCode}")
 
                 # OSCQuery/UDP 资源在 finally 中清理
-        except OSError as e:
-            # Handle specific errors and log them
-            error_message = f"WebSocket 服务器启动失败: {str(e)}"
-            logger.error(error_message)
-
-            # 启动过程中发生异常，恢复按钮状态为可点击的红色
-            self.start_button.setText("启动失败，请重试")
-            self.start_button.setStyleSheet("background-color: red; color: white;")
-            self.start_button.setEnabled(True)
-            self.main_window.log_viewer_tab.log_text_edit.append(f"ERROR: {error_message}")
+        except Exception as exc:
+            self._report_server_error(exc)
         finally:
-            if self.oscquery_service:
-                await self.oscquery_service.stop()
-                self.oscquery_service = None
-            if self._osc_transport:
-                self._osc_transport.close()
-                self._osc_transport = None
-                self._osc_protocol = None
+            try:
+                if controller:
+                    await controller.close()
+            finally:
+                try:
+                    if self.oscquery_service:
+                        await self.oscquery_service.stop()
+                finally:
+                    self.oscquery_service = None
+                    if self._osc_transport:
+                        self._osc_transport.close()
+                        self._osc_transport = None
+                        self._osc_protocol = None
+                    if osc_port is not None and osc_client:
+                        osc_client.close()
+                    if controller:
+                        if self.main_window.controller is controller:
+                            self.main_window.controller = None
+                        self._clear_osc_mappings()
+                        self.update_connection_status(False)
+                    self._server_started = False
+                    self._osc_status_timer.stop()
+                    self.original_qrcode_pixmap = None
+                    self.qrcode_label.clear()
+                    self._update_start_button()
+                    self.refresh_osc_status()
 
 
 
@@ -479,18 +582,30 @@ class NetworkConfigTab(QWidget):
     def update_osc_mappings(self, controller=None):
         if controller is None:
             controller = self.main_window.controller
-        asyncio.run_coroutine_threadsafe(self._update_osc_mappings(controller), asyncio.get_event_loop())
+        if controller is None:
+            return
+        self._update_osc_mappings(controller)
 
-    async def _update_osc_mappings(self, controller):
+    def _clear_osc_mappings(self):
+        for handlers in (self.osc_address_handlers, self.panel_control_handlers, self.sps_control_handlers):
+            for address, registered in handlers.items():
+                for handler in registered if isinstance(registered, list) else [registered]:
+                    self.dispatcher.unmap(address, handler)
+            handlers.clear()
+
+    def _update_osc_mappings(self, controller):
         # 首先，移除之前的自定义 OSC 地址映射
-        for address, handler in self.osc_address_handlers.items():
-            self.dispatcher.unmap(address, handler)
+        for address, handlers in self.osc_address_handlers.items():
+            for handler in handlers:
+                self.dispatcher.unmap(address, handler)
         self.osc_address_handlers.clear()
 
         # 添加新的自定义 OSC 地址映射
         osc_addresses = self.main_window.get_osc_addresses()
         for addr in osc_addresses:
             address = addr['address']
+            if not address:
+                continue
             channels = addr['channels']
             # 确保有映射范围参数
             mapping_ranges = addr.get('mapping_ranges', {
@@ -502,7 +617,7 @@ class NetworkConfigTab(QWidget):
                                         channels=channels,
                                         mapping_ranges=mapping_ranges)
             self.dispatcher.map(address, handler)
-            self.osc_address_handlers[address] = handler
+            self.osc_address_handlers.setdefault(address, []).append(handler)
         logger.info("OSC dispatcher mappings updated with custom addresses.")
 
         # 确保面板控制的 OSC 地址映射被添加（如果尚未添加）
@@ -595,6 +710,10 @@ class NetworkConfigTab(QWidget):
                             label_widget.setText(str(_("network_tab.websocket_port")) + ":")
                         elif field_widget == self.osc_port_spinbox:
                             label_widget.setText(str(_("network_tab.osc_port")) + ":")
+                        elif field_widget == self.osc_auto_checkbox:
+                            label_widget.setText(str(_("network_tab.osc_mode")) + ":")
+                        elif field_widget == self.osc_status_label:
+                            label_widget.setText(str(_("network_tab.osc_status")) + ":")
                         elif field_widget == self.connection_status_label:
                             label_widget.setText(str(_("network_tab.status")) + ":")
                     # 处理布局类型的字段（如remote_address_layout）
@@ -610,41 +729,22 @@ class NetworkConfigTab(QWidget):
             self.connection_status_label.setText(str(_("network_tab.offline")))
 
         # 更新按钮文本
-        if self.start_button.isEnabled():
-            self.start_button.setText(str(_("network_tab.connect")))
-        else:
-            self.start_button.setText(str(_("network_tab.disconnect")))
+        self._update_start_button()
+        self.refresh_osc_status()
 
         # 更新语言标签
         self.language_label.setText(str(_("main.settings.language")) + ":")
 
         # 更新复选框和按钮文本
         self.enable_remote_checkbox.setText(str(_("network_tab.enable_remote")))
+        self.osc_auto_checkbox.setText(str(_("network_tab.osc_auto")))
         self.get_public_ip_button.setText(str(_("network_tab.get_public_ip")))
         self.remote_address_edit.setPlaceholderText(_("network_tab.please_enter_valid_ip"))
 
     def on_remote_enabled_changed(self, state):
         """处理开启异地复选框状态变化"""
         is_enabled = bool(state)
-        self.remote_address_edit.setEnabled(is_enabled)
-        self.get_public_ip_button.setEnabled(is_enabled)
-        
-        # 检查远程地址的有效性
-        if is_enabled:
-            remote_address = self.remote_address_edit.text()
-            if remote_address and not self.validate_ip_address(remote_address):
-                # 如果远程地址无效，禁用启动按钮
-                self.start_button.setEnabled(False)
-                self.start_button.setStyleSheet("background-color: grey; color: white;")
-            else:
-                # 远程地址有效或为空，启用启动按钮
-                self.start_button.setEnabled(True)
-                self.start_button.setStyleSheet("background-color: green; color: white;")
-        else:
-            # 未启用远程连接时恢复启动按钮状态
-            self.start_button.setEnabled(True)
-            self.start_button.setStyleSheet("background-color: green; color: white;")
-        
+        self.on_remote_address_changed(self.remote_address_edit.text())
         # 保存设置
         self.main_window.settings['enable_remote'] = is_enabled
         self.save_network_settings()
@@ -700,19 +800,12 @@ class NetworkConfigTab(QWidget):
                         padding: 2px;
                     }
                 """)
-                # 禁用启动按钮
-                self.start_button.setEnabled(False)
-                self.start_button.setStyleSheet("background-color: grey; color: white;")
             else:
                 # IP地址格式有效时恢复正常边框
                 self.remote_address_edit.setStyleSheet("")
-                # 启用启动按钮
-                self.start_button.setEnabled(True)
-                self.start_button.setStyleSheet("background-color: green; color: white;")
                 # 保存设置
                 self.save_network_settings()
         else:
             # 未启用远程连接或地址为空时恢复正常状态
             self.remote_address_edit.setStyleSheet("")
-            self.start_button.setEnabled(True)
-            self.start_button.setStyleSheet("background-color: green; color: white;")
+        self._update_start_button()

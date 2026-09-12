@@ -113,6 +113,19 @@ class DGLabController:
             }
         }
 
+    async def close(self):
+        """Release this session's background work without sending device commands."""
+        self.app_status_online = False
+        tasks = [
+            task for task in (
+                self.send_status_task, self.send_pulse_task, self.command_processing_task,
+                self.chatbox_toggle_timer, self.mode_toggle_timer,
+            ) if task is not None
+        ]
+        for task in tasks:
+            task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+
     async def periodic_status_update(self):
         """
         周期性通过 ChatBox 发送当前的配置状态

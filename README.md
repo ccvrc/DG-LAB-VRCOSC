@@ -29,10 +29,18 @@
 
 1. 下载 [release](https://github.com/ccvrc/DG-LAB-VRCOSC/releases) 中最新版本的 `DG-LAB-VRCOSC.zip`，解压后运行
 2. 点击主界面的 `启动` 来生成二维码，然后使用 DG-LAB APP 连接 DG-LAB 3.0 主机，点击 APP 中的 `SOCKET控制` 然后扫描此处二维码连接设备。
-3. 如果遇到问题，可以通过日志排查。建议检查网卡和端口是否设置正确，修改后再次尝试启动。
+3. 在 VRChat 中开启 OSC。网络配置默认启用「自动发现 VRChat（OSCQuery）」：程序自动分配接收端口并发现本机 VRChat 的发送目标，无需填写 OSC 端口或设置 `--osc` 启动参数。程序和 VRChat 的启动顺序不限。
+4. 如果遇到问题，可以查看网络配置中的 OSC 状态和日志。网卡及 WebSocket 端口用于 DG-LAB APP 扫码连接，与 VRChat 的自动 OSC 端口独立。
 
 > 注意：你需要修改你使用的模型，才能让此程序与游戏中的 avatar 联动。
 > ToN 游戏支持不需要修改模型，只需按上面的说明启用 ToNSaveManager 的 WebSocket API 接口即可。
+
+### OSC 自动发现
+
+- 自动模式显示程序实际监听的 UDP/HTTP 端口和已发现的 VRChat OSC 目标。VRChat 重启或改变端口后，程序会重新发现；等待发现不代表 DG-LAB APP 已连接。
+- 发现通过本机 mDNS/OSCQuery 完成，并在 mDNS 无结果时使用 VRChat 本地日志作为候选。仅连接当前电脑上的 VRChat。
+- 若自动服务启动失败，界面会显示错误并允许重试。需要兼容旧的固定端口配置时，可取消自动发现，手动设置接收端口；此时 VRChat 的输出端口应与该端口一致，程序向 VRChat 的发送目标为 `127.0.0.1:9000`。
+- 参考 [VRCFaceTracking 的 OSCQuery/mDNS 实现](https://github.com/benaclejames/VRCFaceTracking/blob/6432e6a8d85fa7ec5115fc725c6abcb6dbdd4f35/VRCFaceTracking.Core/Services/OscQueryService.cs)与 [VRChat 官方 OSCQuery 文档](https://github.com/vrchat-community/osc/wiki/OSCQuery)。接收订阅保留 `/avatar` 子树；发送端口读取 VRChat 的 `HOST_INFO.OSC_PORT`，缺省时按协议采用 HTTP 服务端口。
 
 ## 问题反馈
 
@@ -81,6 +89,15 @@ Artworks by Wanlin
 # 2. 安装项目依赖
 pip install -r requirements.txt
 ```
+
+### 本地回归测试
+
+```bash
+pip install pytest
+python -m pytest -q
+```
+
+测试使用无窗口 Qt 控件和本机模拟的 HTTP/UDP 服务，覆盖参数编辑、日志线程、OSC 回调、自动发现、晚启动、端口变化和服务清理。测试不广播 mDNS，不连接真实 VRChat 或 DG-LAB 设备；真实游戏发现、防火墙和设备效果仍需在实际环境验证。
 
 ### 构建步骤
 ```bash
