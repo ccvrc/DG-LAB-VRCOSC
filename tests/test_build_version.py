@@ -13,7 +13,7 @@ POWERSHELL = shutil.which("pwsh") or shutil.which("powershell")
 pytestmark = pytest.mark.skipif(not POWERSHELL, reason="PowerShell is not installed")
 
 
-def generate(tmp_path, overrides):
+def generate(tmp_path, overrides, repository=PROJECT_ROOT):
     version_file = tmp_path / "version.py"
     version_file.write_text('VERSION = "v1.2.3"\n', encoding="utf-8")
     metadata_file = tmp_path / "build-info.json"
@@ -34,7 +34,7 @@ def generate(tmp_path, overrides):
         [POWERSHELL, "-NoProfile", "-ExecutionPolicy", "Bypass", "-File",
          str(PROJECT_ROOT / "generate_version.ps1"), "-OutputFile", str(version_file),
          "-MetadataFile", str(metadata_file)],
-        cwd=PROJECT_ROOT, env=environment, capture_output=True, text=True,
+        cwd=repository, env=environment, capture_output=True, text=True,
         encoding="utf-8", errors="replace", timeout=30,
     )
     metadata = json.loads(metadata_file.read_text(encoding="utf-8")) if metadata_file.exists() else None
@@ -92,3 +92,42 @@ def test_local_build_is_identified_as_local(tmp_path):
     assert metadata["channel"] == "local"
     assert metadata["version"].startswith("v1.2.3+local.")
     assert metadata["run_id"] == 0
+
+
+@pytest.fixture
+def detached_repository(tmp_path):
+    """Use a real detached checkout without changing the project's own HEAD."""
+    repository = tmp_path / "detached-repository"
+    empty_hooks = tmp_path / "empty-hooks"
+    empty_hooks.mkdir()
+
+    def git(*arguments):
+        return subprocess.run(
+            ["git", "-c", f"core.hooksPath={empty_hooks}", *arguments],
+            cwd=repository if repository.exists() else tmp_path,
+            check=True, capture_output=True, text=True, encoding="utf-8", timeout=15,
+        ).stdout.strip()
+
+    git("init", "--quiet", f"--template={empty_hooks}", str(repository))
+    git("-c", "user.name=Build metadata test", "-c", "user.email=build-test@example.invalid",
+        "-c", "commit.gpgsign=false", "commit", "--quiet", "--allow-empty", "-m", "Test fixture")
+    git("checkout", "--quiet", "--detach", "HEAD")
+    assert git("branch", "--show-current") == ""
+    return repository, git("rev-parse", "HEAD")
+
+
+@pytest.mark.parametrize("overrides,channel,branch,version", [
+    ({"GITHUB_ACTIONS": "false"}, "local", "HEAD", None),
+    ({}, "actions", "master", "v1.2.3.dev42"),
+    ({"GITHUB_REF_TYPE": "tag", "GITHUB_REF": "refs/tags/v1.2.3", "GITHUB_REF_NAME": "v1.2.3"},
+     "stable", "v1.2.3", "v1.2.3"),
+])
+def test_detached_checkout_generates_local_and_ci_builds(tmp_path, detached_repository,
+                                                       overrides, channel, branch, version):
+    repository, commit = detached_repository
+    result, metadata, _ = generate(tmp_path, overrides, repository=repository)
+    assert result.returncode == 0, result.stderr
+    assert metadata["channel"] == channel
+    assert metadata["branch"] == branch
+    assert metadata["commit"] == commit
+    assert metadata["version"] == (version or f"v1.2.3+local.{commit[:8]}")

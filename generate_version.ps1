@@ -20,7 +20,13 @@ $shortHash = $commitHash.Substring(0, 8)
 $version = "$baseVersion+local.$shortHash"
 $channel = 'local'
 $branch = [string](git branch --show-current)
-$branch = $branch.Trim()
+# A detached checkout emits no output, which PowerShell can preserve as null
+# even through the string cast. CI replaces this fallback with its event ref.
+if ([string]::IsNullOrWhiteSpace($branch)) {
+    $branch = 'HEAD'
+} else {
+    $branch = $branch.Trim()
+}
 $repository = 'ccvrc/DG-LAB-VRCOSC'
 $runId = 0L
 $runNumber = 0L

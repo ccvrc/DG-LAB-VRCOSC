@@ -5,8 +5,48 @@ param(
     [switch]$NoRestart
 )
 $ErrorActionPreference = 'Stop'
-$stageRoot = (Resolve-Path -LiteralPath $StagePath).Path
-$installRoot = (Resolve-Path -LiteralPath $InstallPath).Path
+# Resolve-Path and .NET GetFullPath do not consistently expand 8.3 aliases on
+# every Windows runtime. Use the same long spelling for all directory checks.
+Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+using System.Text;
+using Microsoft.Win32.SafeHandles;
+public static class DGLabUpdateNativePath {
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    public static extern SafeFileHandle CreateFileW(string path, uint access, uint share,
+        IntPtr security, uint disposition, uint flags, IntPtr template);
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    public static extern uint GetFinalPathNameByHandleW(SafeFileHandle handle,
+        StringBuilder buffer, uint size, uint flags);
+}
+'@
+function Get-CanonicalDirectory([string]$Path) {
+    $resolved = [IO.Path]::GetFullPath((Resolve-Path -LiteralPath $Path).ProviderPath)
+    # Opening the directory itself also works when a user's account cannot list
+    # an ancestor; expanding aliases by enumerating every parent can fail there.
+    $handle = [DGLabUpdateNativePath]::CreateFileW($resolved, 0, 7, [IntPtr]::Zero,
+        3, 0x02000000, [IntPtr]::Zero)
+    try {
+        if ($handle.IsInvalid) {
+            throw (New-Object ComponentModel.Win32Exception ([Runtime.InteropServices.Marshal]::GetLastWin32Error()))
+        }
+        $buffer = New-Object Text.StringBuilder 32768
+        $length = [DGLabUpdateNativePath]::GetFinalPathNameByHandleW($handle, $buffer, $buffer.Capacity, 0)
+        if ($length -eq 0) {
+            throw (New-Object ComponentModel.Win32Exception ([Runtime.InteropServices.Marshal]::GetLastWin32Error()))
+        }
+        if ($length -ge $buffer.Capacity) { throw 'The update directory path is too long' }
+        $canonical = $buffer.ToString()
+        if ($canonical.StartsWith('\\?\UNC\')) { $canonical = '\\' + $canonical.Substring(8) }
+        elseif ($canonical.StartsWith('\\?\')) { $canonical = $canonical.Substring(4) }
+        return [IO.Path]::GetFullPath($canonical)
+    } finally {
+        $handle.Dispose()
+    }
+}
+$stageRoot = Get-CanonicalDirectory $StagePath
+$installRoot = Get-CanonicalDirectory $InstallPath
 $backupRoot = Join-Path $stageRoot 'backup'
 $installed = @()
 $backedUp = @()
@@ -56,11 +96,12 @@ try {
     }
     # Only remove the private temp directory created by this updater. Never
     # recursively remove an arbitrary path supplied on the command line.
-    $workRoot = [IO.Path]::GetFullPath((Split-Path -Parent $stageRoot))
-    $tempRoot = [IO.Path]::GetFullPath([IO.Path]::GetTempPath()).TrimEnd('\')
+    $workRoot = Get-CanonicalDirectory (Split-Path -Parent $stageRoot)
+    $tempRoot = (Get-CanonicalDirectory ([IO.Path]::GetTempPath())).TrimEnd('\')
     if ((Split-Path -Leaf $stageRoot) -eq 'stage' -and
         (Split-Path -Leaf $workRoot) -like 'dglab-update-*' -and
         (Split-Path -Parent $workRoot).TrimEnd('\') -eq $tempRoot -and
+        $installRoot -ne $workRoot -and
         -not $installRoot.StartsWith($workRoot + '\', [StringComparison]::OrdinalIgnoreCase)) {
         Remove-Item -LiteralPath $workRoot -Recurse -Force -ErrorAction SilentlyContinue
     }
