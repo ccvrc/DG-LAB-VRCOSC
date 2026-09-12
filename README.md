@@ -128,16 +128,16 @@ python scripts/smoke_test_build.py dist/DG-LAB-VRCOSC.exe
 
 ### 创建发布标签
 
-先将 `src/version.py` 设置为待发布版本并提交到 `master`。下例使用 `v0.4.9`；标签必须与源码版本一致。
+先将 `src/version.py` 设置为待发布版本并提交到 `master`。下例使用 `v0.4.10`；标签必须与源码版本一致。
 
 ```bash
 # 1. 创建版本标签 (格式: vMAJOR.MINOR.PATCH)
-git tag v0.4.9
+git tag v0.4.10
 
 # 2. 推送标签到远程仓库
-git push origin v0.4.9
+git push origin v0.4.10
 ```
 
 推送正式版本标签后，GitHub Actions 自动运行测试、构建 Windows EXE，并创建正式 Release，上传 `DG-LAB-VRCOSC.zip` 和 `build-info.json`。ZIP 根目录包含 EXE 和同一份构建信息，可直接解压运行。
 
-每次推送 `master` 也会自动测试、打包并发布独立的预发布版本，标签格式为 `build-运行ID-重试次数`，版本号格式为 `v0.4.9.dev构建编号`。它们不会占用正式 Release 的 Latest 标记，也不会覆盖已有标签或包。其他分支、PR 和手动运行只上传 Artifact。发布使用工作流自身的 `GITHUB_TOKEN`，只有发布任务具有 `contents: write` 权限，不需要额外密钥或自建服务器。
+每次推送 `master` 也会自动测试、打包并发布独立的预发布版本，标签格式为 `build-运行ID-重试次数`，版本号格式为 `v0.4.10.dev构建编号`。它们不会占用正式 Release 的 Latest 标记，也不会覆盖已有标签或包。其他分支、PR 和手动运行只上传 Artifact。发布使用工作流自身的 `GITHUB_TOKEN`，只有发布任务具有 `contents: write` 权限，不需要额外密钥或自建服务器。
