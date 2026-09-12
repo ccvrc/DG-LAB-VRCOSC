@@ -42,7 +42,7 @@
 - **正式 Release（默认）**：只检查最新正式发布版本，忽略预发布构建。
 - **Actions 最新构建（可选）**：检查 `master` 分支通过测试并完成打包的最新自动构建，适合提前使用尚未发布的修改。失败的构建、PR 和其他分支不会进入这个通道。
 
-检查到更新后，由用户确认下载并安装。选择不同通道后可以手动检查更新；切回正式 Release 时，可从开发构建返回最新正式版本。安装会替换程序文件并保留同目录的用户配置。源码运行时，更新按钮打开相应 GitHub 发布页面。
+检查到更新后，由用户确认下载并安装。选择不同通道后可以手动检查更新；切回正式 Release 时，可安装相同基础版本或更高版本的正式包，不会自动降级到更早版本。安装会替换程序文件并保留同目录的用户配置。源码运行时，更新按钮打开相应 GitHub 发布页面。
 
 Actions 构建会同时保存在 [工作流 Artifacts](https://github.com/ccvrc/DG-LAB-VRCOSC/actions/workflows/build-python-app.yml) 和带有 `build-` 标签的 [GitHub 预发布页面](https://github.com/ccvrc/DG-LAB-VRCOSC/releases)。程序下载的是同一次构建的公开 Release 附件，因此无需登录 GitHub 或填写访问令牌。网络需要能够访问 GitHub；访问失败时会显示错误，不会切换到第三方镜像。
 
@@ -116,10 +116,13 @@ python -m pytest -q
 ./generate_version.ps1
 
 # 4. 构建可执行文件
-pyinstaller DG-LAB-VRCOSC.spec
+python scripts/build.py --clean
+
+# 5. 验证打包程序可初始化（不开启 OSC 或设备连接）
+python scripts/smoke_test_build.py dist/DG-LAB-VRCOSC.exe
 ```
 
-版本生成脚本同时生成 `src/build-info.json`，记录版本、更新通道、提交和 Actions 运行编号。PyInstaller 会把它以及更新安装脚本内嵌到 EXE。自行构建时先运行版本生成脚本；生成的 JSON 不提交到 Git。
+版本生成脚本同时生成 `src/build-info.json`，记录版本、更新通道、提交和 Actions 运行编号。PyInstaller 会把它以及更新安装脚本内嵌到 EXE。自行构建时先运行版本生成脚本；生成的 JSON 不提交到 Git。构建脚本会隔离 Windows DLL 搜索路径，避免误打包其他工具的 ICU/OpenSSL 库。发布前还会在临时目录运行打包程序，确认界面初始化成功。
 
 ## 构建发布版本
 

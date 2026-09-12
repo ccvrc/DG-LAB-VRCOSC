@@ -206,6 +206,7 @@ if __name__ == "__main__":
 
     window = MainWindow()
     window.show()
+    logger.info("Application startup complete")
 
     # 在事件循环启动后安排 auto_update_check
     async def start_auto_update():

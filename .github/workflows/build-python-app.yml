@@ -57,7 +57,9 @@ jobs:
           "version=$($metadata.version)" >> $env:GITHUB_OUTPUT
           "channel=$($metadata.channel)" >> $env:GITHUB_OUTPUT
       - name: Build with PyInstaller
-        run: python -m PyInstaller --clean --noconfirm DG-LAB-VRCOSC.spec
+        run: python scripts/build.py --clean
+      - name: Smoke test the packaged application
+        run: python scripts/smoke_test_build.py dist/DG-LAB-VRCOSC.exe
       - name: Package the executable and metadata
         run: |
           Copy-Item -LiteralPath src/build-info.json -Destination dist/build-info.json
