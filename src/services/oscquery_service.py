@@ -22,7 +22,7 @@ from pythonosc.osc_server import AsyncIOOSCUDPServer
 from zeroconf import ServiceInfo
 from zeroconf.asyncio import AsyncZeroconf
 
-from services.vrchat_oscquery_inspector import discover_vrchat_oscquery
+from services.vrchat_oscquery_inspector import discover_vrchat_oscquery, vrchat_osc_endpoint
 
 logger = logging.getLogger(__name__)
 
@@ -34,15 +34,9 @@ MDNS_ADDRESS = "224.0.0.251"
 MDNS_PORT = 5353
 
 
-def _unused_tcp_port(host: str = LOOPBACK_HOST) -> int:
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-        sock.bind((host, 0))
-        return int(sock.getsockname()[1])
-
-
 def _normalise_local_host(host: Any) -> str:
     value = str(host or "").strip()
-    if value in {"", "0.0.0.0", "::", "::1", "localhost"}:
+    if value in {"", "0.0.0.0", "::", "localhost"}:
         return LOOPBACK_HOST
     return value
 
@@ -170,9 +164,10 @@ class DynamicVRChatOSCClient:
     """Small send_message-compatible wrapper whose destination can be updated."""
 
     def __init__(self, host: str = LOOPBACK_HOST, port: int = VRC_DEFAULT_OSC_PORT):
-        self._host = _normalise_local_host(host)
-        self._port = int(port)
-        self._client = udp_client.SimpleUDPClient(self._host, self._port)
+        self._host = ""
+        self._port = 0
+        self._client = None
+        self.set_endpoint(host, port)
 
     @property
     def endpoint(self) -> tuple[str, int]:
@@ -180,17 +175,26 @@ class DynamicVRChatOSCClient:
 
     def set_endpoint(self, host: str, port: int) -> bool:
         host = _normalise_local_host(host)
-        port = int(port)
-        if self._host == host and self._port == port:
+        if isinstance(port, bool) or not isinstance(port, int) or not 1 <= port <= 65535:
+            raise ValueError("OSC port must be an integer between 1 and 65535")
+        if self._client is not None and self._host == host and self._port == port:
             return False
 
+        client = udp_client.SimpleUDPClient(host, port)
+        self.close()
         self._host = host
         self._port = port
-        self._client = udp_client.SimpleUDPClient(self._host, self._port)
+        self._client = client
         return True
 
     def send_message(self, address: str, value: Any):
-        self._client.send_message(address, value)
+        if self._client is not None:
+            self._client.send_message(address, value)
+
+    def close(self):
+        if self._client is not None:
+            self._client.close()
+            self._client = None
 
 
 class OSCQueryService:
@@ -233,6 +237,7 @@ class OSCQueryService:
 
         self._dispatcher = dispatcher
         try:
+            self._vrc_client.set_endpoint(LOOPBACK_HOST, VRC_DEFAULT_OSC_PORT)
             await self._start_osc_server(dispatcher)
             await self._start_http_server()
             await self._register_mdns()
@@ -251,17 +256,18 @@ class OSCQueryService:
                 self._osc_port,
             )
             return int(self._osc_port)
-        except Exception:
+        except (Exception, asyncio.CancelledError):
             await self.stop()
             raise
 
     async def stop(self):
         self._running = False
+        self._discovery_had_success = False
 
         for task in (self._rebroadcast_task, self._discovery_task):
             if task:
                 task.cancel()
-                with contextlib.suppress(asyncio.CancelledError):
+                with contextlib.suppress(asyncio.CancelledError, Exception):
                     await task
         self._rebroadcast_task = None
         self._discovery_task = None
@@ -287,6 +293,7 @@ class OSCQueryService:
         self._osc_protocol = None
         self._osc_port = None
         self._http_port = None
+        self._vrc_client.close()
 
     def get_vrc_client(self) -> DynamicVRChatOSCClient:
         return self._vrc_client
@@ -303,6 +310,10 @@ class OSCQueryService:
     def http_port(self) -> Optional[int]:
         return self._http_port
 
+    @property
+    def vrc_discovered(self) -> bool:
+        return self._discovery_had_success
+
     async def _start_osc_server(self, dispatcher: Dispatcher):
         osc_server = AsyncIOOSCUDPServer(
             (LOOPBACK_HOST, 0),
@@ -314,14 +325,16 @@ class OSCQueryService:
         self._osc_port = int(sock.getsockname()[1])
 
     async def _start_http_server(self):
-        self._http_port = _unused_tcp_port()
         app = web.Application()
         app.router.add_get("/{tail:.*}", self._handle_request)
 
         self._http_runner = web.AppRunner(app)
         await self._http_runner.setup()
-        site = web.TCPSite(self._http_runner, LOOPBACK_HOST, self._http_port)
+        # Bind port zero once: probing and then rebinding an unused port races
+        # other OSC applications starting at the same time.
+        site = web.TCPSite(self._http_runner, LOOPBACK_HOST, 0)
         await site.start()
+        self._http_port = int(self._http_runner.addresses[0][1])
 
     async def _register_mdns(self):
         if self._http_port is None or self._osc_port is None:
@@ -381,15 +394,12 @@ class OSCQueryService:
             "EXTENSIONS": {
                 "ACCESS": True,
                 "VALUE": True,
-                "RANGE": True,
-                "DESCRIPTION": True,
-                "TAGS": True,
-                "CRITICAL": True,
-                "CLIPMODE": True,
             },
         }
 
     def _root_node(self) -> dict[str, Any]:
+        # VRChat subscribes by subtree path. ACCESS=0 describes a container with
+        # no value of its own; it does not disable reception of its children.
         return {
             "FULL_PATH": "/",
             "ACCESS": 0,
@@ -478,8 +488,7 @@ class OSCQueryService:
     async def _discover_vrchat_once(self):
         try:
             host, port, host_info = await asyncio.to_thread(discover_vrchat_oscquery, 1.0)
-            osc_host = _normalise_local_host(host_info.get("OSC_IP") or LOOPBACK_HOST)
-            osc_port = int(host_info.get("OSC_PORT") or VRC_DEFAULT_OSC_PORT)
+            osc_host, osc_port = vrchat_osc_endpoint(host, port, host_info)
             changed = self._vrc_client.set_endpoint(osc_host, osc_port)
             if changed or not self._discovery_had_success:
                 logger.info(

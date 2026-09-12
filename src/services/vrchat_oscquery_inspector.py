@@ -1,3 +1,4 @@
+import ipaddress
 import json
 import logging
 import os
@@ -5,6 +6,7 @@ import re
 import socket
 import time
 import urllib.request
+from urllib.parse import quote
 from pathlib import Path
 from typing import Any
 
@@ -13,8 +15,12 @@ _last_successful_candidate: tuple[str, int] | None = None
 
 
 def _http_json(host: str, port: int, path: str, timeout: float = 2.0) -> Any:
-    request = urllib.request.Request(f"http://{host}:{port}{path}", headers={"Accept": "application/json"})
-    with urllib.request.urlopen(request, timeout=timeout) as response:
+    url_host = f"[{quote(host, safe=':')}]" if ":" in host else host
+    request = urllib.request.Request(f"http://{url_host}:{port}{path}", headers={"Accept": "application/json"})
+    # OSCQuery discovery only contacts this computer. System HTTP proxies must
+    # not intercept these requests (especially requests to a local LAN address).
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+    with opener.open(request, timeout=timeout) as response:
         return json.loads(response.read().decode("utf-8"))
 
 
@@ -49,24 +55,60 @@ def _ports_from_logs() -> list[int]:
         except OSError:
             continue
 
-        for pattern in (r"of type OSCQuery on (\d+)", r"OSCQuery.*?on.*?(\d{4,5})"):
-            for match in re.finditer(pattern, text, re.IGNORECASE):
-                port = int(match.group(1))
-                if port not in ports:
-                    ports.append(port)
+        matches = re.finditer(r"\bOSCQuery\b[^\r\n]*?\bon\s+(?:port\s+)?(\d{1,5})(?!\d)", text, re.IGNORECASE)
+        for match in reversed(list(matches)):
+            port = int(match.group(1))
+            if 1 <= port <= 65535 and port not in ports:
+                ports.append(port)
     return ports
 
 
-def _local_ipv4_addresses() -> list[str]:
-    addresses = ["127.0.0.1"]
+def _normalized_address(address: str) -> str | None:
     try:
-        for result in socket.getaddrinfo(socket.gethostname(), None, socket.AF_INET):
+        parsed = ipaddress.ip_address(address.split("%", 1)[0])
+    except ValueError:
+        return None
+    if isinstance(parsed, ipaddress.IPv6Address) and parsed.ipv4_mapped:
+        parsed = parsed.ipv4_mapped
+    return str(parsed) if not parsed.is_unspecified else None
+
+
+def _local_addresses() -> list[str]:
+    addresses = ["127.0.0.1", "::1"]
+    # Hostname resolution may omit some interfaces. psutil is already a project
+    # dependency and gives us the actual local interfaces, including IPv6.
+    try:
+        import psutil
+
+        for interface in psutil.net_if_addrs().values():
+            for item in interface:
+                if item.family in (socket.AF_INET, socket.AF_INET6) and item.address not in addresses:
+                    addresses.append(item.address)
+    except (ImportError, OSError):
+        pass
+    try:
+        for result in socket.getaddrinfo(socket.gethostname(), None, socket.AF_UNSPEC):
             ip = result[4][0]
-            if ip not in addresses and not ip.startswith("169.254."):
+            if ip not in addresses:
                 addresses.append(ip)
     except OSError:
         pass
     return addresses
+
+
+def _local_ipv4_addresses() -> list[str]:
+    return [address for address in _local_addresses() if ":" not in address and _normalized_address(address)]
+
+
+def _is_local_address(address: str, local_addresses: list[str] | None = None) -> bool:
+    normalized = _normalized_address(address)
+    if normalized is None:
+        return False
+    if ipaddress.ip_address(normalized).is_loopback:
+        return True
+    if local_addresses is None:
+        local_addresses = _local_addresses()
+    return normalized in {_normalized_address(local) for local in local_addresses}
 
 
 def _ports_from_mdns(wait_seconds: float = 1.0) -> list[tuple[str, int]]:
@@ -75,22 +117,27 @@ def _ports_from_mdns(wait_seconds: float = 1.0) -> list[tuple[str, int]]:
     except Exception:
         return []
 
+    local_addresses = _local_addresses()
+    deadline = time.monotonic() + max(0.0, wait_seconds)
+
     class Listener(ServiceListener):  # type: ignore[misc]
         def __init__(self):
             self.found: list[tuple[str, int]] = []
 
         def add_service(self, zc: Zeroconf, service_type: str, name: str):
-            if not name.startswith("VRChat-Client-"):
+            if not name.startswith("VRChat-Client-") or time.monotonic() >= deadline:
                 return
             try:
-                info = zc.get_service_info(service_type, name)
+                info = zc.get_service_info(service_type, name, timeout=max(1, int((deadline - time.monotonic()) * 1000)))
             except Exception as exc:
                 logger.debug(f"OSCQuery mDNS service info lookup failed for {name}: {exc}")
                 return
-            if not info:
+            if not info or type(info.port) is not int or not 1 <= info.port <= 65535:
                 return
-            for address in info.parsed_scoped_addresses() or ["127.0.0.1"]:
-                item = (address, int(info.port))
+            for address in info.parsed_scoped_addresses():
+                if not _is_local_address(address, local_addresses):
+                    continue
+                item = (address, info.port)
                 if item not in self.found:
                     self.found.append(item)
 
@@ -101,12 +148,25 @@ def _ports_from_mdns(wait_seconds: float = 1.0) -> list[tuple[str, int]]:
             return
 
     listener = Listener()
-    zeroconf = Zeroconf()
+    zeroconf = None
+    browser = None
     try:
-        ServiceBrowser(zeroconf, "_oscjson._tcp.local.", listener)
-        time.sleep(wait_seconds)
+        zeroconf = Zeroconf()
+        browser = ServiceBrowser(zeroconf, "_oscjson._tcp.local.", listener)
+        time.sleep(max(0.0, deadline - time.monotonic()))
+    except Exception as exc:
+        logger.debug("OSCQuery mDNS discovery unavailable: %s", exc)
     finally:
-        zeroconf.close()
+        if browser is not None:
+            try:
+                browser.cancel()
+            except Exception as exc:
+                logger.debug("OSCQuery mDNS browser cleanup failed: %s", exc)
+        if zeroconf is not None:
+            try:
+                zeroconf.close()
+            except Exception as exc:
+                logger.debug("OSCQuery mDNS cleanup failed: %s", exc)
     return listener.found
 
 
@@ -114,28 +174,68 @@ def _is_vrchat(host_info: Any) -> bool:
     return isinstance(host_info, dict) and str(host_info.get("NAME", "")).startswith("VRChat-Client-")
 
 
+def vrchat_osc_endpoint(host: str, http_port: int, host_info: dict[str, Any]) -> tuple[str, int]:
+    """Resolve OSCQuery's optional endpoint fields for a local UDP peer."""
+    if host_info.get("OSC_TRANSPORT", "UDP") != "UDP":
+        raise ValueError("VRChat OSC transport must be UDP")
+    # OSCQuery defaults to the HTTP address and port when these fields are absent.
+    osc_host = host_info.get("OSC_IP", host)
+    if not isinstance(osc_host, str):
+        raise ValueError("VRChat OSC address must be an IP address")
+    if osc_host in {"0.0.0.0", "::"}:
+        osc_host = host
+    if not _is_local_address(osc_host):
+        raise ValueError("VRChat OSC address must belong to this computer")
+    osc_port = host_info.get("OSC_PORT", http_port)
+    if isinstance(osc_port, bool) or not isinstance(osc_port, int) or not 1 <= osc_port <= 65535:
+        raise ValueError("VRChat OSC port must be an integer between 1 and 65535")
+    return osc_host, osc_port
+
+
 def discover_vrchat_oscquery(timeout: float = 2.0) -> tuple[str, int, dict[str, Any]]:
     global _last_successful_candidate
-    candidates: list[tuple[str, int]] = []
-    if _last_successful_candidate:
-        candidates.append(_last_successful_candidate)
-    for port in _ports_from_logs():
-        candidates.extend((host, port) for host in _local_ipv4_addresses())
-    candidates.extend(_ports_from_mdns())
-
     seen: set[tuple[str, int]] = set()
-    for host, port in candidates:
+
+    def probe(host: str, port: int) -> tuple[str, int, dict[str, Any]] | None:
         if (host, port) in seen:
-            continue
+            return None
         seen.add((host, port))
+        if type(port) is not int or not 1 <= port <= 65535 or not _is_local_address(host):
+            return None
         try:
             host_info = _http_json(host, port, "/?HOST_INFO", timeout)
         except Exception as exc:
             logger.debug(f"OSCQuery candidate failed {host}:{port}: {exc}")
-            continue
+            return None
         if _is_vrchat(host_info):
-            _last_successful_candidate = (host, port)
+            try:
+                vrchat_osc_endpoint(host, port, host_info)
+            except ValueError as exc:
+                logger.debug("OSCQuery candidate has an invalid OSC endpoint %s:%s: %s", host, port, exc)
+                return None
             return host, port, host_info
+        return None
+
+    if _last_successful_candidate:
+        cached = probe(*_last_successful_candidate)
+        if cached:
+            return cached
+        _last_successful_candidate = None
+
+    for host, port in _ports_from_mdns(wait_seconds=min(1.0, max(0.0, timeout))):
+        discovered = probe(host, port)
+        if discovered:
+            _last_successful_candidate = (host, port)
+            return discovered
+
+    ports = _ports_from_logs()
+    local_hosts = _local_ipv4_addresses() if ports else []
+    for port in ports:
+        for host in local_hosts:
+            discovered = probe(host, port)
+            if discovered:
+                _last_successful_candidate = (host, port)
+                return discovered
 
     raise RuntimeError("未能发现 VRChat OSCQuery 服务，请确认 VRChat OSC 已开启")
 
