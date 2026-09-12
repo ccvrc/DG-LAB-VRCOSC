@@ -109,6 +109,7 @@ class NetworkConfigTab(QWidget):
         self.oscquery_service = None
         self._osc_transport = None
         self._osc_protocol = None
+        self._mappings_connected = False
 
         # 添加客户端连接状态标签
         self.connection_status_label = QLabel(str(_("network_tab.offline")))
@@ -274,8 +275,6 @@ class NetworkConfigTab(QWidget):
             loop = asyncio.get_running_loop()
             loop.create_task(self.run_server(selected_ip, selected_port, osc_port))
             logger.info('WebSocket 服务器已启动')
-            # After starting the server, connect the addresses_updated signal
-            self.main_window.osc_parameters_tab.addresses_updated.connect(self.update_osc_mappings)
             # 启动成功后，将按钮设为灰色并禁用
             self.start_button.setText("已启动")
             self.start_button.setStyleSheet("background-color: grey; color: white;")
@@ -345,8 +344,11 @@ class NetworkConfigTab(QWidget):
                 self.main_window.controller_settings_tab.sync_from_controller()
 
                 # 连接 addresses_updated 信号到 update_osc_mappings 方法
-                self.main_window.osc_parameters_tab.addresses_updated.connect(self.update_osc_mappings)
+                if not self._mappings_connected:
+                    self.main_window.osc_parameters_tab.addresses_updated.connect(self.update_osc_mappings)
+                    self._mappings_connected = True
                 # 初始化 OSC 映射，包括面板控制和自定义地址
+                self._clear_osc_mappings()
                 self.update_osc_mappings(controller)
                 self.main_window.sps_config_tab.schedule_auto_refresh("osc_started", delay_ms=1000)
 
@@ -479,18 +481,30 @@ class NetworkConfigTab(QWidget):
     def update_osc_mappings(self, controller=None):
         if controller is None:
             controller = self.main_window.controller
-        asyncio.run_coroutine_threadsafe(self._update_osc_mappings(controller), asyncio.get_event_loop())
+        if controller is None:
+            return
+        self._update_osc_mappings(controller)
 
-    async def _update_osc_mappings(self, controller):
+    def _clear_osc_mappings(self):
+        for handlers in (self.osc_address_handlers, self.panel_control_handlers, self.sps_control_handlers):
+            for address, registered in handlers.items():
+                for handler in registered if isinstance(registered, list) else [registered]:
+                    self.dispatcher.unmap(address, handler)
+            handlers.clear()
+
+    def _update_osc_mappings(self, controller):
         # 首先，移除之前的自定义 OSC 地址映射
-        for address, handler in self.osc_address_handlers.items():
-            self.dispatcher.unmap(address, handler)
+        for address, handlers in self.osc_address_handlers.items():
+            for handler in handlers:
+                self.dispatcher.unmap(address, handler)
         self.osc_address_handlers.clear()
 
         # 添加新的自定义 OSC 地址映射
         osc_addresses = self.main_window.get_osc_addresses()
         for addr in osc_addresses:
             address = addr['address']
+            if not address:
+                continue
             channels = addr['channels']
             # 确保有映射范围参数
             mapping_ranges = addr.get('mapping_ranges', {
@@ -502,7 +516,7 @@ class NetworkConfigTab(QWidget):
                                         channels=channels,
                                         mapping_ranges=mapping_ranges)
             self.dispatcher.map(address, handler)
-            self.osc_address_handlers[address] = handler
+            self.osc_address_handlers.setdefault(address, []).append(handler)
         logger.info("OSC dispatcher mappings updated with custom addresses.")
 
         # 确保面板控制的 OSC 地址映射被添加（如果尚未添加）
