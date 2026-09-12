@@ -2,16 +2,20 @@
 
 import os
 
-block_cipher = None
-
 # 获取项目根目录
 project_root = os.path.dirname(os.path.abspath(SPEC))
+build_metadata = os.path.join(project_root, 'src', 'build-info.json')
+if not os.path.isfile(build_metadata):
+    raise FileNotFoundError('Run generate_version.ps1 before building the executable.')
 
 a = Analysis(
     ['src/app.py'],
     pathex=[os.path.join(project_root, 'src')],
     binaries=[],
     datas=[
+        # Keep build identity inside the executable as well as beside it in the ZIP.
+        (build_metadata, '.'),
+        (os.path.join(project_root, 'src', 'resources', 'install_update.ps1'), 'resources'),
         # 添加翻译文件
         (os.path.join(project_root, 'src', 'locales', 'zh.yml'), 'locales'),
         (os.path.join(project_root, 'src', 'locales', 'en.yml'), 'locales'),
@@ -24,19 +28,15 @@ a = Analysis(
     hooksconfig={},
     runtime_hooks=[],
     excludes=[],
-    win_no_prefer_redirects=False,
-    win_private_assemblies=False,
-    cipher=block_cipher,
     noarchive=False,
 )
 
-pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
+pyz = PYZ(a.pure)
 
 exe = EXE(
     pyz,
     a.scripts,
     a.binaries,
-    a.zipfiles,
     a.datas,
     [],
     name='DG-LAB-VRCOSC',
