@@ -71,12 +71,20 @@ class PackageTests(unittest.TestCase):
             (stage / 'DG-LAB-VRCOSC.exe').write_bytes(b'MZ-new')
             with patch.object(sys, 'frozen', True, create=True), patch.object(sys, '_MEIPASS', str(frozen), create=True), \
                  patch.object(sys, 'executable', str(root / "installed app's" / 'DG-LAB-VRCOSC.exe')), \
+                 patch.dict(os.environ, {'PYINSTALLER_RESET_ENVIRONMENT': '0',
+                                         '_PYI_APPLICATION_HOME_DIR': str(frozen),
+                                         'HTTPS_PROXY': 'http://127.0.0.1:12345'}), \
                  patch.object(installer.subprocess, 'Popen') as launch:
                 installer.launch_installer(stage)
+                self.assertEqual(os.environ['PYINSTALLER_RESET_ENVIRONMENT'], '0')
             args = launch.call_args.args[0]
             self.assertIn('-File', args)
             self.assertIn(str(stage), args)
             self.assertEqual(launch.call_args.kwargs['creationflags'], subprocess.CREATE_NO_WINDOW)
+            child_environment = launch.call_args.kwargs['env']
+            self.assertEqual(child_environment['PYINSTALLER_RESET_ENVIRONMENT'], '1')
+            self.assertEqual(child_environment['HTTPS_PROXY'], 'http://127.0.0.1:12345')
+            self.assertEqual(child_environment['_PYI_APPLICATION_HOME_DIR'], str(frozen))
             copied = Path(args[args.index('-File') + 1])
             self.assertTrue(copied.is_file())
             self.assertNotIn(frozen, copied.parents)
@@ -138,6 +146,55 @@ class DownloadTests(unittest.IsolatedAsyncioTestCase):
             with self.assertRaises(asyncio.CancelledError):
                 await task
         self.assertFalse(stages[0].parent.exists())
+
+
+@unittest.skipUnless(sys.platform == 'win32', 'Windows DLL search path handling')
+class FrozenInstallerLaunchTests(unittest.TestCase):
+    def kernel32(self):
+        library = MagicMock()
+
+        def get_directory(_length, buffer):
+            buffer.value = r'C:\old bundle\_MEI123'
+            return len(buffer.value)
+
+        library.GetDllDirectoryW.side_effect = get_directory
+        library.SetDllDirectoryW.return_value = True
+        return library
+
+    def test_external_helper_does_not_inherit_bundle_dll_path_and_parent_is_restored(self):
+        library = self.kernel32()
+        events = []
+        library.SetDllDirectoryW.side_effect = lambda value: events.append(value) or True
+
+        def launch(*_args, **_kwargs):
+            self.assertEqual(events, [None])
+            return 'helper'
+
+        with patch.object(sys, 'frozen', True, create=True), \
+             patch.object(installer.ctypes, 'WinDLL', return_value=library), \
+             patch.object(installer.subprocess, 'Popen', side_effect=launch):
+            self.assertEqual(installer._spawn_installer(['powershell.exe'], {}), 'helper')
+        self.assertEqual(events, [None, r'C:\old bundle\_MEI123'])
+
+    def test_launch_failure_restores_original_dll_path(self):
+        library = self.kernel32()
+        with patch.object(sys, 'frozen', True, create=True), \
+             patch.object(installer.ctypes, 'WinDLL', return_value=library), \
+             patch.object(installer.subprocess, 'Popen', side_effect=OSError('launch failed')):
+            with self.assertRaisesRegex(OSError, 'launch failed'):
+                installer._spawn_installer(['powershell.exe'], {})
+        self.assertEqual([call.args[0] for call in library.SetDllDirectoryW.call_args_list],
+                         [None, r'C:\old bundle\_MEI123'])
+
+    def test_dll_path_failure_prevents_helper_launch(self):
+        library = self.kernel32()
+        library.SetDllDirectoryW.return_value = False
+        with patch.object(sys, 'frozen', True, create=True), \
+             patch.object(installer.ctypes, 'WinDLL', return_value=library), \
+             patch.object(installer.subprocess, 'Popen') as launch:
+            with self.assertRaises(OSError):
+                installer._spawn_installer(['powershell.exe'], {})
+            launch.assert_not_called()
 
 
 @unittest.skipUnless(sys.platform == 'win32', 'Windows installer integration')

@@ -1,5 +1,7 @@
 """Download and stage an official package before the running app exits."""
 import asyncio
+import ctypes
+from ctypes import wintypes
 import hashlib
 import json
 import os
@@ -152,4 +154,41 @@ def launch_installer(stage):
         '-InstallPath', str(Path(sys.executable).resolve().parent),
         '-ParentProcessId', str(os.getpid()),
     ]
-    return subprocess.Popen(command, creationflags=subprocess.CREATE_NO_WINDOW)
+    # The helper and replacement EXE inherit this environment. PyInstaller 6.9+
+    # otherwise treats a same-path restart as a worker of the old instance and
+    # tries to reuse its already-deleted onefile extraction directory.
+    environment = {**os.environ, 'PYINSTALLER_RESET_ENVIRONMENT': '1'}
+    return _spawn_installer(command, environment)
+
+
+def _spawn_installer(command, environment):
+    def spawn():
+        return subprocess.Popen(command, creationflags=subprocess.CREATE_NO_WINDOW, env=environment)
+
+    if sys.platform != 'win32' or not getattr(sys, 'frozen', False):
+        return spawn()
+    # SetDllDirectory is inherited by child processes separately from os.environ.
+    # PowerShell must use system DLLs, while this process needs its original
+    # search path back if launching the helper fails and the UI stays open.
+    kernel32 = ctypes.WinDLL('kernel32', use_last_error=True)
+    get_directory = kernel32.GetDllDirectoryW
+    get_directory.argtypes = [wintypes.DWORD, wintypes.LPWSTR]
+    get_directory.restype = wintypes.DWORD
+    set_directory = kernel32.SetDllDirectoryW
+    set_directory.argtypes = [wintypes.LPCWSTR]
+    set_directory.restype = wintypes.BOOL
+    buffer = ctypes.create_unicode_buffer(32768)
+    ctypes.set_last_error(0)
+    length = get_directory(len(buffer), buffer)
+    if length >= len(buffer):
+        raise OSError('Cannot preserve the application DLL search path')
+    if length == 0 and ctypes.get_last_error():
+        raise ctypes.WinError(ctypes.get_last_error())
+    original_directory = buffer.value if length else None
+    if not set_directory(None):
+        raise ctypes.WinError(ctypes.get_last_error())
+    try:
+        return spawn()
+    finally:
+        if not set_directory(original_directory):
+            raise ctypes.WinError(ctypes.get_last_error())
