@@ -152,9 +152,12 @@ class MainWindow(QMainWindow):
 
 
     def show_update_dialog(self, release_info):
-            print("更新信息:", release_info)
-            dialog = UpdateDialog(self, release_info)
-            dialog.exec()
+        # Keep qasync's event loop running while the dialog downloads an update.
+        if getattr(self, 'update_dialog', None) and self.update_dialog.isVisible():
+            self.update_dialog.raise_()
+            return
+        self.update_dialog = UpdateDialog(self, release_info)
+        self.update_dialog.open()
 
     def save_settings(self):
         """保存配置到文件"""
@@ -203,6 +206,7 @@ if __name__ == "__main__":
 
     window = MainWindow()
     window.show()
+    logger.info("Application startup complete")
 
     # 在事件循环启动后安排 auto_update_check
     async def start_auto_update():

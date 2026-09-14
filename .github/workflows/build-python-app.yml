@@ -1,71 +1,115 @@
-# This workflow will install Python dependencies, run tests and lint with a single version of Python
-# For more information see: https://docs.github.com/en/actions/automating-builds-and-tests/building-and-testing-python
-
 name: Python application
+
 on:
   push:
     tags:
       - 'v*'
     branches:
-      - "master"
-      - "action-test"
-      - "feature/*"
-      - "feat-*"
-      - "dev*"
-      - "release/*"
+      - master
+      - action-test
+      - 'feature/*'
+      - 'feat-*'
+      - 'dev*'
+      - 'release/*'
   pull_request:
     branches:
-      - "master"
-      - "action-test"
-      - "feature/*"
-      - "dev*"
+      - master
+      - action-test
+      - 'feature/*'
+      - 'dev*'
+  workflow_dispatch:
+
 permissions:
   contents: read
+
 jobs:
   build:
     runs-on: windows-latest
+    outputs:
+      channel: ${{ steps.version.outputs.channel }}
+      version: ${{ steps.version.outputs.version }}
+    defaults:
+      run:
+        shell: pwsh
     steps:
-    - uses: actions/checkout@v4
-      with:
-        fetch-depth: 0
-    - name: Set up Python 3.12
-      uses: actions/setup-python@v5
-      with:
-        python-version: "3.12"
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install flake8 pyinstaller
-        if (Test-Path requirements.txt) {
-          pip install -r requirements.txt
-        }
-      shell: pwsh
-    - name: Generate version
-      run: |
-        powershell -Command "Set-ExecutionPolicy Bypass -Scope CurrentUser; .\generate_version.ps1"
-      shell:  pwsh
-    - name: Get version from version.py
-      id: get_version
-      run: |
-        $version = (Select-String -Path src/version.py -Pattern 'VERSION\s*=\s*"(.*)"').Matches.Groups[1].Value
-        echo "VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Append
-      shell: pwsh
-    - name: Build with PyInstaller
-      run: |
-        pyinstaller DG-LAB-VRCOSC.spec
-      shell: pwsh
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install pytest 'pyinstaller>=6,<7' -r requirements.txt
+      - name: Run regression tests
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: python -m pytest -q
+      - name: Generate version and build metadata
+        id: version
+        run: |
+          ./generate_version.ps1
+          $metadata = Get-Content src/build-info.json -Raw | ConvertFrom-Json
+          "version=$($metadata.version)" >> $env:GITHUB_OUTPUT
+          "channel=$($metadata.channel)" >> $env:GITHUB_OUTPUT
+      - name: Build with PyInstaller
+        run: python scripts/build.py --clean
+      - name: Smoke test the packaged application
+        run: python scripts/smoke_test_build.py dist/DG-LAB-VRCOSC.exe
+      - name: Package the executable and metadata
+        run: |
+          Copy-Item -LiteralPath src/build-info.json -Destination dist/build-info.json
+          Compress-Archive -LiteralPath dist/DG-LAB-VRCOSC.exe, dist/build-info.json -DestinationPath dist/DG-LAB-VRCOSC.zip
+      - name: Upload packaged artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: DG-LAB-VRCOSC-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            dist/DG-LAB-VRCOSC.zip
+            dist/build-info.json
+          if-no-files-found: error
+          compression-level: 0
 
-    - name: Generate commit hash and timestamp file
-      run: |
-        $timestamp = Get-Date -Format "yyyyMMdd-HHmm"
-        $commitHash = (git rev-parse --short HEAD)
-        $fileContent = "Commit Hash: $commitHash`nTimestamp: $timestamp"
-        Set-Content -Path dist/build-info.txt -Value $fileContent
-      shell: pwsh
-
-
-    - name: Upload artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: DG-LAB-VRCOSC-${{ env.VERSION }}
-        path: dist/
+  publish:
+    needs: build
+    # PRs and development branches can build, but never publish update packages.
+    if: >-
+      github.event_name == 'push' &&
+      (github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/v'))
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: DG-LAB-VRCOSC-${{ github.run_id }}-${{ github.run_attempt }}
+          path: package
+      - name: Publish the official GitHub update package
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          BUILD_VERSION: ${{ needs.build.outputs.version }}
+          BUILD_CHANNEL: ${{ needs.build.outputs.channel }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          run_url="https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          printf 'Commit: %s\n\nBuild: %s\n\n' "$GITHUB_SHA" "$run_url" > release-notes.md
+          if [[ "$BUILD_CHANNEL" == "stable" ]]; then
+            printf '正式版本。下载 DG-LAB-VRCOSC.zip，解压后运行；应用默认从 GitHub 正式 Release 检查更新。\n' >> release-notes.md
+            gh release create "$GITHUB_REF_NAME" package/DG-LAB-VRCOSC.zip package/build-info.json \
+              --verify-tag --title "$BUILD_VERSION" --latest --generate-notes --notes-file release-notes.md
+          elif [[ "$BUILD_CHANNEL" == "actions" && "$GITHUB_REF" == "refs/heads/master" ]]; then
+            tag="build-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+            printf 'master 分支通过测试后的 Actions 自动构建。可在应用设置中选择 Actions 最新构建通道；此版本不替换默认的正式 Release。\n' >> release-notes.md
+            gh release create "$tag" package/DG-LAB-VRCOSC.zip package/build-info.json \
+              --target "$GITHUB_SHA" --title "Actions $BUILD_VERSION (#$GITHUB_RUN_NUMBER)" \
+              --prerelease --latest=false --notes-file release-notes.md
+          else
+            echo 'Unexpected publishing channel or branch.' >&2
+            exit 1
+          fi

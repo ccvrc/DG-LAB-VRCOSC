@@ -1,44 +1,75 @@
-# generate_version.ps1
 param (
-    [string]$OutputFile = "src/version.py"
+    [string]$OutputFile = "src/version.py",
+    [string]$MetadataFile = "src/build-info.json"
 )
 
-# 1. 检查当前提交是否是 Git 标签
-$tag = git describe --tags --exact-match 2>$null
+$ErrorActionPreference = 'Stop'
+Set-StrictMode -Version Latest
 
-if ($tag) {
-    $version = $tag
+# The checked-in version is the next stable release; CI adds a sortable build number.
+$content = Get-Content -LiteralPath $OutputFile -Raw
+if ($content -notmatch 'VERSION\s*=\s*"(v\d+\.\d+\.\d+)') {
+    throw "Cannot read the base version from $OutputFile."
+}
+$baseVersion = $Matches[1]
+$commitHash = (git rev-parse HEAD).Trim()
+if ($LASTEXITCODE -ne 0) {
+    throw 'Cannot determine the build commit.'
+}
+$shortHash = $commitHash.Substring(0, 8)
+$version = "$baseVersion+local.$shortHash"
+$channel = 'local'
+$branch = [string](git branch --show-current)
+# A detached checkout emits no output, which PowerShell can preserve as null
+# even through the string cast. CI replaces this fallback with its event ref.
+if ([string]::IsNullOrWhiteSpace($branch)) {
+    $branch = 'HEAD'
 } else {
-    # 2. 获取当前分支最近的标签
-    $latestTag = git describe --tags --abbrev=0 2>$null
-    $commitHash = (git rev-parse --short HEAD)
-    $timestamp = Get-Date -Format "yyyyMMdd-HHmm"
+    $branch = $branch.Trim()
+}
+$repository = 'ccvrc/DG-LAB-VRCOSC'
+$runId = 0L
+$runNumber = 0L
+$runAttempt = 0L
 
-    if ($latestTag) {
-        $version = "$latestTag-$timestamp-$commitHash"
-    } else {
-        # 3. 如果没有任何标签，尝试从 version.py 读取版本号
-        $version = "v0.0.0"  # 默认版本号
-
-        if (Test-Path $OutputFile) {
-            try {
-                $content = Get-Content -Path $OutputFile -Raw
-                if ($content -match 'VERSION\s*=\s*"([^"-]*)') {
-                    $version = $matches[1]
-                    Write-Host "使用 version.py 中的版本号: $version"
-                } else {
-                    Write-Host "version.py 中未找到 VERSION 变量，使用默认版本 v0.0.0"
-                }
-            } catch {
-                Write-Host "读取 version.py 时发生错误，使用默认版本 v0.0.0"
-            }
-        } else {
-            Write-Host "version.py 不存在，使用默认版本 v0.0.0"
+if ($env:GITHUB_ACTIONS -eq 'true') {
+    $repository = $env:GITHUB_REPOSITORY
+    $branch = $env:GITHUB_REF_NAME
+    $runId = [long]$env:GITHUB_RUN_ID
+    $runNumber = [long]$env:GITHUB_RUN_NUMBER
+    $runAttempt = [long]$env:GITHUB_RUN_ATTEMPT
+    $version = "$baseVersion.dev$runNumber"
+    if ($env:GITHUB_EVENT_NAME -eq 'push' -and $env:GITHUB_REF_TYPE -eq 'tag') {
+        if ($env:GITHUB_REF_NAME -notmatch '^v\d+\.\d+\.\d+$') {
+            throw 'Stable release tags must have the form vMAJOR.MINOR.PATCH.'
         }
-        # 无论是 version.py 还是默认，都要加上时间戳和哈希
-        $version = "$version-$timestamp-$commitHash"
+        if ($env:GITHUB_REF_NAME -ne $baseVersion) {
+            throw "Release tag $($env:GITHUB_REF_NAME) does not match source version $baseVersion."
+        }
+        $version = $env:GITHUB_REF_NAME
+        $channel = 'stable'
+    } elseif ($env:GITHUB_EVENT_NAME -eq 'push' -and $env:GITHUB_REF -eq 'refs/heads/master') {
+        $channel = 'actions'
     }
 }
 
-# 写入版本号到指定文件（默认为 version.py）
-Set-Content -Path $OutputFile -Value "VERSION = `"$version`""
+$metadata = [ordered]@{
+    schema_version = 1
+    channel = $channel
+    version = $version
+    commit = $commitHash
+    run_id = $runId
+    run_number = $runNumber
+    run_attempt = $runAttempt
+    repository = $repository
+    workflow = 'build-python-app.yml'
+    branch = $branch
+}
+
+# Use UTF-8 without a BOM for both Python source and JSON (also under Windows PowerShell).
+$utf8 = [System.Text.UTF8Encoding]::new($false)
+$outputPath = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($OutputFile)
+$metadataPath = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($MetadataFile)
+[System.IO.File]::WriteAllText($outputPath, "VERSION = `"$version`"`n", $utf8)
+[System.IO.File]::WriteAllText($metadataPath, ($metadata | ConvertTo-Json) + "`n", $utf8)
+Write-Host "Generated $version ($channel), commit $shortHash."

@@ -28,8 +28,10 @@ DEFAULT_SETTINGS = {
     'interface': '',
     'ip': '',
     'port': 5678,
+    'osc_auto': True,
     'osc_port': 9001,
     'remote_address': '',
+    'update_channel': 'release',
     'language': 'zh'  # 添加默认语言设置
 }
 
@@ -74,6 +76,9 @@ def load_settings():
                 for key, value in DEFAULT_SETTINGS.items():
                     if key not in settings:
                         settings[key] = value
+
+                if settings['update_channel'] not in ('release', 'actions'):
+                    settings['update_channel'] = 'release'
 
                 return settings
         except Exception as e:
