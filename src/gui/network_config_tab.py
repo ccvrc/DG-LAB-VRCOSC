@@ -14,6 +14,7 @@ from dglab_controller import DGLabController
 from qasync import asyncio
 from pythonosc import osc_server, dispatcher, udp_client
 from i18n import translate as _, language_signals, LANGUAGES, get_current_language, set_language
+from services.ogb_enabled_service import OGBEnabledService
 
 import functools # Use the built-in functools module
 import sys
@@ -119,6 +120,7 @@ class NetworkConfigTab(QWidget):
         self.panel_control_handlers = {}  # 面板控制 OSC 地址的处理器
         self.sps_control_handlers = {}  # SPS/OGB OSC 地址的处理器
         self.oscquery_service = None
+        self.ogb_enabled_service = None
         self._osc_transport = None
         self._osc_protocol = None
         self._mappings_connected = False
@@ -424,6 +426,9 @@ class NetworkConfigTab(QWidget):
                 controller = DGLabController(client, osc_client, self.main_window)
                 self.main_window.controller = controller
                 logger.info("DGLabController 已初始化")
+                self.ogb_enabled_service = OGBEnabledService(osc_client)
+                self.ogb_enabled_service.start()
+                logger.info("OGB_ENABLED 兼容心跳已启动")
                 # After controller initialization, bind settings
                 self.main_window.controller_settings_tab.bind_controller_settings()
                 self.main_window.sps_config_tab.apply_bindings_to_controller()
@@ -476,31 +481,36 @@ class NetworkConfigTab(QWidget):
             self._report_server_error(exc)
         finally:
             try:
-                if controller:
-                    await controller.close()
+                if self.ogb_enabled_service:
+                    await self.ogb_enabled_service.stop()
             finally:
+                self.ogb_enabled_service = None
                 try:
-                    if self.oscquery_service:
-                        await self.oscquery_service.stop()
-                finally:
-                    self.oscquery_service = None
-                    if self._osc_transport:
-                        self._osc_transport.close()
-                        self._osc_transport = None
-                        self._osc_protocol = None
-                    if osc_port is not None and osc_client:
-                        osc_client.close()
                     if controller:
-                        if self.main_window.controller is controller:
-                            self.main_window.controller = None
-                        self._clear_osc_mappings()
-                        self.update_connection_status(False)
-                    self._server_started = False
-                    self._osc_status_timer.stop()
-                    self.original_qrcode_pixmap = None
-                    self.qrcode_label.clear()
-                    self._update_start_button()
-                    self.refresh_osc_status()
+                        await controller.close()
+                finally:
+                    try:
+                        if self.oscquery_service:
+                            await self.oscquery_service.stop()
+                    finally:
+                        self.oscquery_service = None
+                        if self._osc_transport:
+                            self._osc_transport.close()
+                            self._osc_transport = None
+                            self._osc_protocol = None
+                        if osc_port is not None and osc_client:
+                            osc_client.close()
+                        if controller:
+                            if self.main_window.controller is controller:
+                                self.main_window.controller = None
+                            self._clear_osc_mappings()
+                            self.update_connection_status(False)
+                        self._server_started = False
+                        self._osc_status_timer.stop()
+                        self.original_qrcode_pixmap = None
+                        self.qrcode_label.clear()
+                        self._update_start_button()
+                        self.refresh_osc_status()
 
 
 
@@ -684,6 +694,8 @@ class NetworkConfigTab(QWidget):
     def handle_avatar_change_task(self, address, *args, controller):
         """Avatar 切换后延迟重新读取 OSCQuery 参数树。"""
         logger.info("检测到 VRChat Avatar 变化，准备重新探测 SPS 区域")
+        if self.ogb_enabled_service:
+            self.ogb_enabled_service.send_now()
         self.main_window.sps_config_tab.schedule_auto_refresh("avatar_changed", delay_ms=1200)
 
     def update_ui_texts(self):
