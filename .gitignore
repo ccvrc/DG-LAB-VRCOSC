@@ -55,6 +55,9 @@ cover/
 qrcode.png
 settings.yml
 osc_addresses.yml
+sps_bindings.yml
+**/MoCap/names.yml
+**/MoCap/rules.yml
 download.ps1
 
 # Translations

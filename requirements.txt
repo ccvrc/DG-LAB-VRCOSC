@@ -12,3 +12,4 @@ aiohttp
 requests
 packaging
 zeroconf
+openvr

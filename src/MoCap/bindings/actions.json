@@ -1,0 +1,27 @@
+{
+  "action_sets": [
+    {
+      "name": "/actions/mocap",
+      "usage": "leftright"
+    }
+  ],
+  "actions": [
+    {
+      "name": "/actions/mocap/in/dummy",
+      "type": "boolean",
+      "requirement": "optional"
+    }
+  ],
+  "default_bindings": [
+    {
+      "controller_type": "generic",
+      "binding_url": "generic.json"
+    }
+  ],
+  "localization": [
+    {
+      "language_tag": "en_us",
+      "/actions/mocap": "Motion Capture"
+    }
+  ]
+}

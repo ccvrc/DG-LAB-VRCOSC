@@ -1,0 +1,17 @@
+{
+  "source": "builtin",
+  "applications": [
+    {
+      "app_key": "ccvrc.dg-lab-vrcosc.mocap",
+      "launch_type": "binary",
+      "binary_path_windows": "DG-LAB-VRCOSC.exe",
+      "is_dashboard_overlay": false,
+      "action_manifest_path": "bindings/actions.json",
+      "strings": {
+        "en_us": {
+          "name": "DG-LAB-VRCOSC Motion Capture"
+        }
+      }
+    }
+  ]
+}

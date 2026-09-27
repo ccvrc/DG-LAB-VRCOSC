@@ -1,6 +1,7 @@
 # -*- mode: python ; coding: utf-8 -*-
 
 import os
+from PyInstaller.utils.hooks import collect_dynamic_libs
 
 # 获取项目根目录
 project_root = os.path.dirname(os.path.abspath(SPEC))
@@ -11,7 +12,7 @@ if not os.path.isfile(build_metadata):
 a = Analysis(
     ['src/app.py'],
     pathex=[os.path.join(project_root, 'src')],
-    binaries=[],
+    binaries=collect_dynamic_libs('openvr'),
     datas=[
         # Keep build identity inside the executable as well as beside it in the ZIP.
         (build_metadata, '.'),
@@ -20,6 +21,9 @@ a = Analysis(
         (os.path.join(project_root, 'src', 'locales', 'zh.yml'), 'locales'),
         (os.path.join(project_root, 'src', 'locales', 'en.yml'), 'locales'),
         (os.path.join(project_root, 'src', 'locales', 'ja.yml'), 'locales'),
+        (os.path.join(project_root, 'src', 'MoCap', 'app.vrmanifest'), 'MoCap'),
+        (os.path.join(project_root, 'src', 'MoCap', 'bindings', 'actions.json'), 'MoCap/bindings'),
+        (os.path.join(project_root, 'src', 'MoCap', 'bindings', 'generic.json'), 'MoCap/bindings'),
         # 添加图标文件
         (os.path.join(project_root, 'docs', 'images', 'fish-cake.ico'), 'docs/images'),
     ],

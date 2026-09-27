@@ -17,6 +17,11 @@
   - 游戏内受到伤害会增加设备输出，游戏内死亡会触发死亡惩罚。
   - 通过 [ToNSaveManager](https://github.com/ChrisFeline/ToNSaveManager) 的 WebSocket API 监控游戏事件，需要在游玩 ToN 时运行这个存档软件，并打开设置中的 WebSocket API 服务器。
 
+- **SteamVR 动作捕捉联动功能**：
+
+  - 根据头显、控制器和追踪器的速度或角速度触发设备输出，可分别设置上下限、触发等待时间和 A/B 通道。
+  - 支持持续开火和定时开火。失去追踪时清除触发等待时间，恢复追踪后重新计时。
+
 **补充说明：**
 
 - 面板控制功能需要在 Booth 购买 [声音面板](https://booth.pm/zh-cn/items/5950846) 后将资源导入工程，再导入本项目提供的修改包，将修改包内提供的 prefab 安装到您的 avatar 中。此处的修改包发布已获取 [ VRサウンドパッド ] 原作者授权。
@@ -52,6 +57,15 @@ Actions 构建会同时保存在 [工作流 Artifacts](https://github.com/ccvrc/
 - 发现通过本机 mDNS/OSCQuery 完成，并在 mDNS 无结果时使用 VRChat 本地日志作为候选。仅连接当前电脑上的 VRChat。
 - 若自动服务启动失败，界面会显示错误并允许重试。需要兼容旧的固定端口配置时，可取消自动发现，手动设置接收端口；此时 VRChat 的输出端口应与该端口一致，程序向 VRChat 的发送目标为 `127.0.0.1:9000`。
 - 参考 [VRCFaceTracking 的 OSCQuery/mDNS 实现](https://github.com/benaclejames/VRCFaceTracking/blob/6432e6a8d85fa7ec5115fc725c6abcb6dbdd4f35/VRCFaceTracking.Core/Services/OscQueryService.cs)与 [VRChat 官方 OSCQuery 文档](https://github.com/vrchat-community/osc/wiki/OSCQuery)。接收订阅保留 `/avatar` 子树；发送端口读取 VRChat 的 `HOST_INFO.OSC_PORT`，缺省时按协议采用 HTTP 服务端口。
+
+### 动作捕捉
+
+- **连接方式**：启动 SteamVR，在「动作捕捉」页面点击「连接 SteamVR」。首次连接会自动注册应用；若页面提示重启，请完全退出并重新启动 SteamVR 后再次连接。
+- **设备配置**：可查看头显、控制器和追踪器的位置、速度及角速度，并为设备设置名称。名称和规则会自动保存在本机，重新连接或连接顺序变化后仍对应原来的设备。
+- **触发规则**：分别设置速度、角速度的上下限，选择 A、B 或同时输出并勾选启用。连续低于下限或高于上限达到设定的等待时间后，触发对应通道。
+- **输出方式**：沿用当前一键开火的强度设置和通道波形。持续模式在恢复到范围内时结束；定时模式在设定时长后结束，恢复到范围内后可再次触发。
+- **追踪中断**：失去追踪或设备断开时，该设备的触发等待时间清零，并停止由其触发的持续开火；恢复追踪后从头计时。已经启动的定时开火仍按设定时长结束。采样中断或漏帧时，也会重新开始等待。
+- **计算频率**：默认为 10 Hz，可在 2–30 Hz 范围内调整，连接期间修改即可生效。
 
 ## 问题反馈
 
@@ -108,7 +122,7 @@ pip install pytest
 python -m pytest -q
 ```
 
-测试使用无窗口 Qt 控件和本机模拟的 HTTP/UDP 服务，覆盖参数编辑、日志线程、OSC 回调、自动发现、晚启动、端口变化、服务清理和更新通道。测试不广播 mDNS，不连接真实 VRChat 或 DG-LAB 设备；真实游戏发现、防火墙和设备效果仍需在实际环境验证。
+测试使用无窗口 Qt 控件和本机模拟的 HTTP/UDP 服务，覆盖参数编辑、日志线程、OSC 回调、自动发现、晚启动、端口变化、服务清理、更新通道和动作捕捉联动。测试不广播 mDNS，不连接真实 VRChat、SteamVR 或 DG-LAB 设备；真实游戏发现、防火墙和设备效果仍需在实际环境验证。动捕模块的测试范围和性能复测方法见 [动捕模块测试](tests/README_mocap.md)。
 
 ### 构建步骤
 ```bash

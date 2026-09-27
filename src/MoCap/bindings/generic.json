@@ -1,0 +1,12 @@
+{
+  "name": "DG-LAB-VRCOSC generic bindings",
+  "controller_type": "generic",
+  "bindings": {
+    "/actions/mocap": {
+      "sources": [],
+      "skeleton": [],
+      "haptics": [],
+      "poses": []
+    }
+  }
+}

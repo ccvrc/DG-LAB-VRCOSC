@@ -70,7 +70,8 @@ class AboutTab(QWidget):
             "- icrazt\n"
             "- 光水\n"
             "- icelly_QAQ\n"
-            "- mdogwoop\n\n"
+            "- mdogwoop\n"
+            "- GPT-6\n\n"
             "特别感谢:\n"
             "- ChrisFeline (ToNSaveManager)\n"
             "- VRChat OSC 社区\n"
@@ -95,7 +96,8 @@ class AboutTab(QWidget):
             "- aiohttp (Apache 2.0)\n"
             "- requests (Apache 2.0)\n"
             "- Google Fonts Noto Emoji (OFL 1.1)\n"
-            "- zeroconf (LGPL)"
+            "- zeroconf (LGPL)\n"
+            "- openvr (BSD)"
         )
         
         layout.addLayout(self.version_layout)

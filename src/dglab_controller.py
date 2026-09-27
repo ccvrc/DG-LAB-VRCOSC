@@ -12,20 +12,24 @@ from pulse_data import PULSE_DATA, PULSE_NAME
 
 import logging
 
-from command_types import CommandType, ChannelCommand
+from command_types import CommandType
 from sps_processor import SPSProcessor
 
 logger = logging.getLogger(__name__)
 
 
 class ChannelCommand:
-    def __init__(self, command_type, channel, operation, value, source_id=None, timestamp=None):
+    def __init__(self, command_type, channel, operation, value, source_id=None, timestamp=None,
+                 expected_source=None, expected_strength=None, completion=None):
         self.command_type = command_type  # 命令类型，决定优先级
         self.channel = channel  # 目标通道
         self.operation = operation  # 操作类型
         self.value = value  # 操作值
         self.source_id = source_id or str(uuid.uuid4())  # 来源标识
         self.timestamp = timestamp or time.time()  # 时间戳
+        self.expected_source = expected_source
+        self.expected_strength = expected_strength
+        self.completion = completion
     
     def __lt__(self, other):
         # 优先级比较函数，用于队列排序
@@ -58,6 +62,16 @@ class DGLabController:
         self.data_updated_event = asyncio.Event()  # 数据更新事件
         self.fire_mode_origin_strength_a = 0  # 进入一键开火模式前的强度值
         self.fire_mode_origin_strength_b = 0
+        self._mocap_active = {}
+        self._mocap_starting = set()
+        self._mocap_suppressed = set()
+        self._mocap_desired = set()
+        self._mocap_revision = 0
+        self._mocap_task = None
+        self._mocap_timed_lock = asyncio.Lock()
+        self._mocap_timed_deadlines = {}
+        self._mocap_timer_task = None
+        self._mocap_generation = 0
         self.enable_chatbox_status = 1  # ChatBox 发送状态 (双向，游戏内暂无直接开关变量)
         self.previous_chatbox_status = 1
         # 定时任务
@@ -79,6 +93,7 @@ class DGLabController:
         self.source_cooldowns = {  # 各来源的冷却时间（秒）
             CommandType.GUI_COMMAND: 0,  # GUI无冷却
             CommandType.PANEL_COMMAND: 0.1,  # 面板命令冷却
+            CommandType.MOCAP_COMMAND: 0,  # 动捕规则自身负责防止重复触发
             CommandType.INTERACTION_COMMAND: 0.05,  # 交互命令冷却
             CommandType.TON_COMMAND: 0.2,  # 游戏联动冷却
         }
@@ -114,7 +129,16 @@ class DGLabController:
         }
 
     async def close(self):
-        """Release this session's background work without sending device commands."""
+        """Stop active motion bursts before ending the session's background work."""
+        self.cancel_mocap_triggers()
+        if self._mocap_task is not None:
+            await asyncio.gather(self._mocap_task, return_exceptions=True)
+        if self._mocap_timer_task is not None:
+            await asyncio.gather(self._mocap_timer_task, return_exceptions=True)
+        try:
+            await asyncio.wait_for(self.command_queue.join(), timeout=1.0)
+        except asyncio.TimeoutError:
+            logger.warning("Timed out waiting for motion stop commands during shutdown")
         self.app_status_online = False
         tasks = [
             task for task in (
@@ -531,6 +555,9 @@ class DGLabController:
         if not self.last_strength and not last_strength_mod:
             logger.warning("没有获取到当前强度信息，无法执行一键开火")
             return
+        if value and (self._mocap_active or self._mocap_starting):
+            logger.info("动捕持续触发期间忽略重复开火")
+            return
         
         if value:  # 按下开火
             async with self.fire_mode_lock:
@@ -558,6 +585,182 @@ class DGLabController:
                                           original_strength,
                                           "panel_fire_end")
                     self.fire_mode_active = False
+
+    def cancel_mocap_triggers(self):
+        self._mocap_generation += 1
+        self._mocap_timed_deadlines.clear()
+        suppressed = self._mocap_suppressed.copy()
+        self._mocap_suppressed.clear()
+        for channel in suppressed:
+            self.invalidate_sps_target(channel)
+        if self._mocap_timer_task is not None and not self._mocap_timer_task.done():
+            self._mocap_timer_task.cancel()
+        self.request_mocap_channels(set())
+
+    async def trigger_mocap_timed(
+        self, channel_names: set[str], fire_seconds: float, *, is_valid=None,
+    ) -> set[str]:
+        """Fire once for a fixed duration; overlapping triggers extend that channel."""
+        requested = {
+            channel for name, channel in (("A", Channel.A), ("B", Channel.B))
+            if name in channel_names
+        }
+        if not requested:
+            return set()
+        generation = self._mocap_generation
+        async with self._mocap_timed_lock:
+            if (
+                generation != self._mocap_generation or not self.app_status_online
+                or self.last_strength is None or self.fire_mode_active
+                or (is_valid is not None and not is_valid())
+            ):
+                return set()
+            wanted = set(self._mocap_timed_deadlines) | requested
+            self.request_mocap_channels({channel.name for channel in wanted})
+            task = self._mocap_task
+            if task is not None and not task.done():
+                await asyncio.shield(task)
+            if generation != self._mocap_generation:
+                return set()
+            if is_valid is not None and not is_valid():
+                # Tracking may have changed while the device command was in
+                # flight. Restore channels that have no earlier timed owner.
+                self.request_mocap_channels({channel.name for channel in self._mocap_timed_deadlines})
+                return set()
+            accepted = requested & set(self._mocap_active)
+            now = time.monotonic()
+            for channel in accepted:
+                self._mocap_timed_deadlines[channel] = max(
+                    self._mocap_timed_deadlines.get(channel, now), now + fire_seconds
+                )
+            self.request_mocap_channels({channel.name for channel in self._mocap_timed_deadlines})
+            if self._mocap_timed_deadlines:
+                if self._mocap_timer_task is not None and not self._mocap_timer_task.done():
+                    self._mocap_timer_task.cancel()
+                self._mocap_timer_task = asyncio.create_task(self._run_mocap_timer())
+                self._mocap_timer_task.add_done_callback(self._mocap_task_finished)
+            return {channel.name for channel in accepted}
+
+    async def _run_mocap_timer(self):
+        while self._mocap_timed_deadlines:
+            deadline = min(self._mocap_timed_deadlines.values())
+            await asyncio.sleep(max(0.0, deadline - time.monotonic()))
+            async with self._mocap_timed_lock:
+                now = time.monotonic()
+                self._mocap_timed_deadlines = {
+                    channel: until for channel, until in self._mocap_timed_deadlines.items()
+                    if until > now
+                }
+                self.request_mocap_channels({
+                    channel.name for channel in self._mocap_timed_deadlines
+                })
+
+    @property
+    def mocap_active_channels(self) -> set[str]:
+        return {channel.name for channel in self._mocap_active}
+
+    @property
+    def mocap_suppressed_channels(self) -> set[str]:
+        return {channel.name for channel in self._mocap_suppressed}
+
+    def release_mocap_overrides(self, violating_names: set[str]):
+        violating = {
+            channel for name, channel in (("A", Channel.A), ("B", Channel.B))
+            if name in violating_names
+        }
+        released = self._mocap_suppressed - violating
+        self._mocap_suppressed.intersection_update(violating)
+        for channel in released:
+            self.invalidate_sps_target(channel)
+
+    def request_mocap_channels(self, channel_names: set[str]):
+        """Hold each requested channel until no sustained rule needs it."""
+        desired = {
+            channel for name, channel in (("A", Channel.A), ("B", Channel.B))
+            if name in channel_names
+        }
+        if not self.app_status_online or self.last_strength is None or self.fire_mode_active:
+            desired.clear()
+        if desired != self._mocap_desired:
+            self._mocap_desired = desired
+            self._mocap_revision += 1
+        if self._mocap_task is not None and not self._mocap_task.done():
+            return
+        if set(self._mocap_active) != desired - self._mocap_suppressed:
+            self._mocap_task = asyncio.create_task(self._reconcile_mocap())
+            self._mocap_task.add_done_callback(self._mocap_task_finished)
+
+    def _mocap_task_finished(self, task):
+        try:
+            task.result()
+        except asyncio.CancelledError:
+            pass
+        except Exception:
+            logger.exception("Motion capture fire update failed")
+
+    async def _reconcile_mocap(self):
+        while True:
+            revision = self._mocap_revision
+            desired = self._mocap_desired.copy()
+            for channel in tuple(self._mocap_active):
+                if channel not in desired or channel in self._mocap_suppressed:
+                    await self._stop_mocap_channel(channel)
+            if revision != self._mocap_revision:
+                continue
+            for channel in (Channel.A, Channel.B):
+                if revision != self._mocap_revision:
+                    break
+                if (
+                    channel in desired and channel not in self._mocap_active
+                    and channel not in self._mocap_suppressed
+                ):
+                    await self._start_mocap_channel(channel)
+            if revision == self._mocap_revision:
+                return
+
+    async def _start_mocap_channel(self, channel):
+        if not self.app_status_online or self.last_strength is None or self.fire_mode_active:
+            return
+        limit = self.last_strength.a_limit if channel == Channel.A else self.last_strength.b_limit
+        baseline = self.last_strength.a if channel == Channel.A else self.last_strength.b
+        target = min(baseline + self.fire_mode_strength_step, limit)
+        if target <= baseline:
+            return
+        source = f"mocap_start_{channel.name}_{uuid.uuid4().hex}"
+        self._mocap_starting.add(channel)
+        applied = False
+        send_task = asyncio.create_task(self.add_command(
+            CommandType.MOCAP_COMMAND, channel,
+            StrengthOperationType.SET_TO, target, source,
+            expected_strength=self.channel_states[channel]["current_strength"],
+            wait_processed=True,
+        ))
+        try:
+            applied = await asyncio.shield(send_task)
+        except asyncio.CancelledError:
+            applied = await send_task
+            raise
+        finally:
+            self._mocap_starting.discard(channel)
+            if applied:
+                self._mocap_active[channel] = (baseline, target, source)
+
+    async def _stop_mocap_channel(self, channel):
+        baseline, _target, source = self._mocap_active[channel]
+        actual = (
+            self.last_strength.a if channel == Channel.A else self.last_strength.b
+        ) if self.last_strength is not None else baseline
+        applied = await self.add_command(
+            CommandType.MOCAP_COMMAND, channel,
+            StrengthOperationType.SET_TO, min(baseline, actual),
+            f"mocap_end_{channel.name}_{uuid.uuid4().hex}",
+            expected_source=source,
+            wait_processed=True,
+        )
+        if applied or self.channel_states[channel]["last_command_source"] != source:
+            self._mocap_active.pop(channel, None)
+            if applied:
+                self.invalidate_sps_target(channel)
 
     async def set_strength_step(self, value):
         """
@@ -619,35 +822,51 @@ class DGLabController:
         else:
             self.send_message_to_vrchat_chatbox("未连接")
 
-    async def add_command(self, command_type, channel, operation, value, source_id=None):
+    async def add_command(self, command_type, channel, operation, value, source_id=None,
+                          expected_source=None, expected_strength=None, wait_processed=False):
         """添加命令到队列，带冷却检查"""
         now = time.time()
         source_key = f"{command_type.name}_{source_id or 'default'}"
         
         # 检查冷却时间
-        if source_key in self.command_sources:
+        cooldown = self.source_cooldowns[command_type]
+        if cooldown > 0 and source_key in self.command_sources:
             last_time = self.command_sources[source_key]
-            cooldown = self.source_cooldowns[command_type]
             if now - last_time < cooldown:
                 logger.debug(f"命令在冷却期内，已忽略: {command_type.name}, 来源: {source_id}")
-                return  # 在冷却期内，忽略命令
+                return False  # 在冷却期内，忽略命令
         
         # 记录时间并加入队列
-        self.command_sources[source_key] = now
-        await self.command_queue.put(ChannelCommand(command_type, channel, operation, value, source_id, now))
+        # Motion bursts have unique IDs and no cooldown; retaining every ID
+        # would grow this dictionary for the lifetime of the connection.
+        if cooldown > 0:
+            self.command_sources[source_key] = now
+        completion = asyncio.get_running_loop().create_future() if wait_processed else None
+        await self.command_queue.put(ChannelCommand(
+            command_type, channel, operation, value, source_id, now,
+            expected_source, expected_strength, completion,
+        ))
         logger.debug(f"已添加命令: {command_type.name}, 通道: {channel}, 操作: {operation}, 值: {value}")
+        return await completion if completion is not None else True
 
     async def process_commands(self):
         """处理命令队列的主循环"""
         while True:
+            command = await self.command_queue.get()
+            applied = False
             try:
-                command = await self.command_queue.get()
-                
                 # 检查命令类型是否被启用
                 command_enabled = False
                 if command.command_type == CommandType.GUI_COMMAND and self.enable_gui_commands:
                     command_enabled = True
                 elif command.command_type == CommandType.PANEL_COMMAND and self.enable_panel_commands:
+                    command_enabled = True
+                elif command.command_type == CommandType.MOCAP_COMMAND and (
+                    self.app_status_online or command.source_id.startswith("mocap_end_")
+                ) and not (
+                    command.source_id.startswith("mocap_start_")
+                    and command.channel in self._mocap_suppressed
+                ):
                     command_enabled = True
                 elif command.command_type == CommandType.INTERACTION_COMMAND and self.enable_interaction_commands:
                     command_enabled = True
@@ -657,14 +876,23 @@ class DGLabController:
                 # 如果命令类型被禁用，则跳过处理
                 if not command_enabled:
                     logger.debug(f"命令类型 {command.command_type.name} 已禁用，跳过处理")
-                    self.command_queue.task_done()
                     continue
                 
                 # 更新通道状态模型
                 channel_state = self.channel_states[command.channel]
-                channel_state["last_command_source"] = command.source_id
-                channel_state["last_command_time"] = command.timestamp
-                
+                if (
+                    command.command_type in (CommandType.INTERACTION_COMMAND, CommandType.TON_COMMAND)
+                    and (command.channel in self._mocap_active or command.channel in self._mocap_starting)
+                ):
+                    continue
+                if (
+                    command.expected_source is not None
+                    and channel_state["last_command_source"] != command.expected_source
+                ) or (
+                    command.expected_strength is not None
+                    and channel_state["current_strength"] != command.expected_strength
+                ):
+                    continue
                 # 根据命令类型和操作进行相应处理
                 if command.operation == StrengthOperationType.SET_TO:
                     channel_state["target_strength"] = command.value
@@ -687,13 +915,20 @@ class DGLabController:
                 
                 # 更新当前强度记录
                 channel_state["current_strength"] = channel_state["target_strength"]
-                
-                # 完成命令处理
-                self.command_queue.task_done()
-                
+                channel_state["last_command_source"] = command.source_id
+                channel_state["last_command_time"] = command.timestamp
+                if command.command_type in (CommandType.GUI_COMMAND, CommandType.PANEL_COMMAND):
+                    if command.channel in self._mocap_active or command.channel in self._mocap_starting:
+                        self._mocap_active.pop(command.channel, None)
+                        self._mocap_suppressed.add(command.channel)
+                applied = True
             except Exception as e:
                 logger.error(f"处理命令时出错: {e}", exc_info=True)
                 await asyncio.sleep(0.1)  # 错误后短暂延迟
+            finally:
+                if command.completion is not None and not command.completion.done():
+                    command.completion.set_result(applied)
+                self.command_queue.task_done()
 
     async def handle_ton_damage(self, damage_value, damage_multiplier=1.0):
         """处理来自 ToN 游戏的伤害数据"""
