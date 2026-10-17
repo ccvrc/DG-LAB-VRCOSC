@@ -1,6 +1,7 @@
 """Local OSCQuery/UDP interoperability checks; no VRChat or device is used."""
 import asyncio
 import socket
+import struct
 import unittest
 from unittest.mock import AsyncMock, patch
 
@@ -11,7 +12,7 @@ from pythonosc.udp_client import SimpleUDPClient
 
 from services import vrchat_oscquery_inspector as inspector
 from services.oscquery_service import (
-    DynamicVRChatOSCClient, OSCQueryService,
+    DynamicVRChatOSCClient, MdnsResponder, OSCQueryService, _parse_query_names,
 )
 from services.vrchat_oscquery_inspector import vrchat_osc_endpoint
 
@@ -62,6 +63,8 @@ class OSCQueryServiceTests(unittest.IsolatedAsyncioTestCase):
         self.service._register_mdns = AsyncMock()
         self.service._broadcast_mdns = AsyncMock()
         self.service._update_registered_services = AsyncMock()
+        self.service._start_mdns_responder = AsyncMock()
+        self.service._stop_mdns_responder = AsyncMock()
         self.runners = []
         self.transports = []
 
@@ -118,13 +121,24 @@ class OSCQueryServiceTests(unittest.IsolatedAsyncioTestCase):
                 info = await response.json()
             self.assertEqual(info['OSC_PORT'], port)
             self.assertEqual(info['OSC_TRANSPORT'], 'UDP')
+            self.assertTrue(self.service.registration_confirmed)
+            # Clients may append further query parameters; vrc-oscquery-lib
+            # only looks for the token itself.
+            async with session.get(base + '/?HOST_INFO&extra=1') as response:
+                self.assertEqual(response.status, 200)
+                self.assertEqual((await response.json())['OSC_PORT'], port)
+            self.assertEqual(self.service.host_info_requests, 2)
             async with session.get(base + '/') as response:
                 root = await response.json()
             self.assertIn('avatar', root['CONTENTS'])
             async with session.get(base + '/avatar/change') as response:
                 self.assertEqual((await response.json())['TYPE'], 's')
+            # Unknown paths must not answer with an empty body: VRChat's
+            # OSCQuery client treats that as a parse failure and dereferences
+            # null ("Could not make new OscClient").
             async with session.get(base + '/missing') as response:
-                self.assertEqual(response.status, 404)
+                self.assertEqual(response.status, 200)
+                self.assertEqual((await response.json())['FULL_PATH'], '/missing')
         with SimpleUDPClient(info['OSC_IP'], info['OSC_PORT']) as sender:
             sender.send_message('/avatar/parameters/Test', 0.5)
             await self.wait_until(lambda: bool(received))
@@ -195,3 +209,76 @@ class OSCQueryServiceTests(unittest.IsolatedAsyncioTestCase):
             self.assertTrue(all(info.parsed_addresses() == ['127.0.0.1'] for info in infos))
             await self.service.stop()
             self.assertEqual(factory.return_value.async_unregister_service.await_count, 2)
+
+
+def _dns_query(*names: str) -> bytes:
+    """Build an mDNS query packet for the given names (QTYPE=ANY, QCLASS=IN)."""
+
+    body = b''
+    for name in names:
+        encoded = b''.join(bytes([len(part)]) + part.encode() for part in name.split('.'))
+        body += encoded + b'\x00' + struct.pack('!HH', 255, 1)
+    return struct.pack('!HHHHHH', 0, 0, len(names), 0, 0, 0) + body
+
+
+class MdnsResponderTests(unittest.TestCase):
+    """The responder must resolve VRChat's queries, not only announce."""
+
+    instance = 'DG-LAB-VRCOSC-abcdef'
+
+    def setUp(self):
+        self.responder = MdnsResponder(self.instance)
+        self.responder.announce(50000, 51000, 'test')
+
+    def tearDown(self):
+        self.responder.stop()
+
+    def test_parse_query_names(self):
+        self.assertEqual(
+            _parse_query_names(_dns_query('_oscjson._tcp.local')), ['_oscjson._tcp.local']
+        )
+        self.assertEqual(_parse_query_names(b''), [])
+        # Responses are not queries.
+        response = bytearray(_dns_query('_oscjson._tcp.local'))
+        response[2] |= 0x80
+        self.assertEqual(_parse_query_names(bytes(response)), [])
+
+    def test_service_type_query_returns_ptr_and_srv_target(self):
+        for service_type, port in (
+            ('_oscjson._tcp.local', 50000),
+            ('_osc._udp.local', 51000),
+        ):
+            with self.subTest(service_type=service_type):
+                packets = self.responder._responses_for_query(_dns_query(service_type))
+                self.assertEqual(len(packets), 1)
+                packet = packets[0]
+                self.assertEqual(struct.unpack('!H', packet[6:8])[0], 1)  # ANCOUNT
+                self.assertIn(self.instance.encode(), packet)
+                self.assertIn(struct.pack('!H', port), packet)
+                self.assertIn(b'\x7f\x00\x00\x01', packet)  # A record: 127.0.0.1
+
+    def test_instance_name_query_returns_srv_txt_and_a(self):
+        packets = self.responder._responses_for_query(
+            _dns_query(f'{self.instance}._oscjson._tcp.local')
+        )
+        self.assertEqual(len(packets), 1)
+        self.assertEqual(struct.unpack('!H', packets[0][6:8])[0], 3)  # SRV + TXT + A
+
+    def test_host_name_query_returns_address(self):
+        packets = self.responder._responses_for_query(
+            _dns_query(f'{self.instance}.local')
+        )
+        self.assertEqual(len(packets), 1)
+        self.assertEqual(struct.unpack('!H', packets[0][6:8])[0], 1)
+        self.assertIn(b'\x7f\x00\x00\x01', packets[0])
+
+    def test_unrelated_queries_are_ignored(self):
+        self.assertEqual(self.responder._responses_for_query(_dns_query('_http._tcp.local')), [])
+        self.assertEqual(self.responder._responses_for_query(b'\x00'), [])
+
+    def test_announce_requires_a_listening_interface(self):
+        logger_name = 'services.oscquery_service'
+        with self.assertLogs(logger_name, level='WARNING') as captured:
+            self.assertEqual(self.responder.announce(50000, 51000, 'test'), 0)
+        self.assertTrue(any('mDNS 公告未能发送' in line for line in captured.output))
+

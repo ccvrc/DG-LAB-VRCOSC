@@ -6,6 +6,7 @@ from PySide6.QtGui import QPixmap
 from PySide6.QtCore import QTimer
 import logging
 import asyncio
+import time
 import requests
 
 from config import get_active_ip_addresses, save_settings
@@ -15,6 +16,7 @@ from qasync import asyncio
 from pythonosc import osc_server, dispatcher, udp_client
 from i18n import translate as _, language_signals, LANGUAGES, get_current_language, set_language
 from services.ogb_enabled_service import OGBEnabledService
+from services.vrchat_oscquery_inspector import read_vrchat_osc_signals
 
 import functools # Use the built-in functools module
 import sys
@@ -124,6 +126,9 @@ class NetworkConfigTab(QWidget):
         self._osc_transport = None
         self._osc_protocol = None
         self._mappings_connected = False
+        self._auto_started_at = 0.0
+        self._vrchat_signal_checked_at = 0.0
+        self._vrchat_signal_text = ""
         self._osc_status_timer = QTimer(self)
         self._osc_status_timer.setInterval(1000)
         self._osc_status_timer.timeout.connect(self.refresh_osc_status)
@@ -319,7 +324,22 @@ class NetworkConfigTab(QWidget):
                 target = str(_("network_tab.osc_vrc_target")).format(host=host, port=port)
             else:
                 target = str(_("network_tab.osc_waiting"))
-            text = f"{ports}\n{target}"
+            # The direction that actually carries avatar parameters: VRChat has
+            # to resolve our OSCQuery service and ask us for HOST_INFO.
+            registered = getattr(service, "registration_confirmed", False) is True
+            if registered:
+                count = getattr(service, "host_info_requests", 0)
+                if not isinstance(count, int):
+                    count = 0
+                registration = str(_("network_tab.osc_vrchat_registered")).format(count=count)
+            else:
+                registration = str(_("network_tab.osc_vrchat_not_registered"))
+            text = f"{ports}\n{target}\n{registration}"
+            if not registered and self._server_started and self._auto_elapsed_seconds() >= 10:
+                text += "\n" + str(_("network_tab.osc_registration_hint"))
+            issue = self._vrchat_side_issue(service)
+            if issue:
+                text += "\n" + str(_("network_tab.osc_vrchat_issue")).format(detail=issue)
         elif self._osc_transport:
             host, port = self._osc_transport.get_extra_info("sockname")[:2]
             text = str(_("network_tab.osc_manual_ports")).format(host=host, port=port)
@@ -330,6 +350,40 @@ class NetworkConfigTab(QWidget):
         else:
             text = str(_("network_tab.osc_not_started"))
         self.osc_status_label.setText(text)
+
+    def _auto_elapsed_seconds(self) -> float:
+        started = getattr(self, "_auto_started_at", None)
+        if not started:
+            return 0.0
+        return max(0.0, time.monotonic() - started)
+
+    def _vrchat_side_issue(self, service) -> str:
+        """Surface VRChat-side OSC problems read from its own log (throttled)."""
+
+        if not self._server_started:
+            return ""
+        instance_name = getattr(service, "instance_name", "")
+        if not isinstance(instance_name, str) or not instance_name:
+            return ""
+        now = time.monotonic()
+        if now - getattr(self, "_vrchat_signal_checked_at", 0.0) < 5.0:
+            return getattr(self, "_vrchat_signal_text", "")
+        self._vrchat_signal_checked_at = now
+        detail = ""
+        try:
+            signals = read_vrchat_osc_signals(instance_name)
+            if signals.get("osc_start_failed"):
+                detail = "VRChat 的 OSC 未启动（9000 端口被占用，常见于还开着第二个 VRChat）"
+            elif signals.get("osc_enabled") is False and not signals.get("registered"):
+                detail = "VRChat 里 OSC 开关是关闭的"
+            elif signals.get("client_failed"):
+                detail = "VRChat 登记本程序时握手失败（Could not make new OscClient）"
+            elif signals.get("null_receiver"):
+                detail = "VRChat 没有可用的 OSC 发送端（null receiver）"
+        except Exception as exc:  # never let diagnostics break the status line
+            logger.debug("读取 VRChat 日志状态失败: %s", exc)
+        self._vrchat_signal_text = detail
+        return detail
 
     def _report_server_error(self, error):
         self._server_error = str(error)
@@ -410,7 +464,18 @@ class NetworkConfigTab(QWidget):
                     self.oscquery_service = OSCQueryService("DG-LAB-VRCOSC")
                     dynamic_osc_port = await self.oscquery_service.start(self.dispatcher)
                     osc_client = self.oscquery_service.get_vrc_client()
-                    logger.info(f"OSCQuery 服务已启动 - 监听 127.0.0.1:{dynamic_osc_port}，等待 VRChat 自动发现")
+                    self._auto_started_at = time.monotonic()
+                    self._vrchat_signal_checked_at = 0.0
+                    self._vrchat_signal_text = ""
+                    mdns_interfaces = getattr(self.oscquery_service, "mdns_interfaces", [])
+                    if not isinstance(mdns_interfaces, (list, tuple)):
+                        mdns_interfaces = []
+                    logger.info(
+                        "OSCQuery 自动发现已启动 - 本程序监听 127.0.0.1:%s，"
+                        "mDNS 网卡: %s；等待 VRChat 登记本程序",
+                        dynamic_osc_port,
+                        ", ".join(mdns_interfaces) or "-",
+                    )
                 else:
                     # 显式手动模式；仅允许本机 VRChat 访问。
                     osc_server_instance = osc_server.AsyncIOOSCUDPServer(
@@ -494,6 +559,9 @@ class NetworkConfigTab(QWidget):
                             await self.oscquery_service.stop()
                     finally:
                         self.oscquery_service = None
+                        self._auto_started_at = 0.0
+                        self._vrchat_signal_checked_at = 0.0
+                        self._vrchat_signal_text = ""
                         if self._osc_transport:
                             self._osc_transport.close()
                             self._osc_transport = None
