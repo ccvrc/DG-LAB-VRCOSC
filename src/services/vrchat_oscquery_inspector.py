@@ -47,6 +47,91 @@ def _recent_vrc_logs(limit: int = 3) -> list[Path]:
     return sorted(config_dir.glob("output_log*.txt"), key=lambda path: path.stat().st_mtime, reverse=True)[:limit]
 
 
+_osc_signal_cache: dict[str, Any] = {}
+
+
+def _read_log_chunks(path: Path, head_bytes: int, tail_bytes: int) -> tuple[str, str]:
+    """Return (head, tail) of a log file without loading all of it."""
+
+    size = path.stat().st_size
+    head_size = min(size, max(0, head_bytes))
+    tail_size = min(size, max(0, tail_bytes))
+    with path.open("rb") as handle:
+        head = handle.read(head_size).decode("utf-8", "replace")
+        if size > tail_size:
+            handle.seek(size - tail_size)
+        else:
+            handle.seek(0)
+        tail = handle.read(tail_size).decode("utf-8", "replace")
+    return head, tail
+
+
+def read_vrchat_osc_signals(
+    instance_name: str = "",
+    head_bytes: int = 65536,
+    tail_bytes: int = 262144,
+) -> dict[str, Any]:
+    """Inspect VRChat's newest log and report whether it can send us OSC.
+
+    The reverse direction (VRChat -> this application) only works when VRChat
+    actually registered our OSCQuery service, so the useful evidence lives in
+    VRChat's own log:
+
+    * ``osc_enabled``      VRChat's persisted OSC toggle at launch.
+    * ``osc_start_failed`` "Could not Start OSC: Address already in use".
+    * ``registered``       "Found new OSC Service: <our instance name>".
+    * ``client_failed``    "Could not make new OscClient" (handshake null).
+    * ``null_receiver``    "Could not register listener ... with null receiver".
+    """
+
+    log_path = _latest_vrc_log()
+    signals: dict[str, Any] = {
+        "path": str(log_path) if log_path else None,
+        "osc_enabled": None,
+        "osc_start_failed": False,
+        "registered": False,
+        "client_failed": False,
+        "null_receiver": False,
+    }
+    if log_path is None:
+        return signals
+
+    try:
+        stat = log_path.stat()
+        cache_key = f"{log_path}|{stat.st_mtime_ns}|{stat.st_size}"
+        cached = _osc_signal_cache.get(cache_key)
+        if cached is not None:
+            result = dict(cached)
+            result["path"] = str(log_path)
+            return result
+        head, tail = _read_log_chunks(log_path, head_bytes, tail_bytes)
+    except OSError as exc:
+        logger.debug("读取 VRChat 日志失败: %s", exc)
+        return signals
+
+    combined = head + "\n" + tail
+    for match in re.finditer(r"OSC enabled:\s*(True|False)", combined):
+        signals["osc_enabled"] = match.group(1) == "True"
+    signals["osc_start_failed"] = "Could not Start OSC" in combined
+    signals["client_failed"] = "Could not make new OscClient" in combined
+    signals["null_receiver"] = "with null receiver" in combined
+    if instance_name:
+        signals["registered"] = (
+            f"Found new OSC Service: {instance_name}" in combined
+            or f'Found new OSC Service: {instance_name} ' in combined
+        )
+
+    _osc_signal_cache.clear()
+    _osc_signal_cache[cache_key] = dict(signals)
+    if signals["registered"]:
+        logger.info("VRChat 日志确认已登记本程序: %s", instance_name)
+    elif signals["osc_start_failed"]:
+        logger.warning("VRChat 日志显示它的 OSC 未启动（9000 端口被占用）")
+    elif signals["osc_enabled"] is False:
+        logger.warning("VRChat 日志显示 OSC 开关是关闭的（OSC enabled: False）")
+    return signals
+
+
 def _ports_from_logs() -> list[int]:
     ports: list[int] = []
     for log_path in _recent_vrc_logs():

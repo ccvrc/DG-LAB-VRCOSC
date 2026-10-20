@@ -11,6 +11,7 @@ import ipaddress
 import logging
 import socket
 import struct
+import threading
 import uuid
 from typing import Any, Optional
 
@@ -102,35 +103,221 @@ def _active_multicast_ipv4_addresses() -> list[str]:
     return addresses
 
 
-class MdnsBroadcaster:
-    """Sends explicit OSCQuery mDNS responses for VRChat's discovery window."""
+def _read_dns_name(data: bytes, offset: int) -> tuple[Optional[str], int]:
+    """Read a (possibly compressed) DNS name; returns (lower-case name, next offset)."""
+
+    labels: list[str] = []
+    next_offset = offset
+    jumped = False
+    hops = 0
+    while True:
+        if offset >= len(data):
+            return None, next_offset
+        length = data[offset]
+        if length == 0:
+            offset += 1
+            if not jumped:
+                next_offset = offset
+            break
+        if length & 0xC0 == 0xC0:
+            if offset + 1 >= len(data):
+                return None, next_offset
+            pointer = ((length & 0x3F) << 8) | data[offset + 1]
+            offset += 2
+            if not jumped:
+                next_offset = offset
+            jumped = True
+            hops += 1
+            if hops > 8 or pointer >= len(data):
+                return None, next_offset
+            offset = pointer
+            continue
+        if length > 63 or offset + 1 + length > len(data):
+            return None, next_offset
+        labels.append(data[offset + 1:offset + 1 + length].decode("ascii", "ignore").lower())
+        offset += 1 + length
+    return ".".join(labels), next_offset
+
+
+def _parse_query_names(data: bytes, limit: int = 16) -> list[str]:
+    """Return the lower-cased names that an mDNS *query* packet asks about."""
+
+    if len(data) < 12:
+        return []
+    _ident, flags, qdcount = struct.unpack("!HHH", data[0:6])
+    if flags & 0x8000:
+        return []  # a response, not a query
+    offset = 12
+    names: list[str] = []
+    for _ in range(min(qdcount, limit)):
+        name, offset = _read_dns_name(data, offset)
+        if not name:
+            break
+        names.append(name)
+        offset += 4  # QTYPE + QCLASS
+        if offset > len(data):
+            break
+    return names
+
+
+class MdnsResponder:
+    """Persistent mDNS responder for our OSCQuery and OSC services.
+
+    VRChat only sends avatar parameters to services whose mDNS records it has
+    resolved, and it resolves them by sending its own queries.  The previous
+    implementation opened a fresh socket per announcement, so it could only
+    announce and never answer; when an announcement was missed, VRChat never
+    learned the dynamic port.  This keeps one long lived socket per active
+    interface, bound to 5353 and joined to the mDNS group (the same approach
+    VRCFaceTracking uses), so VRChat's queries are answered as well.
+    """
 
     def __init__(self, instance_name: str):
         self.instance_name = instance_name
         self.target_name = f"{instance_name}.local."
+        self.interfaces: list[str] = []
+        self.answered_queries = 0
+        self.announced_packets = 0
+        self.last_error: Optional[str] = None
+        self._lock = threading.Lock()
+        self._sockets: list[tuple[socket.socket, str]] = []
+        self._thread: Optional[threading.Thread] = None
+        self._stop_event = threading.Event()
+        self._http_port = 0
+        self._osc_port = 0
 
-    def broadcast(self, http_port: int, osc_port: int, reason: str = "periodic") -> int:
-        packets = [
-            self._build_packet(OSCQUERY_SERVICE_TYPE, http_port),
-            self._build_packet(OSC_SERVICE_TYPE, osc_port),
-        ]
-        addresses = _active_multicast_ipv4_addresses()
-        if not addresses:
-            logger.debug("OSCQuery mDNS broadcast skipped: no active multicast IPv4 interface")
+    # ---------------------------------------------------------------- lifecycle
+    def start(self) -> list[str]:
+        self._stop_event.clear()
+        for interface_ip in _active_multicast_ipv4_addresses():
+            try:
+                self._sockets.append((self._open_socket(interface_ip), interface_ip))
+                self.interfaces.append(interface_ip)
+            except OSError as exc:
+                logger.warning("mDNS 无法在 %s:5353 监听，跳过该网卡: %s", interface_ip, exc)
+        if not self._sockets:
+            logger.warning("mDNS 应答器未启动：没有可用于组播的 IPv4 网卡")
+            return []
+        self._thread = threading.Thread(target=self._serve, name="oscquery-mdns", daemon=True)
+        self._thread.start()
+        return list(self.interfaces)
+
+    def stop(self):
+        self._stop_event.set()
+        thread, self._thread = self._thread, None
+        if thread is not None:
+            thread.join(timeout=2.0)
+        for sock, _interface in self._sockets:
+            with contextlib.suppress(OSError):
+                sock.close()
+        self._sockets.clear()
+        self.interfaces.clear()
+
+    def _open_socket(self, interface_ip: str) -> socket.socket:
+        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
+        try:
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            sock.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_TTL, 255)
+            sock.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_LOOP, 1)
+            sock.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_IF, socket.inet_aton(interface_ip))
+            sock.bind((interface_ip, MDNS_PORT))
+            group = socket.inet_aton(MDNS_ADDRESS) + socket.inet_aton(interface_ip)
+            sock.setsockopt(socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP, group)
+            sock.settimeout(0.5)
+        except OSError:
+            sock.close()
+            raise
+        return sock
+
+    def _serve(self):
+        while not self._stop_event.is_set():
+            for sock, _interface in list(self._sockets):
+                try:
+                    data, source = sock.recvfrom(9000)
+                except socket.timeout:
+                    continue
+                except OSError as exc:
+                    if not self._stop_event.is_set():
+                        logger.debug("mDNS 收包失败: %s", exc)
+                    continue
+                for packet in self._responses_for_query(data):
+                    try:
+                        sock.sendto(packet, (MDNS_ADDRESS, MDNS_PORT))
+                    except OSError as exc:
+                        self.last_error = f"{source}: {exc}"
+                        logger.debug("mDNS 应答发送失败: %s", exc)
+                    else:
+                        self.answered_queries += 1
+                        if self.answered_queries == 1:
+                            logger.info("mDNS 应答器已开始应答查询（来自 %s）：VRChat 可以解析本程序", source)
+
+    # ---------------------------------------------------------------- answering
+    def _match_name(self, name: str) -> Optional[tuple[str, str]]:
+        name = name.rstrip(".").lower()
+        for service_type in (OSCQUERY_SERVICE_TYPE, OSC_SERVICE_TYPE):
+            if name == service_type.rstrip(".").lower():
+                return "service", service_type
+            if name == f"{self.instance_name}.{service_type.rstrip('.')}".lower():
+                return "instance", service_type
+        if name in {self.target_name.rstrip(".").lower(), self.instance_name.lower()}:
+            return "host", ""
+        return None
+
+    def _responses_for_query(self, data: bytes) -> list[bytes]:
+        with self._lock:
+            http_port, osc_port = self._http_port, self._osc_port
+        if not http_port or not osc_port:
+            return []
+        packets: list[bytes] = []
+        for name in _parse_query_names(data):
+            match = self._match_name(name)
+            if match is None:
+                continue
+            kind, service_type = match
+            if kind == "service":
+                port = http_port if service_type == OSCQUERY_SERVICE_TYPE else osc_port
+                packets.append(self._build_packet(service_type, port))
+            elif kind == "instance":
+                port = http_port if service_type == OSCQUERY_SERVICE_TYPE else osc_port
+                packets.append(self._build_instance_packet(service_type, port))
+            else:
+                packets.append(self._build_address_packet())
+        return packets
+
+    # --------------------------------------------------------------- announcing
+    def announce(self, http_port: int, osc_port: int, reason: str = "periodic") -> int:
+        with self._lock:
+            self._http_port = int(http_port)
+            self._osc_port = int(osc_port)
+            sockets = list(self._sockets)
+        if not sockets:
+            logger.warning("mDNS 公告未能发送（%s）：应答器没有可用网卡", reason)
             return 0
-
+        packets = [
+            self._build_packet(OSCQUERY_SERVICE_TYPE, int(http_port)),
+            self._build_packet(OSC_SERVICE_TYPE, int(osc_port)),
+        ]
         sent = 0
-        for address in addresses:
+        for sock, interface_ip in sockets:
             for packet in packets:
                 try:
-                    self._send_packet(address, packet)
-                    sent += 1
+                    sock.sendto(packet, (MDNS_ADDRESS, MDNS_PORT))
                 except OSError as exc:
-                    logger.debug("OSCQuery mDNS broadcast failed on %s: %s", address, exc)
+                    self.last_error = f"{interface_ip}: {exc}"
+                    logger.warning("mDNS 公告在 %s 发送失败: %s", interface_ip, exc)
+                else:
+                    sent += 1
         if sent:
-            logger.debug("OSCQuery mDNS broadcast sent %s packets (%s)", sent, reason)
+            self.announced_packets += sent
+            logger.info(
+                "mDNS 公告已发送 %s 个包（%s），网卡: %s",
+                sent,
+                reason,
+                ", ".join(self.interfaces) or "-",
+            )
         return sent
 
+    # ------------------------------------------------------------------ packets
     def _build_packet(self, service_type: str, port: int) -> bytes:
         instance = f"{self.instance_name}.{service_type}"
         answers = [
@@ -144,20 +331,26 @@ class MdnsBroadcaster:
         header = struct.pack("!HHHHHH", 0, 0x8400, 0, len(answers), 0, len(additionals))
         return header + b"".join(answers) + b"".join(additionals)
 
-    def _send_packet(self, interface_ip: str, packet: bytes):
-        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
-        try:
-            sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-            sock.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_TTL, 255)
-            sock.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_LOOP, 1)
-            sock.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_IF, socket.inet_aton(interface_ip))
-            try:
-                sock.bind((interface_ip, MDNS_PORT))
-            except OSError:
-                sock.bind((interface_ip, 0))
-            sock.sendto(packet, (MDNS_ADDRESS, MDNS_PORT))
-        finally:
-            sock.close()
+    def _build_instance_packet(self, service_type: str, port: int) -> bytes:
+        """SRV/TXT/A answers for a query that asked about our instance name."""
+
+        instance = f"{self.instance_name}.{service_type}"
+        answers = [
+            _dns_record(instance, 33, 0x8001, 120, _srv_record(port, self.target_name)),
+            _dns_record(instance, 16, 0x8001, 120, _txt_record("txtvers=1")),
+            _dns_record(self.target_name, 1, 0x8001, 120, _a_record(LOOPBACK_HOST)),
+        ]
+        return struct.pack("!HHHHHH", 0, 0x8400, 0, len(answers), 0, 0) + b"".join(answers)
+
+    def _build_address_packet(self) -> bytes:
+        answers = [
+            _dns_record(self.target_name, 1, 0x8001, 120, _a_record(LOOPBACK_HOST)),
+        ]
+        return struct.pack("!HHHHHH", 0, 0x8400, 0, len(answers), 0, 0) + b"".join(answers)
+
+
+# Backwards compatible alias: older call sites and tests refer to this name.
+MdnsBroadcaster = MdnsResponder
 
 
 class DynamicVRChatOSCClient:
@@ -224,7 +417,8 @@ class OSCQueryService:
         self._discovery_task: Optional[asyncio.Task] = None
         self._discovery_had_success = False
         self._vrc_client = DynamicVRChatOSCClient()
-        self._mdns_broadcaster = MdnsBroadcaster(self.instance_name)
+        self._mdns_broadcaster = MdnsResponder(self.instance_name)
+        self._mdns_started = False
         self._host_info_request_count = 0
         self._node_request_count = 0
 
@@ -240,7 +434,14 @@ class OSCQueryService:
             self._vrc_client.set_endpoint(LOOPBACK_HOST, VRC_DEFAULT_OSC_PORT)
             await self._start_osc_server(dispatcher)
             await self._start_http_server()
-            await self._register_mdns()
+            # The responder is what VRChat resolves us through, so it must not
+            # be able to fail the whole service: a broken interface is logged
+            # and the run continues with the remaining advertisement paths.
+            await self._start_mdns_responder()
+            try:
+                await self._register_mdns()
+            except Exception as exc:
+                logger.warning("python-zeroconf 注册失败（mDNS 应答器仍可工作）: %s", exc)
 
             self._running = True
             self._rebroadcast_task = asyncio.create_task(self._rebroadcast_loop())
@@ -248,17 +449,34 @@ class OSCQueryService:
             await self._broadcast_mdns("startup")
 
             logger.info(
-                "OSCQuery service '%s' started: HTTP %s:%s, OSC %s:%s",
+                "OSCQuery service '%s' started: HTTP %s:%s, OSC %s:%s (mDNS 网卡: %s)",
                 self.instance_name,
                 LOOPBACK_HOST,
                 self._http_port,
                 LOOPBACK_HOST,
                 self._osc_port,
+                ", ".join(self._mdns_broadcaster.interfaces) or "-",
             )
             return int(self._osc_port)
         except (Exception, asyncio.CancelledError):
             await self.stop()
             raise
+
+    async def _start_mdns_responder(self):
+        interfaces = await asyncio.to_thread(self._mdns_broadcaster.start)
+        self._mdns_started = bool(interfaces)
+        if interfaces:
+            logger.info(
+                "mDNS 应答器已启动（5353 常驻，应答 _oscjson._tcp / _osc._udp 查询），网卡: %s",
+                ", ".join(interfaces),
+            )
+        else:
+            logger.warning("mDNS 应答器未启动：没有可用网卡，自动发现可能无法工作")
+
+    async def _stop_mdns_responder(self):
+        if self._mdns_started:
+            await asyncio.to_thread(self._mdns_broadcaster.stop)
+        self._mdns_started = False
 
     async def stop(self):
         self._running = False
@@ -271,6 +489,9 @@ class OSCQueryService:
                     await task
         self._rebroadcast_task = None
         self._discovery_task = None
+
+        with contextlib.suppress(Exception):
+            await self._stop_mdns_responder()
 
         if self._zeroconf:
             for service_info in self._service_infos:
@@ -313,6 +534,26 @@ class OSCQueryService:
     @property
     def vrc_discovered(self) -> bool:
         return self._discovery_had_success
+
+    @property
+    def host_info_requests(self) -> int:
+        """How often VRChat asked us for HOST_INFO (proof it registered us)."""
+
+        return self._host_info_request_count
+
+    @property
+    def registration_confirmed(self) -> bool:
+        """True once VRChat resolved our OSCQuery service and queried us."""
+
+        return self._host_info_request_count > 0
+
+    @property
+    def mdns_interfaces(self) -> list[str]:
+        return list(self._mdns_broadcaster.interfaces)
+
+    @property
+    def mdns_answered_queries(self) -> int:
+        return self._mdns_broadcaster.answered_queries
 
     async def _start_osc_server(self, dispatcher: Dispatcher):
         osc_server = AsyncIOOSCUDPServer(
@@ -361,24 +602,43 @@ class OSCQueryService:
         ]
         for service_info in self._service_infos:
             await self._zeroconf.async_register_service(service_info)
+        logger.info(
+            "python-zeroconf 注册完成: %s",
+            ", ".join(
+                f"{info.type}->{info.port}" for info in self._service_infos
+            ),
+        )
 
     async def _handle_request(self, request: web.Request) -> web.Response:
         peername = request.transport.get_extra_info("peername") if request.transport else None
-        if request.query_string == "HOST_INFO":
+        # VRChat (and other clients) may append further query parameters, and
+        # the vrc-oscquery-lib matcher only looks for the token itself.
+        query_parts = {part.strip().upper() for part in request.query_string.split("&")}
+        if "HOST_INFO" in query_parts:
             self._host_info_request_count += 1
             logger.info(
-                "OSCQuery HOST_INFO requested from %s (count=%s)",
-                peername or "unknown",
+                "OSCQuery HOST_INFO 请求（第 %s 次，来自 %s）：VRChat 已登记本程序",
                 self._host_info_request_count,
+                peername or "unknown",
             )
             return web.json_response(self._host_info())
 
         node = self._node_for_path(request.path)
-        if node is None:
-            return web.Response(status=404)
         self._node_request_count += 1
+        if node is None:
+            # vrc-oscquery-lib treats a non-2xx or empty body as a parse
+            # failure and then dereferences null ("Could not make new
+            # OscClient"), so unknown paths answer with an empty container
+            # node instead of an empty 404.
+            logger.info(
+                "OSCQuery 未知路径 %s（第 %s 次，来自 %s）：返回空容器节点",
+                request.path,
+                self._node_request_count,
+                peername or "unknown",
+            )
+            return web.json_response({"FULL_PATH": request.path or "/", "ACCESS": 0})
         logger.info(
-            "OSCQuery node requested: %s from %s (count=%s)",
+            "OSCQuery 节点请求: %s 来自 %s（第 %s 次）",
             request.path,
             peername or "unknown",
             self._node_request_count,
@@ -463,22 +723,22 @@ class OSCQueryService:
             try:
                 await self._zeroconf.async_update_service(service_info)
             except Exception as exc:
-                logger.debug("OSCQuery zeroconf service update failed: %s", exc)
+                logger.warning("python-zeroconf 服务刷新失败: %s", exc)
 
     async def _broadcast_mdns(self, reason: str):
         if self._http_port is None or self._osc_port is None:
             return
         try:
             sent = await asyncio.to_thread(
-                self._mdns_broadcaster.broadcast,
+                self._mdns_broadcaster.announce,
                 self._http_port,
                 self._osc_port,
                 reason,
             )
-            if sent == 0:
-                logger.debug("OSCQuery mDNS active broadcast sent no packets (%s)", reason)
+            if sent == 0 and not self._mdns_started:
+                logger.warning("mDNS 公告未能发送（%s）：应答器未运行", reason)
         except Exception as exc:
-            logger.debug("OSCQuery mDNS active broadcast failed (%s): %s", reason, exc)
+            logger.warning("mDNS 公告发送异常（%s）: %s", reason, exc)
 
     async def _vrchat_discovery_loop(self):
         while self._running:
@@ -492,9 +752,10 @@ class OSCQueryService:
             changed = self._vrc_client.set_endpoint(osc_host, osc_port)
             if changed or not self._discovery_had_success:
                 logger.info(
-                    "VRChat OSCQuery discovered at %s:%s, OSC target %s:%s",
+                    "已发现 VRChat: OSCQuery %s:%s（%s），发送目标 %s:%s",
                     host,
                     port,
+                    host_info.get("NAME", "?"),
                     osc_host,
                     osc_port,
                 )
@@ -502,7 +763,7 @@ class OSCQueryService:
             self._discovery_had_success = True
         except Exception as exc:
             if self._discovery_had_success:
-                logger.warning("VRChat OSCQuery discovery lost: %s", exc)
+                logger.warning("VRChat OSCQuery 发现丢失: %s", exc)
             else:
-                logger.debug("VRChat OSCQuery is not available yet: %s", exc)
+                logger.debug("VRChat OSCQuery 暂不可用: %s", exc)
             self._discovery_had_success = False

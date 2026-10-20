@@ -105,10 +105,14 @@ class MainWindow(QMainWindow):
     def app_setup_logging(self):
         """设置日志系统输出到 QTextEdit 和控制台"""
         logger = logging.getLogger()
-        logger.setLevel(logging.INFO)
+        # Keep the root logger at DEBUG so the log file keeps OSCQuery
+        # diagnostics (mDNS advertisement, registration, discovery); the GUI
+        # widget only shows INFO and above to stay readable.
+        logger.setLevel(logging.DEBUG)
 
         # 创建 QTextEditHandler 并添加到日志系统中
         self.log_handler = self.log_viewer_tab.log_handler
+        self.log_handler.setLevel(logging.INFO)
         logger.addHandler(self.log_handler)
 
         # 限制日志框中的最大行数
